@@ -1,7 +1,7 @@
 <?php
 /**
  * api/progress.php (GET) ו-api/progress-write.php (POST, מנהל בלבד) — הלוגיקה כפונקציות שאפשר לבדוק.
- * $opts — לבדיקות בלבד: server / sapi (זהות), dir (תיקיית ההתקדמות), now (זמן).
+ * $opts — לבדיקות בלבד: server / sapi (זהות), now (זמן). התיקייה — רק מהקונפיג, ותמיד דרך academy_progress_dir.
  */
 
 declare(strict_types=1);
@@ -18,8 +18,9 @@ function academy_api_progress_read(string $method, array $config, array $query =
     if (!in_array(strtoupper($method), ['GET', 'HEAD'], true)) return _ap_fail(405, 'method_not_allowed', 'קריאה בלבד');
     $actor = academy_progress_actor($config, $opts['server'] ?? null, $opts['sapi'] ?? PHP_SAPI);
     if ($actor === null || !academy_can('progress.read.self', $actor['role'])) return _ap_fail(403, 'forbidden', 'אין הרשאה');
-    try { $dir = $opts['dir'] ?? academy_progress_dir($config); }
-    catch (AcademyProgressError $e) { return _ap_fail($e->http, $e->errorCode, 'אחסון ההתקדמות אינו מוגדר כראוי'); }
+    // לפני כל קובץ: אם האחסון לא תקין — לא נוגעים בשום קובץ
+    try { $dir = academy_progress_dir($config); }
+    catch (AcademyProgressError $e) { return _ap_fail(503, 'progress_unavailable', 'נתוני ההתקדמות אינם זמינים', ['reason' => $e->reason]); }
     $want = isset($query['learner']) ? (string) $query['learner'] : null;
     $own = $actor['sub'] !== null ? academy_progress_learner_id($dir, $actor['sub']) : null;
 
@@ -55,22 +56,28 @@ function academy_api_progress_write(string $method, array $config, string $conte
     if ($actor === null || !academy_can('progress.write', $actor['role'])) return _ap_fail(403, 'forbidden', 'כתיבה — למנהל בלבד');
     $b = json_decode($raw, true);
     if (!is_array($b)) return _ap_fail(400, 'bad_request', 'גוף הבקשה אינו JSON תקין');
-    try { $dir = $opts['dir'] ?? academy_progress_dir($config); }
-    catch (AcademyProgressError $e) { return _ap_fail($e->http, $e->errorCode, 'אחסון ההתקדמות אינו מוגדר כראוי'); }
+    try { $dir = academy_progress_dir($config); }
+    catch (AcademyProgressError $e) { return _ap_fail(503, 'progress_unavailable', 'נתוני ההתקדמות אינם זמינים', ['reason' => $e->reason]); }
     $now = $opts['now'] ?? gmdate('Y-m-d\TH:i:s\Z');
     $id = (string) ($b['learnerId'] ?? '');
     if (!preg_match(ACADEMY_V2_ID, $id)) return _ap_fail(400, 'bad_request', 'מזהה לומד לא תקין');
     $audit = ['at' => $now, 'by' => $actor['sub'], 'learnerId' => $id];
 
+    try {
+        return _ap_write_action($b, $dir, $id, $now, $audit);
+    } catch (AcademyProgressError $e) {
+        return _ap_fail(500, 'internal', 'שמירת ההתקדמות נכשלה');   // בלי נתיב ובלי תוכן
+    }
+}
+
+function _ap_write_action(array $b, string $dir, string $id, string $now, array $audit): array {
     switch ($b['action'] ?? '') {
         case 'register':
             $sub = (string) ($b['sub'] ?? '');
             if ($sub === '' || strlen($sub) > 64) return _ap_fail(400, 'bad_request', 'sub לא תקין');
-            if (!is_dir($dir)) @mkdir($dir, 0750, true);
             $idx = json_decode((string) @file_get_contents("$dir/learners.json"), true) ?: [];
             $idx[$sub] = $id;
-            @file_put_contents("$dir/learners.json", json_encode($idx, JSON_UNESCAPED_UNICODE), LOCK_EX);
-            @chmod("$dir/learners.json", 0640);
+            academy_progress_write_atomic("$dir/learners.json", json_encode($idx, JSON_UNESCAPED_UNICODE));
             academy_progress_audit($dir, $audit + ['action' => 'register']);
             return [200, ['ok' => true, 'learnerId' => $id]];
 

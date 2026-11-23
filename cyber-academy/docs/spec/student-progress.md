@@ -12,12 +12,21 @@
 | `curriculum.php` | תוכנית האקדמיה בלבד. **לא קורא נתוני לומד ולא מחזיר שדה לומד** (נבדק לפי מפתחות) |
 | התקדמות לומד | **חדש** — `lib/progress.php`, `lib/progress-api.php`, `api/progress.php`, `api/progress-write.php` |
 
-## אחסון — מחוץ ל-GitHub
+## אחסון — רק תיקייה מחוץ לאתר (הוראת מנהל 00)
 
-- ברירת מחדל: `cyber-academy/data/progress/` — חסום מהדפדפן (`data/.htaccess`), מוחרג מהפריסה (`/cyber-academy/data/*`
-  ב-`deploy.yml`) ומגיט (`cyber-academy/.gitignore`).
-- אפשר גם מחוץ לאתר: `progress_dir` בקונפיג השרת — נתיב **מוחלט, מחוץ ל-public_html**. אחרת → 500 `progress_dir_unsafe`.
-- קבצים (0640):
+**אין ברירת מחדל.** נתוני תלמיד נקראים ונכתבים **רק** מ-`progress_dir` בקונפיג השרת. בלי תיקייה תקינה — `api/progress.php`
+ו-`api/progress-write.php` מחזירים **503 `progress_unavailable`** (עם `reason`, בלי נתיב), ושום קובץ לא נפתח ולא נוצר.
+
+| המצב של `progress_dir` | `reason` |
+| --- | --- |
+| ריק / לא מוגדר | `progress_dir_missing` |
+| נתיב יחסי | `progress_dir_not_absolute` |
+| בתוך העץ: שורש mini_projects, `cyber-academy/`, `DOCUMENT_ROOT`, כל `/public_html/`, `/www/`, `/htdocs/`, או `..` — לפי הנתיב המבוקש **וגם** לפי `realpath` (קישור סימבולי לתוך העץ נחסם) | `progress_dir_unsafe` |
+| התיקייה לא קיימת (לא נוצרת אוטומטית) | `progress_dir_missing` |
+| קריאה או כתיבה לכולם (o+r / o+w) | `progress_dir_insecure` |
+
+- התיקייה נוצרת **ידנית** על ידי המנהל: למשל `/home2/<user>/academy-progress`, `chmod 700`.
+- קבצים (0640), כתיבה אטומית (קובץ זמני + rename; בכשל הזמני נמחק — לא נשאר קובץ חלקי):
   - `learners.json` — `{ "<sub של הפלטפורמה>": "<learnerId>" }`. מזהה פנימי; אין שם או מייל.
   - `learner-<learnerId>.json` — קובץ אחד לכל לומד (מבנה למטה).
   - `audit.log` — יומן ביקורת, שורת JSON לכל שינוי.
@@ -78,12 +87,13 @@
 
 ## מה נדרש מהמנהל בשרת (בלי נתוני תלמיד כאן)
 
-1. בקונפיג השרת (`cyber-academy/data/config.json`): `"progress": {"managers": ["<sub של המנהל בפלטפורמה>"]}`.
-   אופציונלי: `"progress_dir": "/home2/<user>/academy-progress"` (מחוץ ל-public_html, תיקייה 700).
-2. התיקייה נוצרת בכתיבה הראשונה (0750, קבצים 0640). רישום לומד — `register`, ואז `apply` / `report`.
+1. ליצור ידנית תיקייה מחוץ ל-public_html, `chmod 700`: למשל `/home2/<user>/academy-progress`.
+2. בקונפיג השרת (`cyber-academy/data/config.json`): `"progress_dir": "<הנתיב המוחלט>"` **וגם**
+   `"progress": {"managers": ["<sub של המנהל בפלטפורמה>"]}`. בלי שניהם — אין קריאה וכתיבה של נתוני תלמיד.
+3. רישום לומד — `register`, ואז `apply` / `report`.
 3. **לא בשלב הזה:** מיגרציה של דוחות #1–#4 — אחרי אישור נפרד של מנהל 00, ידנית ובמבנה למעלה (דוח לא מאומת = `report`, לא סטטוס).
 
 ## לא נבדק
 
-- בשרת: הרשאות התיקייה, `PLATFORM_USER.sub` אמיתי מהשער, וחסימת `data/progress/` מהדפדפן.
+- בשרת: התיקייה בפועל והרשאותיה, `PLATFORM_USER.sub` אמיתי מהשער.
 - אין ממשק משתמש להתקדמות בשלב הזה — רק ה-API.

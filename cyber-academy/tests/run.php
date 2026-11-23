@@ -603,13 +603,79 @@ check('progress: נלמד והוכח נפרדים, רק ממאומת', $view['le
 check('progress: אין אחוז', !preg_match('/percent|pct|ratio|%/', json_encode($view)));
 check('progress: השיעור שהושלם — רק עם ראיה ואישור', $view['lessonsCompleted'] === ['l-1']);
 
-// גישה וכתיבה — תיקייה זמנית מחוץ לריפו
+// מצב הריפו לפני — כדי לוודא שהבדיקות לא יצרו בו שום קובץ
+$repoRoot = realpath(__DIR__ . '/..');
+$listRepo = function () use ($repoRoot) {
+    $out = [];
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($repoRoot, FilesystemIterator::SKIP_DOTS)) as $f) $out[] = $f->getPathname();
+    sort($out);
+    return $out;
+};
+$repoBefore = $listRepo();
+$userSrv = fn(string $sub = 'mgr-1') => ['server' => ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => true])], 'sapi' => 'litespeed'];
+$regBody = json_encode(['action' => 'register', 'learnerId' => 'lrn-x', 'sub' => 'u-x']);
+$blocked = function (array $cfgX, string $reason, string $label, ?string $secret = null) use ($userSrv, $regBody) {
+    [$st, $body] = academy_api_progress_read('GET', $cfgX, [], $userSrv('u-x'));
+    [$st2, $body2] = academy_api_progress_write('POST', $cfgX, 'application/json', $regBody, $userSrv('mgr-1'));
+    $out = json_encode([$body, $body2], JSON_UNESCAPED_UNICODE);
+    check("progress_dir $label → קריאה חסומה (503 $reason)", $st === 503 && $body['code'] === 'progress_unavailable' && $body['reason'] === $reason, $out);
+    check("progress_dir $label → כתיבה חסומה", $st2 === 503 && $body2['code'] === 'progress_unavailable' && $body2['reason'] === $reason, $out);
+    if ($secret !== null) check("progress_dir $label → בלי נתיב בתשובה", !str_contains($out, $secret));
+};
+$mgrCfg = fn(array $extra) => array_replace($def, ['progress' => ['managers' => ['mgr-1']]], $extra);
+
+// ברירת מחדל — אין progress_dir: חסום, ושום דבר לא נוצר
+$blocked($mgrCfg([]), 'progress_dir_missing', 'חסר (ברירת מחדל)');
+check('ברירת מחדל: progress_dir ריק', $def['progress_dir'] === '');
+check('אין ברירת מחדל ל-data/progress בקוד', !preg_match('~data/progress~', (string) file_get_contents(__DIR__ . '/../lib/progress.php') . file_get_contents(__DIR__ . '/../lib/progress-api.php') . file_get_contents(__DIR__ . '/../lib/academy-source.php')));
+check('.gitignore: data/progress/ לא מוזכר כנתיב פעיל', !str_contains((string) file_get_contents(__DIR__ . '/../.gitignore'), 'data/progress'));
+check('config.example: progress_dir ריק', json_decode((string) file_get_contents(__DIR__ . '/../samples/config.example.json'), true)['progress_dir'] === '');
+// יחסי
+$blocked($mgrCfg(['progress_dir' => 'secret-progress/x']), 'progress_dir_not_absolute', 'יחסי', 'secret-progress');
+// בתוך העץ: שורש הריפו, cyber-academy, public_html, DOCUMENT_ROOT מדומה
+$blocked($mgrCfg(['progress_dir' => realpath(__DIR__ . '/../..')]), 'progress_dir_unsafe', 'שורש mini_projects');
+$blocked($mgrCfg(['progress_dir' => $repoRoot . '/data']), 'progress_dir_unsafe', 'בתוך cyber-academy', $repoRoot);
+$blocked($mgrCfg(['progress_dir' => '/home2/u/public_html/academy-progress']), 'progress_dir_unsafe', 'public_html', 'academy-progress');
+$blocked($mgrCfg(['progress_dir' => '/srv/www/p']), 'progress_dir_unsafe', '/www/');
+$blocked($mgrCfg(['progress_dir' => '/tmp/../etc']), 'progress_dir_unsafe', 'עם ..');
+$fakeDocRoot = sys_get_temp_dir() . '/ca-docroot-' . getmypid();
+@mkdir("$fakeDocRoot/site/p", 0700, true);
+$oldDocRoot = $_SERVER['DOCUMENT_ROOT'] ?? null;
+$_SERVER['DOCUMENT_ROOT'] = "$fakeDocRoot/site";
+$blocked($mgrCfg(['progress_dir' => "$fakeDocRoot/site/p"]), 'progress_dir_unsafe', 'DOCUMENT_ROOT', $fakeDocRoot);
+if ($oldDocRoot === null) unset($_SERVER['DOCUMENT_ROOT']); else $_SERVER['DOCUMENT_ROOT'] = $oldDocRoot;
+@rmdir("$fakeDocRoot/site/p"); @rmdir("$fakeDocRoot/site"); @rmdir($fakeDocRoot);
+// קישור סימבולי מחוץ לאתר אל תוך העץ
+$outside = sys_get_temp_dir() . '/ca-out-' . getmypid();
+@mkdir($outside, 0700);
+@symlink($repoRoot . '/tests', "$outside/link");
+$blocked($mgrCfg(['progress_dir' => "$outside/link"]), 'progress_dir_unsafe', 'קישור סימבולי לתוך העץ', $outside);
+@unlink("$outside/link");
+// תיקייה חסרה — נחסם, ולא נוצרת
+$blocked($mgrCfg(['progress_dir' => "$outside/missing"]), 'progress_dir_missing', 'חסרה', $outside);
+check('תיקייה חסרה לא נוצרה', !file_exists("$outside/missing"));
+// הרשאות פתוחות
+foreach ([0o755 => 'o+r (0755)', 0o644 => '0644', 0o666 => '0666', 0o703 => 'o+w (0703)'] as $mode => $lbl) {
+    @mkdir("$outside/perm", 0700); chmod("$outside/perm", $mode);
+    $blocked($mgrCfg(['progress_dir' => "$outside/perm"]), 'progress_dir_insecure', "הרשאות $lbl", $outside);
+    chmod("$outside/perm", 0700);
+    check("הרשאות $lbl: לא נכתב שום קובץ", glob("$outside/perm/*") === []);
+    @rmdir("$outside/perm");
+}
+@rmdir($outside);
+check('progress: managers ו-progress_dir נטענים מקונפיג השרת', (function () use ($tmp) {
+    file_put_contents("$tmp/pcfg.json", json_encode(['progress' => ['managers' => ['mgr-9']], 'progress_dir' => '/srv/x']));
+    $lc = academy_load_config("$tmp/pcfg.json");
+    return $lc['progress']['managers'] === ['mgr-9'] && $lc['progress_dir'] === '/srv/x';
+})());
+
+// תיקייה חוקית: 0700, מחוץ לעץ — קריאה וכתיבה עובדות
 $pdir = sys_get_temp_dir() . '/ca-progress-' . getmypid();
 @mkdir($pdir, 0700);
-$pcfg = $def + ['progress' => ['managers' => ['mgr-1']]];
-$pcfg['progress'] = ['managers' => ['mgr-1']];
+chmod($pdir, 0700);
+$pcfg = $mgrCfg(['progress_dir' => $pdir]);
 $as = fn(?string $sub, bool $granted = true) => ['server' => $sub === null ? [] : ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => $granted])],
-    'sapi' => 'litespeed', 'dir' => $pdir, 'now' => '2026-11-23T12:00:00Z'];
+    'sapi' => 'litespeed', 'now' => '2026-11-23T12:00:00Z'];
 $W = fn(array $body, ?string $sub = 'mgr-1') => academy_api_progress_write('POST', $pcfg, 'application/json', json_encode($body, JSON_UNESCAPED_UNICODE), $as($sub));
 $R = fn(?string $sub, array $q = [], bool $granted = true) => academy_api_progress_read('GET', $pcfg, $q, $as($sub, $granted));
 
@@ -617,15 +683,6 @@ check('progress: אנונימי → 403', $R(null)[0] === 403);
 check('progress: granted=false → 403', $R('u-1', [], false)[0] === 403);
 [$st, $body] = $R('u-1');
 check('progress: לומד בלי רישום → ריק, לא שגיאה', $st === 200 && $body['ok'] === true && $body['progress'] === null);
-file_put_contents("$tmp/pcfg.json", json_encode(['progress' => ['managers' => ['mgr-9']], 'progress_dir' => '/srv/x']));
-$lc = academy_load_config("$tmp/pcfg.json");
-check('progress: managers ו-progress_dir נטענים מקונפיג השרת', $lc['progress']['managers'] === ['mgr-9'] && $lc['progress_dir'] === '/srv/x');
-check('progress: תיקיית ברירת מחדל — data/progress', str_ends_with(academy_progress_dir($def), '/data/progress'));
-foreach (['בתוך הריפו' => __DIR__ . '/x', 'public_html' => '/home2/u/public_html/p', 'יחסי' => 'data/p', '..' => '/tmp/../etc'] as $lbl => $bad) {
-    [$st, $body] = academy_api_progress_read('GET', ['progress_dir' => $bad] + $def, [], ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'u', 'granted' => true])], 'sapi' => 'litespeed']);
-    check("progress_dir $lbl → נכשל בלי נתיב", $st === 500 && $body['code'] === 'progress_dir_unsafe' && !str_contains(json_encode($body), $bad));
-}
-check('.gitignore: data/progress/', str_contains((string) file_get_contents(__DIR__ . '/../.gitignore'), 'data/progress/'));
 check('progress: אין מנהל כברירת מחדל', ($def['progress']['managers'] ?? []) === [] && academy_progress_actor($def, ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])], 'litespeed')['role'] === 'viewer');
 // כתיבה: רק מנהל, רק JSON, רק POST
 check('progress-write: לומד → 403', $W(['action' => 'register', 'learnerId' => 'lrn-a', 'sub' => 'u-1'], 'u-1')[0] === 403);
@@ -683,7 +740,23 @@ $rawLog = (string) file_get_contents("$pdir/audit.log");
 check('audit: בלי תוכן ראיה (reference)', !str_contains($rawLog, 'evidence/lrn-a') && !str_contains($rawLog, 'reference'));
 check('audit: שום שורה לדחיות', count(array_filter($log, fn($e) => $e['action'] === 'skill_status')) === 1);
 check('progress: הרשאות קבצים 0640', (fileperms($fileA) & 0o777) === 0o640 && (fileperms("$pdir/audit.log") & 0o777) === 0o640);
+check('תיקייה חוקית: הקבצים נוצרו שם', is_file("$pdir/learner-lrn-a.json") && is_file("$pdir/learners.json") && is_file("$pdir/audit.log"));
+// כשל כתיבה — לא נשאר קובץ חלקי: יעד ה-rename הוא תיקייה, ולכן ההחלפה נכשלת
+mkdir("$pdir/learner-lrn-c.json");
+[$st, $body] = $W(['action' => 'report', 'learnerId' => 'lrn-c', 'report' => $rep]);
+check('כשל כתיבה → 500 בלי נתיב', $st === 500 && $body['code'] === 'internal' && !str_contains(json_encode($body), $pdir));
+check('כשל כתיבה → אין קובץ זמני שנשאר', glob("$pdir/*.tmp-*") === []);
+rmdir("$pdir/learner-lrn-c.json");
+// שגיאות בלי נתוני תלמיד: תוכן מזויף בקובץ לא תקין לא יוצא ללומד
+file_put_contents("$pdir/learner-lrn-a.json", json_encode(['schema' => 'progress-1', 'learnerId' => 'lrn-a', 'updatedAt' => null, 'skills' => [],
+    'lessons' => [], 'assessments' => [], 'evidence' => [['id' => 'ev-9', 'kind' => 'other', 'reference' => '/home/SECRET-STUDENT-NOTE', 'assessor' => 'x', 'createdAt' => '2026-01-01T00:00:00Z']], 'reports' => []]));
+[$st, $body] = $R('u-1');
+check('קובץ לא תקין → 422 ללומד בלי פירוט ובלי תוכן', $st === 422 && !isset($body['errors']) && !str_contains(json_encode($body, JSON_UNESCAPED_UNICODE), 'SECRET-STUDENT'));
 array_map('unlink', glob("$pdir/*") ?: []); @rmdir($pdir);
+// הריפו לא השתנה, ואין בו קובץ נתוני לומד
+check('הבדיקות לא יצרו שום קובץ בריפו', $listRepo() === $repoBefore, implode(', ', array_diff($listRepo(), $repoBefore)));
+$learnerFiles = array_filter($listRepo(), fn($f) => preg_match('~/(learner-[^/]+\.json|learners\.json|audit\.log)$~', $f));
+check('אין קובצי לומד בעץ הריפו', $learnerFiles === [], implode(', ', $learnerFiles));
 
 // תוכנית האקדמיה לא מחזירה שדה לומד
 [$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($appr))));

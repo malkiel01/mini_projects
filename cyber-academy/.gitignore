@@ -1,5 +1,4 @@
 # נתוני ריצה וסודות — לעולם לא בגיט (בנוסף ל-data/.htaccess ול-exclude ב-deploy.yml)
 data/config.json
 data/cache/
-data/progress/
 *.token

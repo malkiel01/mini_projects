@@ -3,8 +3,9 @@
  * התקדמות לומד — תשתית (אפיון: docs/spec/student-progress.md). נפרד לגמרי מתוכנית האקדמיה:
  * curriculum.php לא קורא מכאן ולא מחזיר שדה לומד.
  *
- * - אחסון: קובץ JSON לכל לומד ב-progress_dir (ברירת מחדל data/progress/ — חסום מהדפדפן, מוחרג מגיט ומהפריסה),
- *   ומפתח sub → learnerId ב-learners.json באותה תיקייה. אין מקור מ-GitHub או מ-Issues.
+ * - אחסון: קובץ JSON לכל לומד ב-progress_dir — **רק** נתיב מוחלט, קיים, מחוץ לעץ האתר ולא פתוח לכולם (הוראת מנהל 00).
+ *   אין ברירת מחדל ואין יצירת תיקייה: בלי תיקייה תקינה — קריאה וכתיבה חסומות (503 progress_unavailable), ושום קובץ
+ *   לא נפתח. מפתח sub → learnerId ב-learners.json באותה תיקייה. אין מקור מ-GitHub או מ-Issues.
  * - שלוש קטגוריות לכל מיומנות, שלא מתמזגות: verified (הערכה מאושרת) · reported (דיווח מורה, "ממתין לאימות", לא
  *   משנה סטטוס) · not_assessed (ברירת המחדל, "לא הוערך" — לא 0).
  * - כללי המצב נאכפים כאן, בשרת: academy_progress_validate דוחה קובץ שמפר אותם, וכל כתיבה עוברת אותו.
@@ -24,7 +25,7 @@ const ACADEMY_PROGRESS_ASSISTANCE = ['none', 'hints', 'guided', 'full'];
 
 final class AcademyProgressError extends RuntimeException {
     public function __construct(string $m, public readonly int $http = 422, public readonly string $errorCode = 'progress_invalid',
-                                public readonly array $errors = []) {
+                                public readonly array $errors = [], public readonly ?string $reason = null) {
         parent::__construct($m);
     }
 }
@@ -32,16 +33,23 @@ final class AcademyProgressError extends RuntimeException {
 // ---------------------------------------------------------------- אחסון
 
 /**
- * ברירת מחדל: data/progress/ (חסום ב-data/.htaccess, מוחרג מהפריסה ומגיט). נתיב אחר — רק מוחלט ומחוץ לעץ האתר
- * (כמו קובץ האסימון); אחרת נכשלים — לא כותבים נתוני לומד למקום שהדפדפן מגיע אליו.
+ * התיקייה של נתוני הלומדים — או חריגה (503 progress_unavailable + reason), בלי נתיב בהודעה:
+ *   ריק → progress_dir_missing · לא מוחלט → progress_dir_not_absolute · בתוך עץ האתר (גם דרך realpath / קישור
+ *   סימבולי, או עם ..) → progress_dir_unsafe · לא קיימת / לא תיקייה → progress_dir_missing ·
+ *   קריאה או כתיבה לכולם (o+r / o+w) → progress_dir_insecure.
+ * אין ברירת מחדל, ולא נוצרת תיקייה.
  */
 function academy_progress_dir(array $config): string {
+    $fail = fn(string $reason) => new AcademyProgressError('נתוני ההתקדמות אינם זמינים — אחסון לא מוגדר כראוי', 503, 'progress_unavailable', [], $reason);
     $d = trim((string) ($config['progress_dir'] ?? ''));
-    if ($d === '') return ACADEMY_DIR . '/data/progress';
-    if (!str_starts_with($d, '/') || str_contains($d, '..') || academy_path_in_webroot($d)) {
-        throw new AcademyProgressError('progress_dir חייב להיות נתיב מוחלט מחוץ לעץ האתר', 500, 'progress_dir_unsafe');
-    }
-    return rtrim($d, '/');
+    if ($d === '') throw $fail('progress_dir_missing');
+    if (!str_starts_with($d, '/')) throw $fail('progress_dir_not_absolute');
+    if (preg_match('~(^|/)\.\.(/|$)~', $d) || academy_path_in_webroot($d)) throw $fail('progress_dir_unsafe');
+    $real = realpath($d);
+    if ($real === false || !is_dir($real)) throw $fail('progress_dir_missing');
+    if (academy_path_in_webroot($real)) throw $fail('progress_dir_unsafe');
+    if ((fileperms($real) & 0o006) !== 0) throw $fail('progress_dir_insecure');
+    return $real;
 }
 
 /** מזהה לומד פנימי לפי sub של הפלטפורמה, או null אם אינו רשום. */
@@ -66,18 +74,21 @@ function academy_progress_empty(string $learnerId): array {
 }
 
 function academy_progress_save(string $dir, array $p): void {
-    if (!is_dir($dir)) @mkdir($dir, 0750, true);
-    $f = "$dir/learner-{$p['learnerId']}.json";
-    $tmp = "$f.tmp";
-    if (@file_put_contents($tmp, json_encode($p, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX) === false || !@rename($tmp, $f)) {
+    academy_progress_write_atomic("$dir/learner-{$p['learnerId']}.json", json_encode($p, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+}
+
+/** כתיבה אטומית: קובץ זמני באותה תיקייה ואז rename. כשל — הזמני נמחק, ולא נשאר קובץ חלקי. התיקייה לא נוצרת. */
+function academy_progress_write_atomic(string $f, string $content): void {
+    $tmp = $f . '.tmp-' . bin2hex(random_bytes(6));
+    $ok = @file_put_contents($tmp, $content, LOCK_EX) !== false && @chmod($tmp, 0640) && @rename($tmp, $f);
+    if (!$ok) {
+        if (is_file($tmp)) @unlink($tmp);
         throw new AcademyProgressError('שמירת ההתקדמות נכשלה', 500, 'internal');
     }
-    @chmod($f, 0640);
 }
 
 /** יומן ביקורת — שורה לכל שינוי. בלי reference ובלי תוכן ראיה. */
 function academy_progress_audit(string $dir, array $entry): void {
-    if (!is_dir($dir)) @mkdir($dir, 0750, true);
     $allowed = array_intersect_key($entry, array_flip(['at', 'by', 'learnerId', 'action', 'target', 'from', 'to', 'assessmentId', 'evidenceIds', 'reportId']));
     @file_put_contents("$dir/audit.log", json_encode($allowed, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
     @chmod("$dir/audit.log", 0640);
