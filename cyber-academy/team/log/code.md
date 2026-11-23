@@ -252,3 +252,10 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - **מודל:** `_av2_safe_refid` — הגנה נוספת, נתיב לא יוצא גם אם הולידציה עוקפה.
 - **בדיקות:** נתיבים (`evidence/x.md`, `../x`, `/etc/passwd`, `.hidden`, `a..b`, `C:\x`, `~/x`, ריק) נדחים; מזהה לא קיים / מרשימה לא מתאימה נדחה; תקינים מתקבלים; snapshot 422 על נתיב; בתשובה רק מזהה תקין. סורק נתיבים רקורסיבי על כל מחרוזת (מפתחות וערכים) בפלט curriculum.php ו-snapshot v2.
 - **בדיקות:** run.php 944 → 966. check.js ✓.
+
+## F5 — Origin חובה בכתיבה (הכרעת מנהל 00) + חוזה referenceId
+- **F5:** `academy_progress_same_origin` — `Origin` חובה ובדיוק `https://<HTTP_HOST>`; `Sec-Fetch-Site` אם נשלח = `same-origin`. חריג רק sapi `cli` בלי כותרות. GET ללא שינוי.
+- **מטריצה ב-run.php** (11 שורות + GET): חסר/null/תת-דומיין/http/פורט/נתיב/בלי HOST/cross-site/בלי זהות → 403; תואם → 200; GET בלי Origin → 200. הדפסה: `CA_F5_MATRIX=1`.
+- **בדיקה שעודכנה בכוונה:** תהליך-הבן של בדיקת המקביליות שלח רק `Sec-Fetch-Site` — נוספו `HTTP_HOST` ו-`Origin` תואם (אחרת 403 לפי הכלל החדש).
+- **תיעוד:** `docs/spec/student-progress.md` (F5, כלי לא-דפדפן, `mp_session` SameSite=Lax), `docs/spec/referenceid-contract.md` (טבלה + בדיקות).
+- **בדיקות:** run.php 966 → 979. check.js ✓.

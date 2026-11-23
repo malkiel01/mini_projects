@@ -24,21 +24,21 @@ function _ap_unavailable(AcademyProgressError $e, ?array $actor): array {
 }
 
 /**
- * F5 — בקשת כתיבה רק מאותו מקור. Sec-Fetch-Site (אם נשלח) חייב להיות same-origin; Origin (אם נשלח) חייב להיות
- * המארח של הבקשה. בלי שתי הכותרות — נדחה, חוץ מ-CLI (בדיקות). דפדפן מודרני שולח את שתיהן ב-fetch.
+ * F5 — בקשת כתיבה רק מאותו מקור (הכרעת מנהל 00):
+ *  - Origin חובה, ובדיוק "https://<HTTP_HOST>" (סכמה ומארח זהים). חסר / null / תת-דומיין / http → נדחה.
+ *  - Sec-Fetch-Site, אם נשלח, חייב להיות same-origin.
+ *  - חריג יחיד: sapi "cli" בלי שום כותרת (הבדיקות) — לא נגיש מהרשת.
+ * כותרות ניתנות לזיוף בכלי שאינו דפדפן; ההגנה על הכתיבה היא זהות המנהל מהשער (PLATFORM_USER).
+ * קריאות (GET) אינן עוברות כאן.
  */
 function academy_progress_same_origin(array $server, string $sapi): bool {
     $site = $server['HTTP_SEC_FETCH_SITE'] ?? null;
     $origin = $server['HTTP_ORIGIN'] ?? null;
     if ($site === null && $origin === null) return $sapi === 'cli';
     if ($site !== null && strtolower((string) $site) !== 'same-origin') return false;
-    if ($origin !== null) {
-        $u = parse_url((string) $origin);
-        if (!is_array($u) || empty($u['host']) || !in_array($u['scheme'] ?? '', ['https', 'http'], true)) return false;
-        $o = strtolower($u['host'] . (isset($u['port']) ? ':' . $u['port'] : ''));
-        if ($o !== strtolower((string) ($server['HTTP_HOST'] ?? ''))) return false;
-    }
-    return true;
+    $host = strtolower(trim((string) ($server['HTTP_HOST'] ?? '')));
+    if ($origin === null || $host === '') return false;
+    return strtolower((string) $origin) === 'https://' . $host;
 }
 
 /** GET — לומד רואה רק את עצמו; מנהל — כל לומד (?learner=). בלי קובץ — תשובה ריקה. */
