@@ -24,3 +24,10 @@
 - `schemaVersion` מנתב: v1 → `validate.php`/`model.php`/`screens.js`; v2 → `validate-v2.php`/`model-v2.php`/`screens-v2.js` (`CA.screensV2`, `#/module/<id>`).
 - מפרט השדות של v2 — `academy_v2_spec()`. שינוי בחוזה = שם + fixture ב-`tests/fixtures/v2/` + בדיקת jsonschema על ה-schema המקורי.
 - github + v2: `contract: "v2"` + `github.v2_path`. הסינון `academy_v2_curriculum_only` — רק סילבוס מאושר, בלי נתוני לומד. לא להסיר בלי החלטה.
+
+## בדיקת דפדפן — מאז F11
+
+`php -S` דורש זהות מורשית:
+`php -S 127.0.0.1:8765 -t . -d auto_prepend_file=$PWD/cyber-academy/tests/browser/dev-identity.php`
+
+הנתיב חייב להיות מוחלט — עם נתיב יחסי `snapshot.php` מחזיר 500.

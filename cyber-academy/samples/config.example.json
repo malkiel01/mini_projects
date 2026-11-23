@@ -13,5 +13,9 @@
     "contract_v2_path": "dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json",
     "token_file": ""
   },
-  "cache_ttl": 120
+  "cache_ttl": 120,
+  "progress_dir": "",
+  "progress": {
+    "managers": []
+  }
 }

@@ -69,6 +69,9 @@ function academy_default_config(): array {
             'token_file' => '',
         ],
         'cache_ttl' => 120,
+        // התקדמות לומד (lib/progress.php): תיקייה — נתיב מוחלט מחוץ לאתר; ריק = נתוני לומד חסומים. מנהלים לפי sub (ברירת מחדל: אין).
+        'progress_dir' => '',
+        'progress' => ['managers' => []],
     ];
 }
 
