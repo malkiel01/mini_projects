@@ -69,6 +69,9 @@ function academy_default_config(): array {
             'token_file' => '',
         ],
         'cache_ttl' => 120,
+        // התקדמות לומד (lib/progress.php): תיקייה (ריק = data/progress/) ומנהלים לפי sub. ברירת מחדל — אין מנהל.
+        'progress_dir' => '',
+        'progress' => ['managers' => []],
     ];
 }
 

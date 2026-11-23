@@ -1,0 +1,99 @@
+{
+ "schema": "progress-1",
+ "learnerId": "sample-learner",
+ "updatedAt": "2026-11-20T10:00:00Z",
+ "skills": {
+  "sk-1": {
+   "status": "mastered",
+   "updatedAt": "2026-11-18T12:00:00Z",
+   "assessmentIds": [
+    "as-1"
+   ],
+   "evidenceIds": [
+    "ev-1"
+   ]
+  },
+  "sk-2": {
+   "status": "theory_demonstrated",
+   "updatedAt": "2026-11-17T12:00:00Z",
+   "assessmentIds": [
+    "as-2"
+   ],
+   "evidenceIds": []
+  },
+  "sk-3": {
+   "status": "learning",
+   "updatedAt": null,
+   "assessmentIds": [],
+   "evidenceIds": []
+  }
+ },
+ "lessons": {
+  "l-1": {
+   "completed": true,
+   "evidenceIds": [
+    "ev-1"
+   ],
+   "approvedBy": "role-manager",
+   "approvedAt": "2026-11-18T13:00:00Z"
+  },
+  "l-2": {
+   "completed": false,
+   "evidenceIds": [],
+   "approvedBy": null,
+   "approvedAt": null
+  }
+ },
+ "assessments": [
+  {
+   "id": "as-1",
+   "skillIds": [
+    "sk-1"
+   ],
+   "status": "evaluated",
+   "assistance": "none",
+   "assessor": "מורה דוגמה",
+   "assessedAt": "2026-11-18T12:00:00Z",
+   "evidenceIds": [
+    "ev-1"
+   ],
+   "approvedBy": "role-manager",
+   "approvedAt": "2026-11-18T13:00:00Z"
+  },
+  {
+   "id": "as-2",
+   "skillIds": [
+    "sk-2"
+   ],
+   "status": "evaluated",
+   "assistance": "hints",
+   "assessor": "מורה דוגמה",
+   "assessedAt": "2026-11-17T12:00:00Z",
+   "evidenceIds": [],
+   "approvedBy": "role-manager",
+   "approvedAt": "2026-11-17T13:00:00Z"
+  }
+ ],
+ "evidence": [
+  {
+   "id": "ev-1",
+   "kind": "lab_report",
+   "reference": "evidence/sample-learner/lab-1.md",
+   "assessor": "מורה דוגמה",
+   "createdAt": "2026-11-18T11:00:00Z",
+   "approvedBy": "role-manager",
+   "approvedAt": "2026-11-18T13:00:00Z"
+  }
+ ],
+ "reports": [
+  {
+   "id": "rp-1",
+   "at": "2026-11-19T09:00:00Z",
+   "reporter": "מורה דוגמה",
+   "skillIds": [
+    "sk-4"
+   ],
+   "summary": "דוגמה · דיווח מורה שטרם אומת"
+  }
+ ]
+}

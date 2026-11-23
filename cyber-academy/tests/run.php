@@ -9,6 +9,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 require_once __DIR__ . '/../lib/api.php';
+require_once __DIR__ . '/../lib/progress-api.php';
 
 $pass = 0; $fail = 0;
 function check(string $name, bool $ok, string $detail = ''): void {
@@ -578,11 +579,135 @@ check('אין קריאה ל-issues/comments/pulls בקוד', $issueHits === [], 
 check('הבדיקות לא השאירו מטמון ב-data/ של הריפו', !is_dir(__DIR__ . '/../data/cache'));
 array_map('unlink', glob("$tokDir/*") ?: []); @rmdir($tokDir);
 
+// ---------- התקדמות לומד (progress-1) ----------
+$pfx = fn(string $n) => json_decode((string) file_get_contents(__DIR__ . "/fixtures/progress/$n.json"), true);
+$pv = $pfx('sample-learner');
+check('progress: לומד הדוגמה תקין', academy_progress_validate($pv) === [], implode(' | ', academy_progress_validate($pv)));
+$pb = glob(__DIR__ . '/fixtures/progress/broken/*.json');
+check('progress: יש fixtures שבורים', count($pb) >= 15);
+foreach ($pb as $f) check('progress שבור נכשל: ' . basename($f), academy_progress_validate(json_decode((string) file_get_contents($f), true)) !== []);
+$pwhy = ['mastered-no-evidence' => 'ראיה מאומתת', 'mastered-evidence-not-verified' => 'ראיה מאומתת', 'mastered-no-approvedBy' => 'מאושרת',
+    'mastered-assisted' => 'assistance: none', 'practice-without-assessment' => 'מאושרת', 'evidence-reference-dotdot' => 'הפניה לא בטוחה',
+    'evidence-reference-absolute' => 'נתיב מוחלט', 'lesson-completed-no-approval' => 'אישור מנהל', 'lesson-completed-no-evidence' => 'ראיה מאומתת',
+    'lesson-completed-unverified-evidence' => 'ראיה מאומתת', 'report-with-status' => 'אינו קיים בחוזה'];
+foreach ($pwhy as $n => $w) {
+    $e = academy_progress_validate($pfx("broken/$n"));
+    check("progress $n: הסיבה \"$w\"", (bool) array_filter($e, fn($x) => str_contains($x, $w)), implode(' | ', $e));
+}
+// שלוש קטגוריות, לא מתמזגות; בלי אחוז
+$view = academy_progress_view($pv, ['sk-1', 'sk-2', 'sk-3', 'sk-4', 'sk-5']);
+check('progress: verified / reported / not_assessed', $view['skills']['sk-1']['category'] === 'verified' && $view['skills']['sk-4']['category'] === 'reported'
+    && $view['skills']['sk-5']['category'] === 'not_assessed' && $view['skills']['sk-3']['category'] === 'not_assessed');
+check('progress: דיווח מורה לא משנה סטטוס', $view['skills']['sk-4']['status'] === 'not_assessed' && $view['skills']['sk-4']['pendingReports'] === 1);
+check('progress: נלמד והוכח נפרדים, רק ממאומת', $view['learned'] === 1 && $view['proven'] === 1);
+check('progress: אין אחוז', !preg_match('/percent|pct|ratio|%/', json_encode($view)));
+check('progress: השיעור שהושלם — רק עם ראיה ואישור', $view['lessonsCompleted'] === ['l-1']);
+
+// גישה וכתיבה — תיקייה זמנית מחוץ לריפו
+$pdir = sys_get_temp_dir() . '/ca-progress-' . getmypid();
+@mkdir($pdir, 0700);
+$pcfg = $def + ['progress' => ['managers' => ['mgr-1']]];
+$pcfg['progress'] = ['managers' => ['mgr-1']];
+$as = fn(?string $sub, bool $granted = true) => ['server' => $sub === null ? [] : ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => $granted])],
+    'sapi' => 'litespeed', 'dir' => $pdir, 'now' => '2026-11-23T12:00:00Z'];
+$W = fn(array $body, ?string $sub = 'mgr-1') => academy_api_progress_write('POST', $pcfg, 'application/json', json_encode($body, JSON_UNESCAPED_UNICODE), $as($sub));
+$R = fn(?string $sub, array $q = [], bool $granted = true) => academy_api_progress_read('GET', $pcfg, $q, $as($sub, $granted));
+
+check('progress: אנונימי → 403', $R(null)[0] === 403);
+check('progress: granted=false → 403', $R('u-1', [], false)[0] === 403);
+[$st, $body] = $R('u-1');
+check('progress: לומד בלי רישום → ריק, לא שגיאה', $st === 200 && $body['ok'] === true && $body['progress'] === null);
+file_put_contents("$tmp/pcfg.json", json_encode(['progress' => ['managers' => ['mgr-9']], 'progress_dir' => '/srv/x']));
+$lc = academy_load_config("$tmp/pcfg.json");
+check('progress: managers ו-progress_dir נטענים מקונפיג השרת', $lc['progress']['managers'] === ['mgr-9'] && $lc['progress_dir'] === '/srv/x');
+check('progress: תיקיית ברירת מחדל — data/progress', str_ends_with(academy_progress_dir($def), '/data/progress'));
+foreach (['בתוך הריפו' => __DIR__ . '/x', 'public_html' => '/home2/u/public_html/p', 'יחסי' => 'data/p', '..' => '/tmp/../etc'] as $lbl => $bad) {
+    [$st, $body] = academy_api_progress_read('GET', ['progress_dir' => $bad] + $def, [], ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'u', 'granted' => true])], 'sapi' => 'litespeed']);
+    check("progress_dir $lbl → נכשל בלי נתיב", $st === 500 && $body['code'] === 'progress_dir_unsafe' && !str_contains(json_encode($body), $bad));
+}
+check('.gitignore: data/progress/', str_contains((string) file_get_contents(__DIR__ . '/../.gitignore'), 'data/progress/'));
+check('progress: אין מנהל כברירת מחדל', ($def['progress']['managers'] ?? []) === [] && academy_progress_actor($def, ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])], 'litespeed')['role'] === 'viewer');
+// כתיבה: רק מנהל, רק JSON, רק POST
+check('progress-write: לומד → 403', $W(['action' => 'register', 'learnerId' => 'lrn-a', 'sub' => 'u-1'], 'u-1')[0] === 403);
+check('progress-write: אנונימי → 403', $W(['action' => 'register', 'learnerId' => 'lrn-a', 'sub' => 'u-1'], null)[0] === 403);
+check('progress-write: GET → 405', academy_api_progress_write('GET', $pcfg, 'application/json', '{}', $as('mgr-1'))[0] === 405);
+check('progress-write: טופס (לא JSON) → 415', academy_api_progress_write('POST', $pcfg, 'application/x-www-form-urlencoded', 'a=1', $as('mgr-1'))[0] === 415);
+check('progress read: POST → 405', academy_api_progress_read('POST', $pcfg, [], $as('u-1'))[0] === 405);
+check('progress-write: רישום', $W(['action' => 'register', 'learnerId' => 'lrn-a', 'sub' => 'u-1'])[0] === 200
+    && $W(['action' => 'register', 'learnerId' => 'lrn-b', 'sub' => 'u-2'])[0] === 200);
+[$st, $body] = $R('u-1');
+check('progress: רשום בלי קובץ → ריק', $st === 200 && $body['learnerId'] === 'lrn-a' && $body['progress']['counts'] === ['verified' => 0, 'reported' => 0, 'notAssessed' => 0]);
+// לומד א' לא רואה את ב'
+check('progress: לומד מנסה לקרוא לומד אחר → 403', $R('u-1', ['learner' => 'lrn-b'])[0] === 403);
+check('progress: לומד קורא את עצמו במפורש → 200', $R('u-1', ['learner' => 'lrn-a'])[0] === 200);
+check('progress: מנהל קורא כל לומד', $R('mgr-1', ['learner' => 'lrn-b'])[0] === 200);
+check('progress: מזהה לא תקין → 400', $R('mgr-1', ['learner' => '../x'])[0] === 400);
+// דיווח מורה — לא משנה סטטוס
+$rep = ['id' => 'rp-1', 'at' => '2026-11-22T10:00:00Z', 'reporter' => 'מורה דוגמה', 'skillIds' => ['sk-1'], 'summary' => 'דוגמה'];
+[$st, $body] = $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $rep]);
+check('progress: דיווח נשמר, הסטטוס לא השתנה', $st === 200 && $body['progress']['skills']['sk-1']['category'] === 'reported'
+    && $body['progress']['skills']['sk-1']['status'] === 'not_assessed');
+[$st] = $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $rep + ['status' => 'mastered']]);
+check('progress: דיווח עם status → נדחה', $st === 422);
+// mastered בלי ראיה / בלי אישור → נדחה, והקובץ לא משתנה
+$fileA = "$pdir/learner-lrn-a.json";
+$snap = file_get_contents($fileA);
+$asm = ['id' => 'as-1', 'skillIds' => ['sk-1'], 'status' => 'evaluated', 'assistance' => 'none', 'assessor' => 'מורה דוגמה',
+    'assessedAt' => '2026-11-22T11:00:00Z', 'evidenceIds' => [], 'approvedBy' => 'role-manager', 'approvedAt' => '2026-11-22T12:00:00Z'];
+$master = ['sk-1' => ['status' => 'mastered', 'updatedAt' => '2026-11-22T12:00:00Z', 'assessmentIds' => ['as-1'], 'evidenceIds' => []]];
+[$st, $body] = $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'assessments' => [$asm], 'skills' => $master]);
+check('progress: mastered בלי ראיה → 422', $st === 422 && (bool) array_filter($body['errors'], fn($e) => str_contains($e, 'ראיה מאומתת')));
+$ev = ['id' => 'ev-1', 'kind' => 'lab_report', 'reference' => 'evidence/lrn-a/lab-1.md', 'assessor' => 'מורה דוגמה', 'createdAt' => '2026-11-22T10:30:00Z',
+    'approvedBy' => 'role-manager', 'approvedAt' => '2026-11-22T12:00:00Z'];
+[$st] = $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'evidence' => [$ev], 'assessments' => [['approvedBy' => null] + $asm], 'skills' => $master]);
+check('progress: mastered בלי approvedBy → 422', $st === 422);
+[$st] = $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'evidence' => [['reference' => '../../etc/passwd'] + $ev], 'assessments' => [$asm], 'skills' => $master]);
+check('progress: ראיה עם .. → 422', $st === 422);
+[$st] = $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'evidence' => [['reference' => '/home/u/x.md'] + $ev], 'assessments' => [$asm], 'skills' => $master]);
+check('progress: ראיה עם נתיב מוחלט → 422', $st === 422);
+check('progress: אחרי דחיות הקובץ לא השתנה', file_get_contents($fileA) === $snap);
+check('progress: שיעור לא מסומן "הושלם" בלי אישור', $W(['action' => 'apply', 'learnerId' => 'lrn-a',
+    'lessons' => ['l-1' => ['completed' => true, 'evidenceIds' => [], 'approvedBy' => null, 'approvedAt' => null]]])[0] === 422);
+// תקין: הערכה עצמאית + ראיה מאומתת + אישור
+[$st, $body] = $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'evidence' => [$ev], 'assessments' => [['evidenceIds' => ['ev-1']] + $asm],
+    'skills' => ['sk-1' => ['evidenceIds' => ['ev-1']] + $master['sk-1']]]);
+check('progress: mastered תקין → 200, verified', $st === 200 && $body['progress']['skills']['sk-1']['category'] === 'verified'
+    && $body['progress']['skills']['sk-1']['status'] === 'mastered', json_encode($body, JSON_UNESCAPED_UNICODE));
+// יומן ביקורת
+$log = array_map(fn($l) => json_decode($l, true), array_filter(explode("\n", (string) file_get_contents("$pdir/audit.log"))));
+$chg = array_values(array_filter($log, fn($e) => $e['action'] === 'skill_status'));
+check('audit: שינוי סטטוס נרשם — מי, מתי, ממה למה, אילו ראיות', count($chg) === 1 && $chg[0]['by'] === 'mgr-1' && $chg[0]['at'] === '2026-11-23T12:00:00Z'
+    && $chg[0]['from'] === 'not_assessed' && $chg[0]['to'] === 'mastered' && $chg[0]['evidenceIds'] === ['ev-1'] && $chg[0]['target'] === 'sk-1');
+check('audit: גם רישום ודיווח נרשמו', (bool) array_filter($log, fn($e) => $e['action'] === 'report') && (bool) array_filter($log, fn($e) => $e['action'] === 'register'));
+$rawLog = (string) file_get_contents("$pdir/audit.log");
+check('audit: בלי תוכן ראיה (reference)', !str_contains($rawLog, 'evidence/lrn-a') && !str_contains($rawLog, 'reference'));
+check('audit: שום שורה לדחיות', count(array_filter($log, fn($e) => $e['action'] === 'skill_status')) === 1);
+check('progress: הרשאות קבצים 0640', (fileperms($fileA) & 0o777) === 0o640 && (fileperms("$pdir/audit.log") & 0o777) === 0o640);
+array_map('unlink', glob("$pdir/*") ?: []); @rmdir($pdir);
+
+// תוכנית האקדמיה לא מחזירה שדה לומד
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($appr))));
+$keys = [];
+array_walk_recursive($body, function ($v, $k) use (&$keys) { $keys[] = (string) $k; });
+$walk = function ($a) use (&$walk, &$keys) { foreach ($a as $k => $v) { $keys[] = (string) $k; if (is_array($v)) $walk($v); } };
+$walk($body);
+check('curriculum.php: אין מפתח של לומד (קטע)', $st === 200 && !array_intersect(array_unique($keys),
+    ['learnerId', 'learner', 'progress', 'competencies', 'assessments', 'evidence', 'reports', 'skillsProgress', 'measure', 'competencyStatus']), implode(',', array_unique($keys)));
+$keys = [];
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($full2))));
+$walk($body);
+check('curriculum.php: עם מיומנויות — עדיין בלי מפתח לומד', $st === 200 && count($body['curriculum']['modules'][0]['skills']) > 0 && !array_intersect(array_unique($keys),
+    ['learnerId', 'learner', 'progress', 'competencies', 'assessments', 'evidence', 'reports', 'skillsProgress', 'measure', 'competencyStatus']), implode(',', array_unique($keys)));
+check('curriculum.php לא נוגע ב-progress', !str_contains((string) file_get_contents(__DIR__ . '/../lib/api.php'), 'progress'));
+check('progress לא נוגע ב-GitHub', !preg_match('/GithubAcademySource|api\.github\.com|academy_source\(/', (string) file_get_contents(__DIR__ . '/../lib/progress.php') . file_get_contents(__DIR__ . '/../lib/progress-api.php')));
+
 // ---------- הרשאות ----------
 check('viewer קורא', academy_can('snapshot.read', 'viewer'));
 check('viewer לא כותב', !academy_can('snapshot.write', 'viewer'));
 check('תפקיד לא מוכר — כלום', !academy_can('snapshot.read', 'nobody'));
-check('אין שום הרשאת כתיבה מוגדרת', !preg_grep('/write|edit|delete/', array_merge(...array_values(ACADEMY_ROLES))));
+check('viewer בלי שום הרשאת כתיבה', !preg_grep('/write|edit|delete/', ACADEMY_ROLES['viewer']));
+check('הרשאת הכתיבה היחידה במערכת: progress.write של manager', array_values(preg_grep('/write|edit|delete/', array_merge(...array_values(ACADEMY_ROLES)))) === ['progress.write']
+    && in_array('progress.write', ACADEMY_ROLES['manager'], true));
 
 // ---------- גבולות הקוד ----------
 $root = realpath(__DIR__ . '/..');

@@ -14,7 +14,9 @@ declare(strict_types=1);
 
 /** תפקיד → הרשאות. קריאה בלבד בשלב הזה: אין שום הרשאת כתיבה. */
 const ACADEMY_ROLES = [
-    'viewer' => ['snapshot.read', 'curriculum.read'],
+    'viewer' => ['snapshot.read', 'curriculum.read', 'progress.read.self'],
+    // מנהל האקדמיה — sub שמופיע ב-progress.managers בקונפיג השרת (lib/progress.php). אין מפתח או סוד חדש.
+    'manager' => ['snapshot.read', 'curriculum.read', 'progress.read.self', 'progress.read.all', 'progress.write'],
     // עתיד (לא פעיל): 'instructor' => ['snapshot.read', 'assessment.read'], 'admin' => [...]
 ];
 

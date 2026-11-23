@@ -142,3 +142,20 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
   - `https://api.github.com/repos/malkiel01/offensive-cyber-academy/commits/main`
   - `https://api.github.com/repos/malkiel01/offensive-cyber-academy/contents/dashboard/data/curriculum-v2-approved.json?ref=<sha>`
 - `docs/spec/github-activation.md` — מה מגדירים בשרת, ומה בודקים אחרי.
+
+## 2026-11-23 · התקדמות לומד — תשתית, אפיון ובדיקות (PR טיוטה, בלי מיזוג)
+
+- **חדש:**
+  - `lib/progress.php` — אחסון, אימות כללי המצב, תצוגה בשלוש קטגוריות, מי השואל.
+  - `lib/progress-api.php`.
+  - `api/progress.php` (GET), `api/progress-write.php` (POST, מנהל).
+  - `docs/spec/student-progress.md`.
+  - `tests/fixtures/progress/` — סינתטי בלבד, 18 שבורים.
+- **שונה:**
+  - `access.php` — תפקיד `manager`, ו-`progress.read.self` ל-viewer.
+  - `academy-source.php` — `progress_dir`, `progress.managers` בברירות המחדל, אחרת `academy_load_config` היה זורק אותם.
+  - `config.example`, `.gitignore` (`data/progress/`).
+  - `api.php` — `curriculum.php` מסיר `competencyStatus` מהמיומנויות. המפתח היה שם, תמיד null; זה שדה לומד.
+- **בדיקה שעודכנה בכוונה:** "אין שום הרשאת כתיבה" → "viewer בלי כתיבה, והיחידה במערכת היא progress.write של manager".
+- **מנהל = sub ב-`progress.managers`.** ברירת המחדל ריקה, ואין מנהל עד שהשרת מגדיר. platform_admin לא הופך למנהל אוטומטית.
+- **בדיקות:** run.php 660 → 772. אין שינוי UI, ולכן check.js רץ כבדיקת רגרסיה בלבד.
