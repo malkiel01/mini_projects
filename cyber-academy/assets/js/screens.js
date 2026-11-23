@@ -158,11 +158,11 @@ window.CA = window.CA || {};
       const withEv = m.competencies.filter((c) => c.evidenceRefs.length || c.lastAssessedAt)
         .sort((a, b) => String(b.lastAssessedAt || '').localeCompare(String(a.lastAssessedAt || '')));
       return { title: 'מבחנים וראיות', html: `
-        <p class="hint">מה שהחוזה מכיל: הפניות לראיות (evidenceRefs) ומועד ההערכה האחרונה לכל כשירות. ההפניות מוצגות כטקסט.</p>
+        <p class="hint">מה שהחוזה מכיל: מספר הראיות ומועד ההערכה האחרונה לכל כשירות. נתיבי הראיות לא מוצגים.</p>
         <ul class="list">${withEv.map((c) => `<li><a class="use-row" href="${trackHref(c.trackId)}">
             <span class="use-ic" aria-hidden="true">${c.evidenceRefs.length ? '🧾' : '📝'}</span>
             <span class="use-tx"><b>${esc(c.title)}</b><span class="row-meta">${chip(c.status)}</span><small>${esc(trackTitle(m, c.trackId))} · ${assessedText(c)}</small>
-              ${c.evidenceRefs.length ? `<span class="refs">${c.evidenceRefs.map((r) => `<code title="${esc(r)}">${esc(r)}</code>`).join('')}</span>` : `<small>${evidenceText(c)}</small>`}</span>
+              <small>${evidenceText(c)}</small></span>
             <span class="use-go" aria-hidden="true">‹</span></a></li>`).join('') || '<li>' + emptyLine('אין עדיין הערכות או ראיות.') + '</li>'}</ul>
         <h2 class="sec-title">מבחנים והערכות</h2>
         ${noContract('מבחן / הערכה / ראיה כאובייקט', 'אין ציון, מעריך, סוג מבחן או תוצאה — רק הפניה ומועד.')}
@@ -205,6 +205,9 @@ window.CA = window.CA || {};
       ` };
     },
   };
+
+  // ההתקדמות שלי — רק בחוזה v2 (שמות השיעורים והמיומנויות). ב-v1 אין שמות מלאים, ולכן לא מציגים.
+  screens.learner = () => ({ title: 'ההתקדמות שלי', back: '#/progress', html: `<div class="nocontract">📭 <b>ההתקדמות שלי</b> — מוצגת רק בחוזה v2, עם שמות השיעורים והמיומנויות.</div>` });
 
   CA.screens = screens;
   CA.realEmpty = realEmpty;
