@@ -195,7 +195,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .logo { font-size: 1.25rem; padding-inline-start: var(--s1); }
 .sample-bar { position: sticky; top: calc(var(--head) + env(safe-area-inset-top)); z-index: 5; padding: 6px var(--s3); text-align: center;
     font-size: .85rem; font-weight: 600; background: var(--warn-soft); color: var(--ink); border-bottom: 1px solid color-mix(in srgb, var(--star) 45%, transparent); }
-body.sample .tabs { top: calc(var(--head) + 31px + env(safe-area-inset-top)); }
+body.banner .tabs { top: calc(var(--head) + var(--bar-h, 31px) + env(safe-area-inset-top)); }
 .foot { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom)); color: var(--muted); font-size: .75rem; text-align: center; }
 .section { margin-bottom: var(--s4); }
 
@@ -237,10 +237,33 @@ a.use-row { color: inherit; text-decoration: none; }
 .refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .refs code { font-size: .72rem; direction: ltr; unicode-bidi: isolate; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 0 4px; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .day { font-size: .8rem; color: var(--muted); font-weight: 600; margin: var(--s3) 0 4px; }
-.errors { margin-top: var(--s2); padding-inline-start: var(--s4); font-size: .8rem; direction: ltr; text-align: start; }
+.errors { margin-top: var(--s2); padding-inline-start: var(--s4); font-size: .8rem; text-align: start; }
 .errors li { margin: 2px 0; word-break: break-word; }
+.errors bdi { font-family: ui-monospace, monospace; font-size: .75rem; color: var(--muted); }
 @media (min-width: 700px) { .measures.big { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 a.tile { color: inherit; text-decoration: none; }
 .hint a, .summary a { color: var(--brand); }
 .refs { min-width: 0; overflow: hidden; }
 .refs code { display: block; min-width: 0; }
+
+/* פס נתוני אמת — אחר מפס הדוגמה */
+.sample-bar.real { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border-bottom-color: color-mix(in srgb, var(--ok) 45%, transparent); font-weight: 500;
+    line-height: 1.3; }
+.chip.proposed { --c: var(--star); color: var(--ink); border-color: color-mix(in srgb, var(--c) 50%, transparent); background: color-mix(in srgb, var(--c) 14%, var(--surface)); }
+.curr-note { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s2); font-size: .82rem; color: var(--muted); }
+.nr { color: var(--muted); font-style: italic; }
+
+/* מצבי שגיאה */
+.state { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4) var(--s3); display: grid; gap: var(--s2); justify-items: center; text-align: center; margin-top: var(--s3); }
+.state-ic { font-size: 2rem; line-height: 1; }
+.state h2 { font-size: 1.05rem; }
+.state p { max-inline-size: 36rem; }
+.state-detail { font-size: .85rem; color: var(--muted); }
+.state-todo { font-size: .9rem; background: var(--bg); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.state .errors { justify-self: stretch; max-block-size: 40vh; overflow: auto; background: var(--bg); border-radius: var(--r); padding-block: var(--s2); }
+
+/* שלד טעינה */
+.sk { background: color-mix(in srgb, var(--line) 70%, var(--surface)); border-radius: var(--r); animation: sk 1.2s ease-in-out infinite alternate; }
+.sk-card { block-size: 74px; } .sk-block { block-size: 96px; margin-bottom: var(--s3); } .sk-line { block-size: 14px; inline-size: 30%; margin: var(--s3) 0 var(--s2); }
+.sk-row { block-size: 52px; margin-bottom: 4px; }
+@keyframes sk { from { opacity: .55; } to { opacity: 1; } }

@@ -5,7 +5,8 @@
         {
             "id": "sample-foundations",
             "title": "דוגמה · יסודות מחשוב",
-            "order": 1
+            "order": 1,
+            "prerequisites": []
         },
         {
             "id": "sample-networks",

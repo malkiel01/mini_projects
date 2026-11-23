@@ -8,13 +8,13 @@
 | מה | איפה |
 | --- | --- |
 | הדרישה במילים של הבעלים | `docs/owner-brief.md` |
-| שכבות, מסכים, מקורות | `docs/spec/00-overview.md` |
+| שכבות, מסכים, מקורות, קודי כשל | `docs/spec/00-overview.md` |
 | מה חסר בחוזה v1, והצעה ל-v2 | `docs/schema-gaps.md` |
 | כללי הצוות | `team/PROTOCOL.md` |
 | אינטגרציה / נתונים / הרשאות | `lib/academy-source.php` · `lib/validate.php`, `lib/model.php` · `lib/access.php` |
 | ה-API (GET בלבד) | `api/snapshot.php` |
 | נתוני דוגמה | `samples/demo-snapshot.json` (11 מסלולים לפי ה-roadmap, כל כותרת "דוגמה · …"), `samples/empty-snapshot.json` |
-| בדיקות | `php cyber-academy/tests/run.php` |
+| בדיקות | `php cyber-academy/tests/run.php` · דפדפן: `node cyber-academy/tests/browser/check.js` (מקומי) |
 | נתוני ריצה בשרת | `data/` — מוחרגת מהפריסה וחסומה מהדפדפן (`config.json`, `cache/`) |
 
 ## החוזה

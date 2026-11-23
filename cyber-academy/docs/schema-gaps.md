@@ -77,3 +77,17 @@
 ### 10. קובץ ה-snapshot במאגר
 החוזה מגדיר תבנית אבל לא **איפה** נמצא ה-snapshot האמיתי. הדשבורד מניח `dashboard/data/snapshot.json` בענף `main`
 (ניתן לשינוי בקונפיג). צריך הכרעה של מנהל האקדמיה.
+
+### 11. סילבוס מוצע מול מאושר
+v1 לא מגדיר אישור סילבוס, וה-roadmap במאגר הוא "proposal". לכן הדשבורד מציג **כל מסלול כ"סילבוס מוצע · לא אושר"**
+(`curriculumStatus: "proposed"`, `curriculumStatusSource: "not_in_contract_v1"`) ולעולם לא מסיק "מאושר" בעצמו.
+
+```json
+"curriculum": { "status": "proposed|approved", "approvedAt": "date-time|null", "approvedBy": "<roleId>|null", "version": "string" },
+"tracks[]":   { …, "approval": "proposed|approved" }
+```
+הדשבורד כבר קורא את `tracks[].approval` — רק מחוזה שאינו v1, וכשהערך אחד משני אלה. ב-v1 השדה נדחה באימות.
+
+### 12. שדה אופציונלי חסר מול ריק
+ב-v1 `evidenceRefs`, `lastAssessedAt` ו-`prerequisites` אופציונליים. הדשבורד מבחין: חסר = **"לא דווח"**, ריק / `null` =
+"אין" / "טרם הוערך". הצעה: ב-v2 להפוך אותם לחובה (`[]` / `null` במפורש), כדי שהיעדר מידע לא ייראה כמו מידע.

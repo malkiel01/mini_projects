@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
-<body>
+<body class="banner">
 <a class="skip" href="#main">דילוג לתוכן</a>
 <header class="top">
   <a class="icon-btn" id="back" href="#/" aria-label="חזרה" hidden>›</a>
@@ -19,7 +19,8 @@
   </div>
   <button class="icon-btn" id="reload" type="button" aria-label="רענון">⟳</button>
 </header>
-<div class="sample-bar" id="sample-bar" role="status" hidden>⚠️ נתוני דוגמה — לא הישגים אמיתיים</div>
+<div class="sample-bar" id="sample-bar" role="status">⚠️ נתוני דוגמה — לא הישגים אמיתיים</div>
+<div class="sample-bar real" id="real-bar" role="status" hidden></div>
 <nav class="tabs" id="tabs" aria-label="מסכים">
   <a href="#/">ראשי</a>
   <a href="#/syllabus">סילבוס</a>
@@ -29,10 +30,11 @@
   <a href="#/gaps">פערים והמלצות</a>
   <a href="#/timeline">ציר זמן</a>
 </nav>
-<main id="main" tabindex="-1" aria-live="polite"><p class="empty">טוען…</p></main>
+<main id="main" tabindex="-1" aria-live="polite" aria-busy="true"></main>
 <footer class="foot" id="foot"></footer>
 <script src="assets/js/api.js" defer></script>
 <script src="assets/js/render.js" defer></script>
+<script src="assets/js/states.js" defer></script>
 <script src="assets/js/screens.js" defer></script>
 <script src="assets/js/router.js" defer></script>
 <script src="assets/js/app.js" defer></script>

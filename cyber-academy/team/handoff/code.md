@@ -12,3 +12,9 @@
   בשרת עם שני הדגלים ואסימון. המטמון ב-`data/cache/` (מוחרג מהפריסה).
 - **בדיקה בדפדפן:** `php -S 127.0.0.1:8765 -t .` משורש הריפו → `/cyber-academy/` (וגם `?demo=empty`). אין שער מקומית.
 - **בדיקות:** `php cyber-academy/tests/run.php` — 124.
+
+## אחרי פרוסה 02
+
+- **קוד כשל חדש** — ב-`lib/api.php` (או `academy_github_error`), מסך ב-`assets/js/states.js` (`STATES`), ומצב ב-`tests/browser/check.js`.
+- **`approval`** — כשיגיע חוזה v2: לאפשר בשדות של `lib/validate.php`; `academy_curriculum_status` כבר קורא אותו.
+- **בדיקת דפדפן** — `php -S 127.0.0.1:8765 -t .` ואז `node cyber-academy/tests/browser/check.js <dir>`. אין בפריסה (אין Node בשרת).

@@ -47,3 +47,30 @@
 
 **פס "נתוני דוגמה — לא הישגים אמיתיים"** — קבוע (sticky) בכל מסך כש-`isSample` (וגם כשלא ידוע). מצב ריק —
 `?demo=empty` מציג את התבנית הריקה.
+
+## מצבים שאינם נתונים (פרוסה 02)
+
+כל כשל מהשרת מחזיר `code` יציב, וה-UI (`assets/js/states.js`) מציג לכל אחד מסך בעברית: מה קרה, מה עושים, ו"נסה שוב".
+
+| code | HTTP | מתי |
+| --- | --- | --- |
+| `forbidden` | 403 | `access.php` דחה, או השער (גם תשובת HTML בלי code) |
+| `method_not_allowed` | 405 | כל שיטה שאינה GET/HEAD |
+| `source_disabled` | 503 | `source: "github"` בקונפיג, המקור אסור, ו-`fallback_to_sample: false` |
+| `source_unauthorized` | 502 | GitHub 401/403, או אין אסימון |
+| `source_not_found` | 502 | GitHub 404, או הגדרת נתיב לא תקינה |
+| `source_unavailable` | 502 | רשת, 5xx, 429, או 403 של מכסה |
+| `contract_invalid` | 422 | לא תואם v1, או JSON שבור — עם `errors` |
+| `contract_version` | 422 | `schemaVersion` אחר — לפני שאר הבדיקות |
+| `internal` | 500 | חריגה לא צפויה |
+| `offline` / `loading` | — | בצד הלקוח בלבד: הבקשה לא הגיעה / שלד טעינה |
+
+**דוגמה מול אמת:** `isSample` נקבע רק בשרת לפי סוג המקור (local תמיד true). שום פרמטר לא בוחר מקור.
+מקור github מציג פס אחר: "נתוני אמת ממאגר האקדמיה · קומיט X · נאסף ב-Y". הקומיט נקבע קודם (`commits/<ref>`) והקובץ נקרא
+מאותו קומיט. כשהתשובה לא ידועה — מוצג פס הדוגמה.
+
+**מוצע מול מאושר:** תג "סילבוס מוצע · לא אושר" בסילבוס ובכל מסלול (ראו `schema-gaps.md` §11).
+**חסר ≠ ריק:** `evidenceReported`, `assessedReported`, `prerequisitesReported` במודל; חסר מוצג "לא דווח".
+
+**בדיקת דפדפן:** `node cyber-academy/tests/browser/check.js [תיקייה]` מול `php -S` מקומי — 11 מסכים, מצב ריק, נתוני אמת
+מוזרקים ו-10 מצבי שגיאה, ב-320/390/1280, ובמצב כהה. ההזרקה ב-`page.route` בלבד.

@@ -41,7 +41,9 @@ function academy_model(array $s): array {
 
     $comps = array_map(fn($c) => [
         'id' => $c['id'], 'trackId' => $c['trackId'], 'title' => $c['title'], 'status' => $c['status'],
-        'evidenceRefs' => $c['evidenceRefs'] ?? [], 'lastAssessedAt' => $c['lastAssessedAt'] ?? null,
+        // שדה אופציונלי שחסר ≠ ריק: "לא דווח" ולא 0 / "טרם הוערך"
+        'evidenceRefs' => $c['evidenceRefs'] ?? [], 'evidenceReported' => array_key_exists('evidenceRefs', $c),
+        'lastAssessedAt' => $c['lastAssessedAt'] ?? null, 'assessedReported' => array_key_exists('lastAssessedAt', $c),
     ], $s['competencies']);
     $compsByTrack = [];
     foreach ($comps as $c) $compsByTrack[$c['trackId']][] = $c;
@@ -72,6 +74,8 @@ function academy_model(array $s): array {
         $outTracks[] = [
             'id' => $t['id'], 'title' => $t['title'], 'order' => $t['order'],
             'prerequisites' => $prereqs,
+            'prerequisitesReported' => array_key_exists('prerequisites', $t),
+            ...academy_curriculum_status($t, $s['schemaVersion']),
             'prerequisitesMet' => !array_filter($prereqs, fn($p) => !$p['met']),
             'started' => $started,
             'measure' => $m,
@@ -92,6 +96,7 @@ function academy_model(array $s): array {
         'schemaVersion' => $s['schemaVersion'],
         'updatedAt' => $s['updatedAt'],
         'empty' => !$s['tracks'] && !$s['competencies'] && !$s['tasks'],
+        'curriculum' => academy_curriculum_status([], $s['schemaVersion']),
         'measure' => academy_measure($comps),
         'tracks' => $outTracks,
         'competencies' => $comps,
@@ -102,6 +107,18 @@ function academy_model(array $s): array {
         'recommendations' => academy_recommendations($outTracks, $gaps, $tasks, $unmet),
         'timeline' => academy_timeline($s, $compById, $trackById),
     ];
+}
+
+/**
+ * מוצע או מאושר. v1 לא מגדיר אישור סילבוס (וה-roadmap במאגר הוא "proposal"), ולכן ב-v1 הכול
+ * "proposed" עם מקור "not_in_contract_v1". השדה approval נקרא רק מחוזה אחר מ-v1 — ובפועל רק אחרי
+ * שהאימות יתמוך בו. לעולם לא מסיקים "approved" בעצמנו.
+ */
+function academy_curriculum_status(array $item, string $schemaVersion): array {
+    if ($schemaVersion !== ACADEMY_SCHEMA_VERSION && in_array($item['approval'] ?? null, ['proposed', 'approved'], true)) {
+        return ['curriculumStatus' => $item['approval'], 'curriculumStatusSource' => 'contract'];
+    }
+    return ['curriculumStatus' => 'proposed', 'curriculumStatusSource' => 'not_in_contract_v1'];
 }
 
 function academy_task_counts(array $tasks): array {

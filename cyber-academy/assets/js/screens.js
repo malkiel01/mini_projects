@@ -5,6 +5,16 @@ window.CA = window.CA || {};
   const { esc, STATUS, TASK, MODE, fmtDate, chip, taskChip, measures, dist, noContract, emptyLine, row } = CA.ui;
 
   const trackHref = (id) => '#/track/' + encodeURIComponent(id);
+  // שדה אופציונלי שחסר ב-snapshot = "לא דווח" — לא 0 ולא "אין"
+  const assessedText = (c) => !c.assessedReported ? 'הערכה: לא דווח' : c.lastAssessedAt ? 'הוערך ' + fmtDate(c.lastAssessedAt) : 'טרם הוערך';
+  const evidenceText = (c) => !c.evidenceReported ? 'ראיות: לא דווח' : c.evidenceRefs.length ? c.evidenceRefs.length + ' ראיות' : 'אין ראיות';
+  const prereqText = (t) => !t.prerequisitesReported ? 'דרישות קדם: לא דווח'
+    : t.prerequisites.length ? 'דורש: ' + t.prerequisites.map((p) => (p.met ? '' : '🧱 ') + esc(p.title)).join(', ') : 'ללא דרישות קדם';
+  // מוצע מול מאושר — מגיע מהשרת. ב-v1 תמיד "proposed"; לעולם לא מסיקים "מאושר" כאן.
+  const CURR = { proposed: 'סילבוס מוצע · לא אושר', approved: 'סילבוס מאושר' };
+  const currTag = (t, short) => `<span class="chip ${t.curriculumStatus === 'approved' ? 'ok' : 'proposed'}" title="${esc(CURR[t.curriculumStatus] || t.curriculumStatus)}">${esc(short ? (t.curriculumStatus === 'approved' ? 'מאושר' : 'מוצע') : (CURR[t.curriculumStatus] || t.curriculumStatus))}</span>`;
+  const currNote = (m) => m.curriculum.curriculumStatusSource === 'not_in_contract_v1'
+    ? `<div class="curr-note">${currTag(m.curriculum)}<span>החוזה v1 לא מגדיר אישור סילבוס, ולכן כל מסלול מוצג כמוצע.</span></div>` : '';
   const trackTitle = (m, id) => (m.tracks.find((t) => t.id === id) || {}).title || id;
   const emptySnapshot = () => `<div class="summary"><div class="line"><b>אין עדיין נתונים באקדמיה</b></div>
       <p class="muted">ה-snapshot תקין אבל ריק: אין מסלולים, כשירויות או משימות. כשמאגר האקדמיה יתמלא, הם יופיעו כאן.</p></div>`;
@@ -20,8 +30,7 @@ window.CA = window.CA || {};
     href: withTrack ? trackHref(c.trackId) : null,
     icon: c.evidenceRefs.length ? '🧾' : '🎯',
     title: esc(c.title),
-    sub: [withTrack ? esc(trackTitle(m, c.trackId)) : '', c.lastAssessedAt ? 'הוערך ' + fmtDate(c.lastAssessedAt) : 'טרם הוערך',
-          c.evidenceRefs.length ? c.evidenceRefs.length + ' ראיות' : ''].filter(Boolean).join(' · '),
+    sub: [withTrack ? esc(trackTitle(m, c.trackId)) : '', assessedText(c), evidenceText(c)].filter(Boolean).join(' · '),
     end: chip(c.status),
   });
 
@@ -56,15 +65,16 @@ window.CA = window.CA || {};
       if (m.empty || !m.tracks.length) return { title: 'סילבוס', html: emptySnapshot() };
       return { title: 'סילבוס', html: `
         <p class="hint">המסלולים לפי הסדר שבחוזה, עם דרישות הקדם. 🧱 = דרישת קדם שעוד לא הוכחה במעשה.</p>
+        ${currNote(m)}
         <ul class="list">${m.tracks.map((t) => row({
           href: trackHref(t.id),
           icon: `<span class="num">${t.order}</span>`,
           title: esc(t.title),
-          sub: t.measure.total + ' כשירויות · ' + (t.prerequisites.length ? 'דורש: ' + t.prerequisites.map((p) => (p.met ? '' : '🧱 ') + esc(p.title)).join(', ') : 'ללא דרישות קדם'),
-          end: `<span class="chip learn" title="נלמד">📘 ${t.measure.learned}</span><span class="chip ok" title="הוכח במעשה">🧪 ${t.measure.proven}</span>`,
+          sub: t.measure.total + ' כשירויות · ' + prereqText(t),
+          end: `<span class="chip learn" title="נלמד">📘 ${t.measure.learned}</span><span class="chip ok" title="הוכח במעשה">🧪 ${t.measure.proven}</span>${currTag(t, true)}`,
         })).join('')}</ul>
         <h2 class="sec-title">פירוק עמוק יותר</h2>
-        ${noContract('שלבים, מודולים, נושאים ומיומנויות', 'בחוזה יש רק מסלול ← כשירות. ההצעה ל-v2 — docs/schema-gaps.md.')}
+        ${noContract('שלבים, מודולים, נושאים ומיומנויות', 'בחוזה יש רק מסלול ← כשירות. יגיע כשהחוזה יכלול אותם (v2).')}
       ` };
     },
 
@@ -76,14 +86,15 @@ window.CA = window.CA || {};
       return { title: t.title, back: '#/syllabus', html: `
         ${measures(t.measure)}
         <div class="summary">
-          <div class="line">מסלול <b>${t.order}</b> <i class="sep">·</i> ${t.started ? 'התחיל' : 'טרם התחיל'}</div>
+          <div class="line">מסלול <b>${t.order}</b> <i class="sep">·</i> ${t.started ? 'התחיל' : 'טרם התחיל'} <span style="margin-inline-start:auto">${currTag(t)}</span></div>
+          ${!t.prerequisitesReported ? '<div class="line nr">דרישות קדם: לא דווח</div>' : !t.prerequisites.length ? '<div class="line">ללא דרישות קדם</div>' : ''}
           ${t.prerequisites.length ? `<div class="line">דרישות קדם: ${t.prerequisites.map((p) => `<a href="${trackHref(p.id)}">${esc(p.title)}</a> ${p.met ? '<span class="chip ok">הוכח</span>' : '<span class="chip warn">לא הוכח</span>'}`).join(' ')}</div>` : ''}
           ${dist(t.measure)}
         </div>
         <h2 class="sec-title">כשירויות (${comps.length})</h2>
         <ul class="list">${comps.map((c) => compRow(c, m, false)).join('') || '<li>' + emptyLine('אין עדיין כשירויות במסלול הזה.') + '</li>'}</ul>
         <h2 class="sec-title">שלבים · מודולים · נושאים · מיומנויות</h2>
-        ${noContract('הפירוק של המסלול', 'החוזה מכיל רק כשירויות ישירות תחת מסלול.')}
+        <div class="nocontract">🧩 <b>פירוק לשלבים/מודולים/נושאים/מיומנויות</b> — יגיע כשהחוזה יכלול אותם (v2). עד אז מוצגות רק הכשירויות שתחת המסלול, בלי היררכיה מומצאת.</div>
         <h2 class="sec-title">משימות במסלול (${tasks.length})</h2>
         <ul class="list">${tasks.map((k) => taskRow(k, m)).join('') || '<li>' + emptyLine('אין משימות שמקושרות לכשירויות במסלול.') + '</li>'}</ul>
       ` };
@@ -123,8 +134,8 @@ window.CA = window.CA || {};
         <p class="hint">מה שהחוזה מכיל: הפניות לראיות (evidenceRefs) ומועד ההערכה האחרונה לכל כשירות. ההפניות מוצגות כטקסט.</p>
         <ul class="list">${withEv.map((c) => `<li><a class="use-row" href="${trackHref(c.trackId)}">
             <span class="use-ic" aria-hidden="true">${c.evidenceRefs.length ? '🧾' : '📝'}</span>
-            <span class="use-tx"><b>${esc(c.title)}</b><small>${esc(trackTitle(m, c.trackId))} · ${c.lastAssessedAt ? 'הוערך ' + fmtDate(c.lastAssessedAt) : 'ללא מועד הערכה'}</small>
-              ${c.evidenceRefs.length ? `<span class="refs">${c.evidenceRefs.map((r) => `<code title="${esc(r)}">${esc(r)}</code>`).join('')}</span>` : '<small>אין הפניה לראיה</small>'}</span>
+            <span class="use-tx"><b>${esc(c.title)}</b><small>${esc(trackTitle(m, c.trackId))} · ${assessedText(c)}</small>
+              ${c.evidenceRefs.length ? `<span class="refs">${c.evidenceRefs.map((r) => `<code title="${esc(r)}">${esc(r)}</code>`).join('')}</span>` : `<small>${evidenceText(c)}</small>`}</span>
             <span class="row-end">${chip(c.status)}</span></a></li>`).join('') || '<li>' + emptyLine('אין עדיין הערכות או ראיות.') + '</li>'}</ul>
         <h2 class="sec-title">מבחנים והערכות</h2>
         ${noContract('מבחן / הערכה / ראיה כאובייקט', 'אין ציון, מעריך, סוג מבחן או תוצאה — רק הפניה ומועד.')}

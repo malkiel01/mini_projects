@@ -2,15 +2,27 @@
 'use strict';
 (function () {
   const $ = (id) => document.getElementById(id);
-  const { esc, fmtDate } = CA.ui;
-  let state = null; // { status, body }
+  const { fmtDate } = CA.ui;
+  let state = null; // { status, body } — null = בטעינה
 
   const SOURCE = { local: 'דוגמה מקומית', github: 'מאגר האקדמיה' };
 
+  /** הפסים והשורה התחתונה. isSample מגיע רק מהשרת; לא ידוע = מתייחסים כדוגמה. */
   function chrome(body) {
-    const sample = body && body.isSample !== false; // לא ידוע = מתייחסים כדוגמה
-    document.body.classList.toggle('sample', sample);
+    const ok = !!(body && body.ok);
+    const sample = !body || body.isSample !== false;
+    const real = ok && body.isSample === false && body.source === 'github';
+    document.body.classList.toggle('banner', sample || real);
     $('sample-bar').hidden = !sample;
+    $('real-bar').hidden = !real;
+    if (real) {
+      const i = body.sourceInfo || {};
+      $('real-bar').textContent = '✅ נתוני אמת ממאגר האקדמיה · קומיט ' + String(i.commit || '—').slice(0, 7)
+        + ' · נאסף ב-' + (i.collectedAt ? fmtDate(i.collectedAt, true) : '—');
+    }
+    // הפס יכול לרדת לשתי שורות בטלפון — הלשוניות הדביקות יושבות מתחתיו
+    const bar = real ? $('real-bar') : $('sample-bar');
+    document.documentElement.style.setProperty('--bar-h', (sample || real ? bar.offsetHeight : 0) + 'px');
     const c = body && body.contract;
     $('foot').textContent = body ? [
       'מקור: ' + (SOURCE[body.source] || body.source || '—'),
@@ -20,27 +32,21 @@
     ].filter(Boolean).join(' · ') : '';
   }
 
-  function errorScreen(body) {
-    return `<div class="error" role="alert"><b>${esc(body.error || 'שגיאה')}</b>
-      ${body.errors ? `<ul class="errors">${body.errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>${body.errorCount > body.errors.length ? `<p>ועוד ${body.errorCount - body.errors.length}…</p>` : ''}` : ''}</div>
-      <p class="hint" style="margin-top:8px">הדשבורד לא מציג נתונים שאינם תואמים לחוזה — כדי לא להציג מצב שגוי.</p>`;
-  }
-
   function show(route) {
     const main = $('main');
     const name = CA.screens[route.name] && route.name !== 'home' ? route.name : 'home';
     document.querySelectorAll('#tabs a').forEach((a) => {
       const target = CA.router.parse(a.getAttribute('href')).name;
-      const cur = name === 'track' ? 'syllabus' : name;
-      if (target === cur) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+      if (target === (name === 'track' ? 'syllabus' : name)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
-    if (!state) { main.innerHTML = '<p class="empty">טוען…</p>'; return; }
-    chrome(state.body);
+    chrome(state && state.body);
     let view;
-    if (!state.body.ok) view = { title: 'אי אפשר להציג', html: errorScreen(state.body) };
+    if (!state) view = { title: 'טוען…', html: CA.states.skeleton() };
+    else if (state.status !== 200 || !state.body || !state.body.ok || !state.body.model) view = CA.states.errorView(state);
     else view = CA.screens[name](state.body.model, route.arg);
+    main.setAttribute('aria-busy', state ? 'false' : 'true');
     $('title').textContent = view.title || 'אקדמיית סייבר התקפי';
-    $('sub').textContent = view.title && name !== 'home' ? 'אקדמיית סייבר התקפי' : 'דשבורד · קריאה בלבד';
+    $('sub').textContent = name !== 'home' || !state ? 'אקדמיית סייבר התקפי' : 'דשבורד · קריאה בלבד';
     document.title = (view.title ? view.title + ' · ' : '') + 'אקדמיית סייבר התקפי';
     const back = $('back');
     back.hidden = !view.back;
@@ -50,18 +56,18 @@
     if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
-  // לשוניות בתוך מסך (seg-tabs) — כפתור עם data-href
-  document.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-href]');
-    if (b) location.hash = b.getAttribute('data-href');
-  });
-
   async function load() {
     state = null;
     show(CA.router.parse(location.hash));
     state = await CA.api.snapshot();
     show(CA.router.parse(location.hash));
   }
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-retry]')) { load(); return; }
+    const b = e.target.closest('[data-href]'); // לשוניות בתוך מסך (seg-tabs)
+    if (b) location.hash = b.getAttribute('data-href');
+  });
   $('reload').addEventListener('click', load);
   window.addEventListener('hashchange', () => { show(CA.router.parse(location.hash)); window.scrollTo(0, 0); });
   load();
