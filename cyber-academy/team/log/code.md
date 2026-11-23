@@ -119,3 +119,26 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - **בדיקה שעודכנה:** "config.example: אסימון ריק" → "אין אסימון", בכוונה.
 - **בדיקות:** run.php 596 → 623.
 - **לבקרה:** `docs/owner-brief.md` סעיף 2 עדיין אומר "אסימון … ב-`data/config.json`". הקובץ שלכם — לא שיניתי.
+
+## 2026-11-23 · הכנת הפעלת מקור GitHub — PR נפרד מ-main (63ecd71), טיוטה, בלי הדלקה
+
+- `ACADEMY_GITHUB_PHASE_ALLOWED = true` — מנעול הקוד בלבד. התבנית וברירת המחדל כבויות.
+- **החלטה שלי, fail-closed:** מ-GitHub נקרא **רק** `contract: "v2"` (curriculum_path). v1 → `source_disabled`/`v1_github_blocked`, כי snapshot v1 כולל נתוני לומד בלי סינון. זה סוגר את השאלה הפתוחה על חסימת v1 ממקור github.
+- `api/curriculum.php`:
+  - לא דורס יותר את `source` — נדלק רק כשהשרת קבע `source: "github"`.
+  - דורש role ≠ null עם `curriculum.read` וגם `snapshot.read`.
+  - `$opts` (server/sapi/reader/transport) — לבדיקות בלבד.
+- **מטמון:** קבצים ב-0640.
+- **ממצא בבדיקות:** בדיקה בלי `cache_ttl: 0` כתבה מטמון ל-`data/cache` של הריפו, והחזירה את התשובה הראשונה לכל השאר. תוקן (TTL 0 בבדיקות), ונוספה בדיקה שלא נשאר מטמון בריפו. הקובץ שנכתב לא הכיל אסימון.
+- **בדיקות שעודכנו בכוונה** (הנחו שהמנעול סגור):
+  - "קבוע השלב: github אסור" → "המנעול פתוח".
+  - "גם עם שני הדגלים — עדיין local" → "v1 נחסם".
+  - "snapshot_path ריק" ו-"v1 קורא את snapshot.json" → "v1 חסום".
+  - "המנעול בקוד סגור" → פרמטר `phase=false`.
+  - "ברירת המחדל של הקוד (היום)" → ברירת המחדל והתבנית עם המנעול פתוח.
+  - `$cfg` לבדיקות ההסתרה: `github_enabled` → false.
+- **בדיקות:** run.php 623 → 660.
+- **URLs שה-stub רשם (מקצה לקצה):**
+  - `https://api.github.com/repos/malkiel01/offensive-cyber-academy/commits/main`
+  - `https://api.github.com/repos/malkiel01/offensive-cyber-academy/contents/dashboard/data/curriculum-v2-approved.json?ref=<sha>`
+- `docs/spec/github-activation.md` — מה מגדירים בשרת, ומה בודקים אחרי.

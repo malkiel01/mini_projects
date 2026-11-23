@@ -17,7 +17,9 @@
 
 declare(strict_types=1);
 
-const ACADEMY_GITHUB_PHASE_ALLOWED = false;
+// מנעול הקוד — פתוח (הכרעת מנהל 00, 2026-11-23: הגדרות השרת הושלמו). זה לא מדליק כלום לבד: נדרשים גם
+// source="github", contract="v2", github_enabled=true ו-privacy_confirmed=true בקונפיג **שבשרת** (לא בגיט).
+const ACADEMY_GITHUB_PHASE_ALLOWED = true;
 const ACADEMY_DIR = __DIR__ . '/..';
 
 /**
@@ -98,18 +100,23 @@ function academy_github_allowed(array $config, bool $phase = ACADEMY_GITHUB_PHAS
  * בוחר את המקור. הבחירה היא רק מהקונפיג שבשרת — $demo משפיע רק על איזה קובץ דוגמה, ורק במקור local.
  * @throws AcademySourceError source_disabled — github מבוקש, אסור, ו-fallback_to_sample כבוי.
  */
-function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_GITHUB_PHASE_ALLOWED, ?callable $reader = null): AcademySource {
+function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_GITHUB_PHASE_ALLOWED, ?callable $reader = null,
+                         ?callable $transport = null): AcademySource {
     if (($config['source'] ?? 'local') === 'github') {
         if (academy_github_allowed($config, $phase)) {
+            // מהמאגר קוראים **רק** את תוכנית האקדמיה (v2, curriculum_path). snapshot v1 כולל נתוני לומד בלי סינון —
+            // ולכן v1 ממקור github חסום (fail-closed), גם כשהכול דולק.
+            if (($config['contract'] ?? 'v1') !== 'v2') {
+                throw new AcademySourceError('ממאגר האקדמיה נקראת רק תוכנית האקדמיה (contract "v2")', 'source_disabled', 'v1_github_blocked');
+            }
             $gh = $config['github'];
-            $key = ($config['contract'] ?? 'v1') === 'v2' ? 'curriculum_path' : 'snapshot_path';
             // נתיב ריק — לא מנחשים ולא קוראים (fail-closed)
-            if (trim((string) ($gh[$key] ?? '')) === '') throw new AcademySourceError("הנתיב github.$key לא הוגדר", 'source_disabled');
-            $gh['path'] = $gh[$key];
+            if (trim((string) ($gh['curriculum_path'] ?? '')) === '') throw new AcademySourceError('הנתיב github.curriculum_path לא הוגדר', 'source_disabled');
+            $gh['path'] = $gh['curriculum_path'];
             // רק כאן — אחרי שכל המנעולים פתוחים — נוגעים בקובץ האסימון
             $gh['token'] = academy_github_token($gh, $reader);
             unset($gh['token_file']);
-            return new GithubAcademySource($gh, ACADEMY_DIR . '/data/cache', (int) ($config['cache_ttl'] ?? 120));
+            return new GithubAcademySource($gh, ACADEMY_DIR . '/data/cache', (int) ($config['cache_ttl'] ?? 120), $transport);
         }
         if (($config['fallback_to_sample'] ?? true) !== true) {
             throw new AcademySourceError('החיבור למאגר האקדמיה כבוי', 'source_disabled');
@@ -281,6 +288,7 @@ final class GithubAcademySource implements AcademySource {
         if ($this->ttl <= 0) return;
         if (!is_dir($this->cacheDir)) @mkdir($this->cacheDir, 0750, true);
         @file_put_contents($this->cacheFile(), json_encode($this->info + ['body' => $body]), LOCK_EX);
+        @chmod($this->cacheFile(), 0640); // לא קריא למשתמשים אחרים בשרת
     }
 
     /** @return array{status:int, body:string, headers:array} */

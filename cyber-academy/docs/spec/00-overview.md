@@ -16,7 +16,7 @@
 ## מקור github — שלושה מנעולים
 
 נדלק רק כש**שלושתם** מתקיימים: `"github_enabled": true` + `"privacy_confirmed": true` ב-`data/config.json`, **וגם**
-`ACADEMY_GITHUB_PHASE_ALLOWED = true` בקוד (היום `false`). השלישי דורש PR — כך שעריכת קונפיג בשרת לבדה לא חושפת נתונים.
+`ACADEMY_GITHUB_PHASE_ALLOWED = true` בקוד — **פתוח** מאז הכרעת מנהל 00 (הגדרות השרת הושלמו). לכן ההדלקה היא עכשיו רק בקונפיג שבשרת, ומ-GitHub נקרא רק `contract: "v2"` (תוכנית האקדמיה); v1 חסום. מה מגדירים: `github-activation.md`.
 לפני שמדליקים (owner-brief 1.7): המאגר פרטי, היסטוריית הגיט וה-issues נבדקו, ואסימון fine-grained `Contents: Read`
 למאגר אחד בלבד. תבנית קונפיג: `samples/config.example.json`.
 

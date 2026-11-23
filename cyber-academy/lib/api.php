@@ -91,17 +91,23 @@ function academy_api_snapshot(array $config, array $query = [], ?AcademySource $
  * רק ממאגר האקדמיה (חוזה v2, github.curriculum_path), רק סילבוס מאושר, ובלי שום נתון לומד — לא כשירויות, משימות,
  * הערכות, ראיות, ציר זמן או issues. אין דוגמה מקומית: כשהמקור כבוי → source_disabled.
  */
-function academy_api_curriculum(string $method, array $config, ?AcademySource $source = null): array {
+function academy_api_curriculum(string $method, array $config, ?AcademySource $source = null, array $opts = []): array {
+    // $opts — לבדיקות בלבד: server/sapi (זהות), reader (קובץ האסימון), transport (HTTP)
     if (!in_array(strtoupper($method), ['GET', 'HEAD'], true)) {
         return [405, ['ok' => false, 'code' => 'method_not_allowed', 'error' => 'קריאה בלבד']];
     }
-    if (!academy_can('curriculum.read')) return [403, ['ok' => false, 'code' => 'forbidden', 'error' => 'אין הרשאה']];
+    $role = academy_role($opts['server'] ?? null, $opts['sapi'] ?? PHP_SAPI);
+    if ($role === null || !academy_can('curriculum.read', $role) || !academy_can('snapshot.read', $role)) {
+        return [403, ['ok' => false, 'code' => 'forbidden', 'error' => 'אין הרשאה']];
+    }
     $token = (string) ($config['github']['token'] ?? '');
     $meta = ['source' => 'github', 'isSample' => false];
     $fail = fn(int $st, string $code, string $msg) => [$st, ['ok' => false, 'code' => $code, 'error' => academy_redact($msg, $token)] + $meta];
     try {
         if (!$source) {
-            $src = academy_source(['source' => 'github', 'contract' => 'v2', 'fallback_to_sample' => false] + $config);
+            // source נשאר כמו בקונפיג: נדלק רק כשהשרת קבע במפורש source="github" (והדגלים). אין דוגמה.
+            $src = academy_source(array_replace($config, ['contract' => 'v2', 'fallback_to_sample' => false]), '',
+                ACADEMY_GITHUB_PHASE_ALLOWED, $opts['reader'] ?? null, $opts['transport'] ?? null);
             if (!$src instanceof GithubAcademySource) return $fail(503, 'source_disabled', 'החיבור למאגר האקדמיה כבוי');
             $source = $src;
         }

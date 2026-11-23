@@ -69,7 +69,7 @@ $e = academy_model(fixture('empty-template.json'));
 check('מודל ריק מסומן empty', $e['empty'] === true && $e['measure'] === null && $e['recommendations'] === [] && $e['timeline'] === []);
 
 // ---------- המקור: github כבוי כברירת מחדל ----------
-check('קבוע השלב: github אסור בשלב הזה', ACADEMY_GITHUB_PHASE_ALLOWED === false);
+check('מנעול הקוד פתוח (מנהל 00) — ההדלקה רק בקונפיג השרת', ACADEMY_GITHUB_PHASE_ALLOWED === true);
 $def = academy_default_config();
 // קובץ אסימון תקין לבדיקות — מחוץ לריפו, 0600. הערך נבנה בזמן ריצה (סריקת הסודות לא תמצא אותו בקובץ הזה).
 $tokDir = sys_get_temp_dir() . '/ca-secret-' . getmypid();
@@ -82,13 +82,15 @@ $withTok = fn(array $c) => array_replace_recursive($c, ['github' => ['token_file
 check('ברירת מחדל: github_enabled=false', $def['github_enabled'] === false && $def['privacy_confirmed'] === false);
 check('ברירת מחדל: מקור local', academy_source($def) instanceof LocalAcademySource);
 $on = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def;
-check('גם עם שני הדגלים דולקים — עדיין local בשלב הזה', academy_source($on) instanceof LocalAcademySource);
+try { academy_source($on); check('דגלים דולקים + contract v1 → נחסם (v1 לא נקרא מ-github)', false); }
+catch (AcademySourceError $e) { check('דגלים דולקים + contract v1 → נחסם (v1 לא נקרא מ-github)', $e->errorCode === 'source_disabled' && $e->reason === 'v1_github_blocked'); }
 check('github_enabled בלי אישור פרטיות — לא מותר', !academy_github_allowed(['github_enabled' => true, 'privacy_confirmed' => false]));
 check('"true" כמחרוזת אינו הדלקה', !academy_github_allowed(['github_enabled' => 'true', 'privacy_confirmed' => 'true']));
 define('FAKE_TOKEN', 'github' . '_pat_' . 'SECRET' . str_repeat('x9', 12));
 $tmp = sys_get_temp_dir() . '/ca-test-' . getmypid();
 @mkdir($tmp);
-file_put_contents("$tmp/config.json", json_encode(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true,
+// קונפיג "ישן" עם token — לבדיקת ההסתרה. github_enabled=false, כדי שהמקור יישאר דוגמה (מנעול הקוד פתוח).
+file_put_contents("$tmp/config.json", json_encode(['source' => 'github', 'github_enabled' => false, 'privacy_confirmed' => true,
     'github' => ['token' => FAKE_TOKEN]]));
 $cfg = academy_load_config("$tmp/config.json");
 check('קונפיג נטען על גבי ברירת מחדל', $cfg['github']['repo'] === 'offensive-cyber-academy' && $cfg['github']['token'] !== '');
@@ -180,7 +182,7 @@ check('github: האסימון לא במטמון', !str_contains(implode('', arra
 check('redact: תבנית ghp_ מוסתרת גם בלי קונפיג', !str_contains(academy_redact('x ' . 'gh' . 'p_' . str_repeat('A', 24) . ' y', ''), 'ghp_'));
 
 // ---------- מקור: בחירה רק מהשרת ----------
-$ghOn = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def;
+$ghOn = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'contract' => 'v2'] + $def;
 check('מעבר למנעול: שני הדגלים + שלב → github', academy_source($withTok($ghOn), '', true) instanceof GithubAcademySource);
 check('מעבר למנעול: demo=empty לא מחליף github לדוגמה', academy_source($withTok($ghOn), 'empty', true) instanceof GithubAcademySource);
 foreach ([['source' => 'github'], ['isSample' => '0'], ['isSample' => 'false'], ['demo' => 'real'], ['demo' => 'empty', 'source' => 'github', 'sample' => '0']] as $q) {
@@ -339,8 +341,8 @@ try { academy_source($ghV2, '', true); check('curriculum_path ריק → source_
 catch (AcademySourceError $e) { check('curriculum_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
 $ghV1 = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def;
 $ghV1['github'] = ['snapshot_path' => ''] + $def['github'];
-try { academy_source($ghV1, '', true); check('snapshot_path ריק → source_disabled', false); }
-catch (AcademySourceError $e) { check('snapshot_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
+try { academy_source($ghV1, '', true); check('v1 מ-github → source_disabled', false); }
+catch (AcademySourceError $e) { check('v1 מ-github → source_disabled (גם בלי snapshot_path)', $e->errorCode === 'source_disabled' && $e->reason === 'v1_github_blocked'); }
 $ghV2['github'] = $def['github'];
 $ghV2 = $withTok($ghV2);
 check('curriculum_path (מעבר למנעול) → github', academy_source($ghV2, '', true) instanceof GithubAcademySource);
@@ -348,10 +350,12 @@ $seen = [];
 $s2 = academy_source($ghV2 + [], '', true);
 $rp = new ReflectionProperty($s2, 'gh');
 check('v2 קורא את curriculum-v2-approved.json', $rp->getValue($s2)['path'] === 'dashboard/data/curriculum-v2-approved.json');
-$s1 = academy_source($withTok(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def), '', true);
-check('v1 קורא את snapshot.json', $rp->getValue($s1)['path'] === 'dashboard/data/snapshot.json');
-[$st, $body] = academy_api_snapshot(['contract' => 'v2', 'fallback_to_sample' => false] + $ghV2);
-check('v2: המנעול בקוד סגור → source_disabled', $st === 503 && $body['code'] === 'source_disabled');
+$reads = [];
+$recv1 = function (string $p) use (&$reads) { $reads[] = $p; return file_get_contents($p); };
+try { academy_source($withTok(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def), '', true, $recv1); check('v1 עם אסימון תקין → עדיין חסום', false); }
+catch (AcademySourceError $e) { check('v1 עם אסימון תקין → עדיין חסום, האסימון לא נקרא', $e->reason === 'v1_github_blocked' && $reads === []); }
+try { academy_source(['fallback_to_sample' => false] + $ghV2, '', false); check('v2: מנעול קוד סגור (פרמטר) → source_disabled', false); }
+catch (AcademySourceError $e) { check('v2: מנעול קוד סגור (פרמטר) → source_disabled', $e->errorCode === 'source_disabled'); }
 check('ברירת מחדל: contract v1 + נתיבי מנהל 00', $def['contract'] === 'v1'
     && $def['github']['snapshot_path'] === 'dashboard/data/snapshot.json'
     && $def['github']['curriculum_path'] === 'dashboard/data/curriculum-v2-approved.json'
@@ -417,7 +421,7 @@ check('github v2 JSON שבור: contract_invalid בלי אסימון', str_conta
 check('אין endpoint ל-issues', !glob(__DIR__ . '/../api/*issue*') && !preg_match('/\/issues/', (string) file_get_contents(__DIR__ . '/../lib/academy-source.php')));
 
 // ---------- האסימון: רק מקובץ מחוץ לאתר ----------
-$on = $withTok(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'fallback_to_sample' => false] + $def);
+$on = $withTok(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'fallback_to_sample' => false, 'contract' => 'v2'] + $def);
 $reads = [];
 $rec = function (string $p) use (&$reads) { $reads[] = $p; return file_get_contents($p); };
 $srcOk = academy_source($on, '', true, $rec);
@@ -484,9 +488,22 @@ foreach ([['github_enabled' => false], ['privacy_confirmed' => false]] as $off) 
 $reads = [];
 academy_source(array_replace($on, ['fallback_to_sample' => true]), '', false, $rec);
 check('מנעול השלב כבוי → הקובץ לא נפתח', $reads === []);
-$reads = [];
-academy_source(array_replace($on, ['fallback_to_sample' => true]), '', ACADEMY_GITHUB_PHASE_ALLOWED, $rec);
-check('ברירת המחדל של הקוד (היום) → הקובץ לא נפתח', $reads === [] && ACADEMY_GITHUB_PHASE_ALLOWED === false);
+// מנעול הקוד פתוח, אבל הקונפיג כמו בתבנית / ברירת המחדל → שום דבר לא נדלק והקובץ לא נפתח
+$exTpl = json_decode((string) file_get_contents(__DIR__ . '/../samples/config.example.json'), true);
+foreach (['ברירת המחדל' => $def, 'התבנית' => $exTpl] as $label => $base) {
+    $reads = [];
+    $srcD = academy_source($withTok($base), '', ACADEMY_GITHUB_PHASE_ALLOWED, $rec);
+    check("$label + מנעול פתוח → דוגמה, הקובץ לא נפתח", $srcD instanceof LocalAcademySource && $reads === []);
+    [$st, $body] = academy_api_curriculum('GET', $withTok($base), null, ['reader' => $rec]);
+    check("$label: curriculum.php → source_disabled, הקובץ לא נפתח", $st === 503 && $body['code'] === 'source_disabled' && $reads === []);
+}
+// כל מתג לבדו לא מדליק
+foreach (['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'contract' => 'v2'] as $k => $v) {
+    $reads = [];
+    $only = $withTok(array_replace($def, [$k => $v]));
+    [$st] = academy_api_curriculum('GET', $only, null, ['reader' => $rec]);
+    check("רק $k לבדו → כבוי, הקובץ לא נפתח", $st === 503 && $reads === []);
+}
 // קונפיג ותבנית
 check('ברירת מחדל: אין "token", יש token_file ריק', !array_key_exists('token', $def['github']) && $def['github']['token_file'] === '');
 $exT = json_decode((string) file_get_contents(__DIR__ . '/../samples/config.example.json'), true);
@@ -495,6 +512,70 @@ check('config.example: שאר הקונפיג נשמר', $exT['source'] === 'loca
     && $exT['github']['curriculum_path'] === 'dashboard/data/curriculum-v2-approved.json' && $exT['cache_ttl'] === 120);
 $gi = (string) @file_get_contents(__DIR__ . '/../.gitignore');
 check('.gitignore: config, cache, *.token', str_contains($gi, 'data/config.json') && str_contains($gi, 'data/cache/') && str_contains($gi, '*.token'));
+// ---------- הפעלת מקור GitHub (מנעול הקוד פתוח): api/curriculum.php מקצה לקצה, עם stub ל-HTTP ----------
+// הכול דרך academy_source → GithubAcademySource → transport מדומה. אין פנייה אמיתית לרשת.
+// cache_ttl 0 — בלי מטמון (אחרת התשובה הראשונה נשמרת ב-data/cache האמיתי ומוחזרת לכל השאר)
+$live = $withTok(array_replace($def, ['source' => 'github', 'contract' => 'v2', 'github_enabled' => true, 'privacy_confirmed' => true, 'cache_ttl' => 0]));
+$authOk = ['server' => ['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => true])], 'sapi' => 'litespeed'];
+$ALLOWED_URLS = [];
+$urlStub = function (int $status, string $body, bool $throw = false) use (&$ALLOWED_URLS) {
+    return function (string $url, array $h) use ($status, $body, $throw, &$ALLOWED_URLS) {
+        $ALLOWED_URLS[] = $url;
+        if ($throw) throw new AcademySourceError('תם הזמן לפנייה למאגר האקדמיה', 'source_unavailable');
+        if (str_contains($url, '/commits/')) return ['status' => 200, 'body' => FAKE_SHA];
+        return ['status' => $status, 'body' => $body];
+    };
+};
+$allowedRe = '~^https://api\.github\.com/repos/malkiel01/offensive-cyber-academy/(commits/main|contents/dashboard/data/curriculum-v2-approved\.json\?ref=' . FAKE_SHA . ')$~';
+$call = fn(callable $t, array $opts = []) => academy_api_curriculum('GET', $live, null, $opts + $authOk + ['transport' => $t]);
+// 200 — מאושר
+$ALLOWED_URLS = [];
+[$st, $body] = $call($urlStub(200, json_encode($appr)));
+check('הפעלה: 200 עם תוכנית מאושרת, לא דוגמה', $st === 200 && $body['ok'] === true && $body['isSample'] === false && $body['curriculum']['counts']['lessons'] === 3);
+check('הפעלה: בדיוק שתי פניות — קומיט ואז הקובץ באותו קומיט', count($ALLOWED_URLS) === 2
+    && str_ends_with($ALLOWED_URLS[0], '/commits/main') && str_ends_with($ALLOWED_URLS[1], '?ref=' . FAKE_SHA), implode(' | ', $ALLOWED_URLS));
+check('הפעלה: כל URL ברשימה המותרת', !array_filter($ALLOWED_URLS, fn($u) => !preg_match($allowedRe, $u)), implode(' | ', $ALLOWED_URLS));
+check('הפעלה: אין issues/comments ב-URL', !array_filter($ALLOWED_URLS, fn($u) => preg_match('~/(issues|comments|pulls)~', $u)));
+check('הפעלה: האסימון מהקובץ לא בפלט', !str_contains(json_encode($body), FILE_TOKEN));
+// רק מסלולים מאושרים
+$ALLOWED_URLS = [];
+[$st, $body] = $call($urlStub(200, json_encode($full2)));
+check('הפעלה: מסלול שאינו approved לא בתשובה', $st === 200 && array_column($body['curriculum']['tracks'], 'id') === ['tr-1', 'tr-3']
+    && !str_contains(json_encode($body, JSON_UNESCAPED_UNICODE), 'fixture · track 2'));
+check('הפעלה: בלי נתוני לומד', !preg_match('/"(competencies|tasks|assessments|evidence|timeline|measure)"/', json_encode($body)));
+$propAll = $full2; $propAll['curriculum'] = ['status' => 'proposed', 'version' => 'x', 'approvedAt' => null, 'approvedBy' => null];
+[$st, $body] = $call($urlStub(200, json_encode($propAll)));
+check('הפעלה: סילבוס proposed → 0 מסלולים', $st === 200 && $body['curriculum']['tracks'] === [] && $body['curriculum']['modules'] === []);
+// כל כשל → שגיאה, בלי תוכן ובלי דוגמה
+$fails = ['401' => [401, '{"message":"' . FILE_TOKEN . '"}'], '403' => [403, FILE_TOKEN], '404' => [404, FILE_TOKEN],
+          '429' => [429, FILE_TOKEN], '500' => [500, FILE_TOKEN], 'JSON שבור' => [200, '{"schemaVersion":"2.0.0",' . FILE_TOKEN]];
+foreach ($fails as $label => [$code, $b]) {
+    [$st, $body] = $call($urlStub($code, $b));
+    $out = json_encode($body, JSON_UNESCAPED_UNICODE);
+    check("הפעלה $label: שגיאה בלי תוכן ובלי דוגמה", $st >= 400 && $body['ok'] === false && !isset($body['curriculum']) && $body['isSample'] === false && !isset($body['model']), $out);
+    check("הפעלה $label: בלי אסימון", !str_contains($out, FILE_TOKEN));
+}
+[$st, $body] = $call($urlStub(200, '', true));
+check('הפעלה timeout: source_unavailable בלי תוכן', $st === 502 && $body['code'] === 'source_unavailable' && !isset($body['curriculum']));
+// אימות לפני שימוש
+foreach (['rule--task-dependsOn-cycle', 'rule--evidence-reference-token', 'schema--lesson-bad-kind'] as $n) {
+    [$st, $body] = $call($urlStub(200, json_encode($fx2("broken/$n"))));
+    check("הפעלה: קובץ לא תקין ($n) → contract_invalid בלי תוכן", $st === 422 && $body['code'] === 'contract_invalid' && !isset($body['curriculum']));
+}
+[$st, $body] = $call($urlStub(200, json_encode($valid)));
+check('הפעלה: snapshot v1 בנתיב → contract_version', $st === 422 && $body['code'] === 'contract_version');
+// הרשאה
+foreach (['בלי PLATFORM_USER' => [], 'granted=false' => ['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => false])]] as $label => $srv) {
+    $ALLOWED_URLS = []; $reads = [];
+    [$st, $body] = academy_api_curriculum('GET', $live, null, ['server' => $srv, 'sapi' => 'litespeed', 'transport' => $urlStub(200, json_encode($appr)), 'reader' => $rec]);
+    check("הפעלה $label → 403, בלי פנייה ובלי קריאת אסימון", $st === 403 && $body['code'] === 'forbidden' && $ALLOWED_URLS === [] && $reads === []);
+}
+// אין קוד שפונה ל-issues
+$codeFiles = array_merge(glob(__DIR__ . '/../lib/*.php'), glob(__DIR__ . '/../api/*.php'), glob(__DIR__ . '/../assets/js/*.js'));
+$issueHits = array_filter($codeFiles, fn($f) => preg_match('~/issues|/comments|/pulls|issues\?~i', (string) file_get_contents($f)));
+check('אין קריאה ל-issues/comments/pulls בקוד', $issueHits === [], implode(', ', array_map('basename', $issueHits)));
+
+check('הבדיקות לא השאירו מטמון ב-data/ של הריפו', !is_dir(__DIR__ . '/../data/cache'));
 array_map('unlink', glob("$tokDir/*") ?: []); @rmdir($tokDir);
 
 // ---------- הרשאות ----------
