@@ -142,3 +142,120 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
   - `https://api.github.com/repos/malkiel01/offensive-cyber-academy/commits/main`
   - `https://api.github.com/repos/malkiel01/offensive-cyber-academy/contents/dashboard/data/curriculum-v2-approved.json?ref=<sha>`
 - `docs/spec/github-activation.md` — מה מגדירים בשרת, ומה בודקים אחרי.
+
+## 2026-11-23 · התקדמות לומד — תשתית, אפיון ובדיקות (PR טיוטה, בלי מיזוג)
+
+- **חדש:**
+  - `lib/progress.php` — אחסון, אימות כללי המצב, תצוגה בשלוש קטגוריות, מי השואל.
+  - `lib/progress-api.php`.
+  - `api/progress.php` (GET), `api/progress-write.php` (POST, מנהל).
+  - `docs/spec/student-progress.md`.
+  - `tests/fixtures/progress/` — סינתטי בלבד, 18 שבורים.
+- **שונה:**
+  - `access.php` — תפקיד `manager`, ו-`progress.read.self` ל-viewer.
+  - `academy-source.php` — `progress_dir`, `progress.managers` בברירות המחדל, אחרת `academy_load_config` היה זורק אותם.
+  - `config.example`, `.gitignore` (`data/progress/`).
+  - `api.php` — `curriculum.php` מסיר `competencyStatus` מהמיומנויות. המפתח היה שם, תמיד null; זה שדה לומד.
+- **בדיקה שעודכנה בכוונה:** "אין שום הרשאת כתיבה" → "viewer בלי כתיבה, והיחידה במערכת היא progress.write של manager".
+- **מנהל = sub ב-`progress.managers`.** ברירת המחדל ריקה, ואין מנהל עד שהשרת מגדיר. platform_admin לא הופך למנהל אוטומטית.
+- **בדיקות:** run.php 660 → 772. אין שינוי UI, ולכן check.js רץ כבדיקת רגרסיה בלבד.
+
+## 2026-11-23 · #1811 — נתוני תלמיד רק מתיקייה מחוץ לאתר (הוראת מנהל 00)
+
+- **אין יותר ברירת מחדל `data/progress/`**: לא בקוד, לא בתבנית, לא בתיעוד ולא ב-`.gitignore`.
+- **חסימה:** כש-`progress_dir` לא תקין — 503 `progress_unavailable`, עם `reason`: `progress_dir_missing` / `_not_absolute` / `_unsafe` / `_insecure`.
+  - חסום גם בקריאה וגם בכתיבה, לפני שנפתח קובץ כלשהו.
+  - הבדיקה רצה על הנתיב המבוקש וגם על realpath.
+- **אין `mkdir`.** התיקייה ידנית. כתיבה אטומית עם ניקוי הקובץ הזמני בכשל (גם ל-`learners.json`).
+- **הוסר `$opts['dir']`.** הבדיקות עוברות תמיד דרך `academy_progress_dir`.
+- **שגיאות כתיבה:** 500 בלי נתיב. ללומד — קובץ לא תקין מחזיר 422 בלי פירוט ובלי תוכן.
+- **בדיקות:** run.php 772 → 819.
+  - נוספו: ברירת מחדל, יחסי, שורש, cyber-academy, public_html, ‎/www/‎, `..`, DOCUMENT_ROOT מדומה, קישור סימבולי, תיקייה חסרה (לא נוצרת), הרשאות 0755/0644/0666/0703, תיקייה חוקית, כשל כתיבה בלי קובץ חלקי, תוכן מזויף שלא דולף.
+  - בסוף: הריפו זהה לרשימה שלפני, ואין בו קובץ לומד.
+
+## 2026-11-23 · #1811 — רמת סיוע `hint`, ושדות חדשים בדיווח מורה
+
+- **רמת סיוע בהערכות:** `hints` → `hint`. שונה ב-`ACADEMY_PROGRESS_ASSISTANCE`, ב-19 ה-fixtures ובאפיון.
+- **דיווח מורה — שדות חדשים:**
+  - `lessonIds` — אופציונלי.
+  - `assistanceLevel` — חובה: `none | hint | guided | full | unknown`. ה-fixtures עודכנו ל-`unknown`.
+- **ספירות בתצוגה:** `reportsByAssistance` ו-`reportAssistance` לכל מיומנות. `unknown` נספר בנפרד, לעולם לא כ-`none`.
+- **mastered:** דיווח (גם עם `none`) לא משנה סטטוס ולא מאפשר mastered. נבדק.
+- **בדיקות:** run.php 819 → 829.
+
+## 2026-11-23 · #1811 — התצוגה של הלומד: רק מאומת, בלי נתיב, מעריך או דיווחים
+
+- **`academy_progress_learner_view`:**
+  - הערכות מאומתות — `{id, skillIds, at, result, approvedAt}`. `result` = `{skillId: status}` מהמיומנויות שמפנות להערכה, כי אין שדה result בחוזה.
+  - ראיות מאומתות — `{id, kind, createdAt}`.
+  - מיומנויות — `{category, status, updatedAt}`.
+- **מנהל** — התצוגה המלאה, כמו קודם.
+- **בדיקות:** run.php 829 → 838. כוללות סריקת מפתחות רקורסיבית, בדיקה שאין נתיב או שם מעריך בשום ערך, ובדיקה שרק המאומת מופיע.
+
+## 2026-11-23 · #1811 — `reports[].at`: תאריך בלבד או תאריך-שעה (מנהל 00)
+
+- **סוג חדש `date_or_dt` ב-`_av2_type`:** `YYYY-MM-DD` תקין (checkdate), או RFC 3339 עם אזור זמן. הערך נשמר כמו שנשלח.
+- **רק ב-`reports[].at`.** `createdAt`, `assessedAt`, `approvedAt` ו-`updatedAt` נשארים `dt`/`dt?`.
+- **בדיקות:** run.php 838 → 854.
+
+## 2026-11-23 · #1811 — תיקוני ביקורת צוות 1 (docs/audit/progress-audit-2026-11-23.md בענף claude/aca-security-audit)
+
+תוקנו F1–F10. F11 נשאר — מידע בלבד (php -S לפיתוח), ותועד באפיון.
+
+| ממצא | התיקון |
+| --- | --- |
+| F1 | קובץ פגום → 503 `progress_file_corrupt`. לא "ריק", ולא נכתב מעליו |
+| F2 | `flock` על `.lock` סביב כל כתיבה. נבדק עם 3 תהליכים × 20 כתיבות במקביל: 60/60 |
+| F3 | היומן נכתב לפני השמירה, בלי `@`. כשל → 500 בלי שמירה |
+| F4 | 409 על מיפוי קיים, `force: true` בלבד. היומן רושם `from`/`fromSub` |
+| F5 | same-origin בלבד (Sec-Fetch-Site/Origin), ו-media type מדויק |
+| F6–F10 | `JSON_THROW_ON_ERROR`, `assessmentId` כמחרוזת, `reason` רק למנהל, בלי `learnerId` בלוג, umask 027 |
+
+**בדיקה שעודכנה בכוונה:** "כשל כתיבה → 500" — יעד שהוא תיקייה נחשב עכשיו קובץ פגום (503, F1). נוספה בדיקה ישירה של כשל rename.
+**בדיקות:** run.php 854 → 906.
+
+## 2026-11-23 · #1811 — היומן לעולם לא מתעד שינוי שלא נשמר
+
+- **`academy_progress_commit`:** קובץ זמני → יומן (עם `tx`) → rename, שהוא נקודת ההתחייבות.
+  - כשל ב-rename → ftruncate של היומן לגודל שלפני. אם גם הקיצוץ נכשל → שורת `rollback` עם אותו `tx`.
+  - שלושת מסלולי הכתיבה (register / report / apply) עוברים דרכה.
+- **`$opts['rename']`** — להזרקת כשל, בבדיקות בלבד.
+- **בדיקות:**
+  - כשל rename ב-report, apply ו-register → 500. הקובץ והיומן זהים בייט-לבייט, ואין קובץ זמני.
+  - `tx` בשורה מוצלחת.
+  - `force` ממי שאינו מנהל → 403.
+  - F11: ב-litespeed בלי `granted` אין תפקיד. cli-server מתעלם מ-`PLATFORM_USER` — מתועד, ולא שונה.
+- **מקביליות — הבדיקה הוכחה:** כשהורדתי זמנית את `flock`, הבדיקה נכשלה (54/60 — 6 עדכונים אבדו). עם הנעילה — 60/60.
+- **בדיקות:** run.php 906 → 923.
+
+## 2026-11-23 · #1811 — יומן חלקי, tx פתוח, F11 צומצם
+
+- **יומן חלקי:** בכתיבה חלקית `academy_progress_audit` מקצץ לגודל שלפני וזורק חריגה, ולכן 500 ובלי שמירה. `$opts['auditWrite']` משמש להזרקה.
+- **סיכון שנותר — מתועד:** אחרי rename מוצלח נרשמת שורת `commit` עם ה-tx. `academy_progress_scan_open_tx` רץ בכל כתיבה ומסמן בלוג tx פתוחים, בלי לשנות נתונים ובלי מזהה לומד.
+- **F11:** רק `cli` מקבל viewer בלי זהות. `cli-server` דורש `PLATFORM_USER.granted`. נוסף `tests/browser/dev-identity.php` לבדיקת הדפדפן המקומית.
+- **בדיקות שעודכנו בכוונה:**
+  - "CLI ו-php -S → viewer" → `cli-server` בלי זהות מחזיר null.
+  - "tx בשורה האחרונה" → שתי השורות האחרונות: השינוי, ואחריו commit.
+  - "F11: cli-server → viewer גם עם PLATFORM_USER" → שלוש בדיקות חדשות.
+- **בדיקות:** run.php 923 → 936. check.js ✓ (עם dev-identity).
+
+## הסרת `reference` מתצוגת תוכנית האקדמיה / תמונת המצב (v2)
+- **הכרעת בקרה:** `model-v2.php` החזיר `evidence[].reference` לכל צופה. עכשיו הראיה יוצאת כ-`{id, kind, createdAt, visibility}` בלבד.
+- **הולידציה לא שונתה** — `reference` לא בטוח עדיין נדחה (`/etc/passwd`, `..`, תבניות סוד).
+- **UI:** מסך "מבחנים וראיות" כבר לא מציג את ההפניה (סוג, תאריך ונראות בלבד).
+- **בדיקות חדשות:** סריקה רקורסיבית — אין מפתח `reference` בתגובת `curriculum.php` ובתמונת המצב v2 עם ראיה מדומה; מפתחות הראיה במודל בדיוק `id, kind, createdAt, visibility`; `visibility` נשאר; הולידציה דוחה הפניה לא בטוחה.
+- **בדיקות:** run.php 937 → 944. check.js ✓ (עם dev-identity).
+
+## `timeline[].referenceId` — מזהה בלבד, לישות קיימת
+- **ממצא צוות 1:** `referenceId` היה `str?` חופשי ועבר לכל צופה.
+- **ולידציה:** טיפוס `refid?` — `null` או מזהה (`ACADEMY_V2_ID`, בלי `..`). חייב להפנות לראיה או לישות לפי `kind` (`ACADEMY_V2_TIMELINE_TARGETS`), אחרת 422.
+- **מודל:** `_av2_safe_refid` — הגנה נוספת, נתיב לא יוצא גם אם הולידציה עוקפה.
+- **בדיקות:** נתיבים (`evidence/x.md`, `../x`, `/etc/passwd`, `.hidden`, `a..b`, `C:\x`, `~/x`, ריק) נדחים; מזהה לא קיים / מרשימה לא מתאימה נדחה; תקינים מתקבלים; snapshot 422 על נתיב; בתשובה רק מזהה תקין. סורק נתיבים רקורסיבי על כל מחרוזת (מפתחות וערכים) בפלט curriculum.php ו-snapshot v2.
+- **בדיקות:** run.php 944 → 966. check.js ✓.
+
+## F5 — Origin חובה בכתיבה (הכרעת מנהל 00) + חוזה referenceId
+- **F5:** `academy_progress_same_origin` — `Origin` חובה ובדיוק `https://<HTTP_HOST>`; `Sec-Fetch-Site` אם נשלח = `same-origin`. חריג רק sapi `cli` בלי כותרות. GET ללא שינוי.
+- **מטריצה ב-run.php** (11 שורות + GET): חסר/null/תת-דומיין/http/פורט/נתיב/בלי HOST/cross-site/בלי זהות → 403; תואם → 200; GET בלי Origin → 200. הדפסה: `CA_F5_MATRIX=1`.
+- **בדיקה שעודכנה בכוונה:** תהליך-הבן של בדיקת המקביליות שלח רק `Sec-Fetch-Site` — נוספו `HTTP_HOST` ו-`Origin` תואם (אחרת 403 לפי הכלל החדש).
+- **תיעוד:** `docs/spec/student-progress.md` (F5, כלי לא-דפדפן, `mp_session` SameSite=Lax), `docs/spec/referenceid-contract.md` (טבלה + בדיקות).
+- **בדיקות:** run.php 966 → 979. check.js ✓.

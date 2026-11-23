@@ -103,7 +103,8 @@ function academy_model_v2(array $s): array {
     $assessments = array_map(fn($a) => ['id' => $a['id'], 'status' => $a['status'], 'rubric' => $a['rubric'],
         'skills' => array_map(fn($k) => ['id' => $k, 'title' => $skillsById[$k]['title']], $a['skillIds']),
         'evidenceRefs' => $a['evidenceRefs'], 'assessedAt' => $a['assessedAt'] ?? null, 'approvedBy' => $a['approvedBy'] ?? null], $s['assessments']);
-    $evidence = array_map(fn($e) => ['id' => $e['id'], 'kind' => $e['kind'], 'reference' => $e['reference'],
+    // reference אינו יוצא לשום צופה — מצביע לתוכן ראיה של לומד (נבדק בולידציה בלבד)
+    $evidence = array_map(fn($e) => ['id' => $e['id'], 'kind' => $e['kind'],
         'createdAt' => $e['createdAt'], 'visibility' => $e['visibility'] ?? null], $s['evidence']);
 
     $gaps = array_values(array_filter($comps, fn($c) => in_array($c['status'], ACADEMY_GAPS, true)));
@@ -123,7 +124,7 @@ function academy_model_v2(array $s): array {
 
     $timeline = [];
     if ($s['updatedAt']) $timeline[] = ['at' => $s['updatedAt'], 'kind' => 'snapshot', 'title' => 'עדכון תמונת המצב', 'referenceId' => null];
-    foreach ($s['timeline'] as $e) $timeline[] = ['at' => $e['at'], 'kind' => $e['kind'], 'title' => $e['title'], 'referenceId' => $e['referenceId'] ?? null];
+    foreach ($s['timeline'] as $e) $timeline[] = ['at' => $e['at'], 'kind' => $e['kind'], 'title' => $e['title'], 'referenceId' => _av2_safe_refid($e['referenceId'] ?? null)];
     usort($timeline, fn($a, $b) => strtotime($b['at']) <=> strtotime($a['at']));
 
     return [
@@ -176,4 +177,9 @@ function academy_v2_curriculum_only(array $s): array {
         'topics' => $keep('topics'), 'skills' => $keep('skills'), 'lessons' => $keep('lessons'),
         'competencies' => [], 'tasks' => [], 'assessments' => [], 'evidence' => [], 'timeline' => [],
     ];
+}
+
+/** referenceId יוצא רק כמזהה תקין — אף פעם לא נתיב (הגנה נוספת מעבר לולידציה) */
+function _av2_safe_refid(mixed $v): ?string {
+    return is_string($v) && preg_match(ACADEMY_V2_ID, $v) && !str_contains($v, '..') ? $v : null;
 }

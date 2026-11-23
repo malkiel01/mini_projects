@@ -19,6 +19,13 @@ require_once __DIR__ . '/validate.php';
 
 const ACADEMY_SCHEMA_V2 = '2.0.0';
 const ACADEMY_V2_ID = '/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/';
+// לאילו רשימות timeline.referenceId רשאי להפנות, לפי kind (ראיה מותרת תמיד)
+const ACADEMY_V2_TIMELINE_TARGETS = [
+    'task' => ['tasks'],
+    'assessment' => ['assessments'],
+    'curriculum' => ['stages', 'tracks', 'modules', 'lessons', 'topics', 'skills'],
+    'decision' => ['stages', 'tracks', 'modules', 'lessons', 'topics', 'skills', 'assessments'],
+];
 const ACADEMY_V2_LISTS = ['stages', 'tracks', 'modules', 'topics', 'skills', 'competencies', 'tasks', 'assessments', 'evidence', 'timeline', 'lessons'];
 
 /**
@@ -42,7 +49,7 @@ function academy_v2_spec(): array {
         'evidence' => ['id' => [1, 'id'], 'kind' => [1, 'enum:command_output|lab_report|quiz|oral_explanation|code|other'],
             'reference' => [1, 'str'], 'createdAt' => [1, 'dt'], 'visibility' => [0, 'enum:private|restricted']],
         'timeline' => ['id' => [1, 'id'], 'kind' => [1, 'enum:curriculum|task|assessment|decision'], 'at' => [1, 'dt'],
-            'title' => [1, 'str'], 'referenceId' => [0, 'str?']],
+            'title' => [1, 'str'], 'referenceId' => [0, 'refid?']],
         'lessons' => ['id' => [1, 'id'], 'moduleId' => [1, 'id'], 'title' => [1, 'str1'], 'kind' => [1, 'enum:theory|analysis|lab'],
             'order' => [1, 'int0'], 'learningObjectives' => [1, 'strs1'], 'assessmentMode' => [1, 'enum:computer|mobile_or_voice|either'],
             'authorizedLabRequired' => [0, 'bool']],
@@ -149,6 +156,16 @@ function academy_validate_v2(mixed $s): array {
         if (in_array($it['id'] ?? null, (array) ($it['dependsOn'] ?? []), true)) $err[] = "\$.tasks[$i].dependsOn: משימה לא יכולה להיות תלויה בעצמה";
     }
 
+    // timeline.referenceId — חייב להפנות לישות קיימת: ראיה, או ישות לפי kind
+    foreach ($items['timeline'] as $i => $it) {
+        $rid = $it['referenceId'] ?? null;
+        if (!is_string($rid) || !preg_match(ACADEMY_V2_ID, $rid) || str_contains($rid, '..')) continue; // הצורה נבדקה בסכמה
+        $targets = array_merge(['evidence'], ACADEMY_V2_TIMELINE_TARGETS[$it['kind'] ?? ''] ?? []);
+        $found = false;
+        foreach ($targets as $t) if (isset($ids[$t][$rid])) { $found = true; break; }
+        if (!$found) $err[] = "\$.timeline[$i].referenceId: אין מזהה \"$rid\" ב-" . implode('/', $targets);
+    }
+
     // evidence.reference בטוח
     foreach ($items['evidence'] as $i => $it) {
         if (isset($it['reference']) && is_string($it['reference']) && ($why = academy_v2_unsafe_reference($it['reference']))) {
@@ -221,6 +238,9 @@ function _av2_type(mixed $v, string $type, string $p, array &$err): void {
             break;
         case 'str':  if (!is_string($v)) $err[] = "$p: חייב להיות מחרוזת"; break;
         case 'str1': if (!is_string($v) || $v === '') $err[] = "$p: חייב להיות מחרוזת לא ריקה"; break;
+        case 'refid?': // מזהה בלבד — לא נתיב: בלי /, בלי .., לא מתחיל בנקודה
+            if ($v !== null && (!$isId($v) || str_contains($v, '..'))) $err[] = "$p: חייב להיות מזהה (בלי /, .. או נתיב) או null";
+            break;
         case 'str?': if ($v !== null && !is_string($v)) $err[] = "$p: חייב להיות מחרוזת או null"; break;
         case 'int0': if (!is_int($v) || $v < 0) $err[] = "$p: חייב להיות מספר שלם 0 ומעלה"; break;
         case 'bool': if (!is_bool($v)) $err[] = "$p: חייב להיות true או false"; break;
@@ -233,6 +253,11 @@ function _av2_type(mixed $v, string $type, string $p, array &$err): void {
             }
             break;
         case 'dt':   if (!is_string($v) || !academy_is_datetime($v)) $err[] = "$p: חייב להיות תאריך-שעה RFC 3339"; break;
+        // תאריך בלבד (YYYY-MM-DD, כשהשעה לא ידועה — בלי חצות מומצאת) או תאריך-שעה RFC 3339. נשמר כמו שנשלח.
+        case 'date_or_dt':
+            $okDate = is_string($v) && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) && checkdate((int) $m[2], (int) $m[3], (int) $m[1]);
+            if (!$okDate && (!is_string($v) || !academy_is_datetime($v))) $err[] = "$p: חייב להיות תאריך YYYY-MM-DD או תאריך-שעה RFC 3339";
+            break;
         case 'dt?':  if ($v !== null && (!is_string($v) || !academy_is_datetime($v))) $err[] = "$p: חייב להיות תאריך-שעה RFC 3339 או null"; break;
     }
 }

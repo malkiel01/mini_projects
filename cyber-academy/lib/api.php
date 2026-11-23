@@ -130,6 +130,8 @@ function academy_api_curriculum(string $method, array $config, ?AcademySource $s
     return [200, ['ok' => true] + $meta + ['sourceInfo' => $source->info(), 'filter' => 'approved_curriculum_only', 'curriculum' => [
         'curriculum' => $m['curriculum'], 'counts' => $m['counts'],
         'stages' => $m['stages'], 'tracks' => array_map(fn($t) => array_diff_key($t, ['measure' => 1]), $m['tracks']),
-        'modules' => array_map(fn($md) => array_diff_key($md, ['measure' => 1]), $m['modules']),
+        // בלי שום שדה לומד: לא measure ולא competencyStatus (תמיד null כאן, אבל המפתח עצמו לא שייך לתוכנית)
+        'modules' => array_map(fn($md) => array_replace(array_diff_key($md, ['measure' => 1]), ['skills' => array_map(
+            fn($k) => array_diff_key($k, ['competencyStatus' => 1]), $md['skills'])]), $m['modules']),
     ]]];
 }

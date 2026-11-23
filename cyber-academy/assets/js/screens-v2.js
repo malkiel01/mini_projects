@@ -135,8 +135,7 @@ window.CA = window.CA || {};
           meta: `<span class="chip ${ASSESS[a.status].cls}">${ASSESS[a.status].label}</span>${a.status === 'evaluated' ? (a.approvedBy ? '<span class="chip ok">אושר</span>' : '<span class="chip warn">לא אושר</span>') : ''}` })), '') : noAssess()}
         <h2 class="sec-title">ראיות (${m.evidence.length})</h2>
         ${listOr(m.evidence.map((e) => `<li><div class="use-row"><span class="use-ic" aria-hidden="true">🧾</span>
-          <span class="use-tx"><b>${esc(EVKIND[e.kind] || e.kind)}</b><small>${fmtDate(e.createdAt)}${e.visibility ? ' · ' + (e.visibility === 'private' ? 'פרטי' : 'מוגבל') : ''}</small>
-          <span class="refs"><code title="${esc(e.reference)}">${esc(e.reference)}</code></span></span></div></li>`), 'אין ראיות מתועדות.')}
+          <span class="use-tx"><b>${esc(EVKIND[e.kind] || e.kind)}</b><small>${fmtDate(e.createdAt)}${e.visibility ? ' · ' + (e.visibility === 'private' ? 'פרטי' : 'מוגבל') : ''}</small></span></div></li>`), 'אין ראיות מתועדות.')}
       ` };
     },
 
