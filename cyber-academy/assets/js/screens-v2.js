@@ -46,8 +46,8 @@ window.CA = window.CA || {};
     },
 
     syllabus(m) {
-      return { title: 'סילבוס', html: `
-        <p class="hint">שלבים ← מסלולים ← מודולים ← שיעורים. מסלול "מוצע · לא אושר" הוא הצעה, לא תוכנית מחייבת ולא התקדמות.</p>
+      return { title: 'תוכנית האקדמיה', html: `
+        <p class="hint">שלבים ← מסלולים ← מודולים ← שיעורים. זו תוכנית הלימוד — לא התקדמות.${m.curriculum.curriculumStatus === 'approved' ? '' : ' מסלול "מוצע · לא אושר" הוא הצעה, לא תוכנית מחייבת.'}</p>
         <div class="curr-note">${currTag(m.curriculum.curriculumStatus, true)}<span>גרסה ${esc(m.curriculum.version)}</span></div>
         ${m.stages.map((st) => `<h2 class="sec-title">🗂️ ${esc(st.title)}</h2>${st.description ? `<p class="hint">${esc(st.description)}</p>` : ''}
           ${listOr(st.trackIds.map((id) => byId(m.tracks, id)).map((t) => row({

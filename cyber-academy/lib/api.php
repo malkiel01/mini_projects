@@ -85,3 +85,45 @@ function academy_api_snapshot(array $config, array $query = [], ?AcademySource $
     }
     return [200, ['ok' => true] + $meta + ['model' => $v2 ? academy_model_v2($data) : academy_model($data)]];
 }
+
+/**
+ * GET api/curriculum.php — "תוכנית האקדמיה" בלבד (Issue #6, משימה 4): משתמש מחובר ומורשה, בשרת.
+ * רק ממאגר האקדמיה (חוזה v2, github.curriculum_path), רק סילבוס מאושר, ובלי שום נתון לומד — לא כשירויות, משימות,
+ * הערכות, ראיות, ציר זמן או issues. אין דוגמה מקומית: כשהמקור כבוי → source_disabled.
+ */
+function academy_api_curriculum(string $method, array $config, ?AcademySource $source = null): array {
+    if (!in_array(strtoupper($method), ['GET', 'HEAD'], true)) {
+        return [405, ['ok' => false, 'code' => 'method_not_allowed', 'error' => 'קריאה בלבד']];
+    }
+    if (!academy_can('curriculum.read')) return [403, ['ok' => false, 'code' => 'forbidden', 'error' => 'אין הרשאה']];
+    $token = (string) ($config['github']['token'] ?? '');
+    $meta = ['source' => 'github', 'isSample' => false];
+    $fail = fn(int $st, string $code, string $msg) => [$st, ['ok' => false, 'code' => $code, 'error' => academy_redact($msg, $token)] + $meta];
+    try {
+        if (!$source) {
+            $src = academy_source(['source' => 'github', 'contract' => 'v2', 'fallback_to_sample' => false] + $config);
+            if (!$src instanceof GithubAcademySource) return $fail(503, 'source_disabled', 'החיבור למאגר האקדמיה כבוי');
+            $source = $src;
+        }
+        $data = $source->fetch();
+    } catch (AcademySourceError $e) {
+        return $fail(ACADEMY_SOURCE_HTTP[$e->errorCode] ?? 502, $e->errorCode, $e->getMessage());
+    } catch (Throwable $e) {
+        return $fail(502, 'source_unavailable', 'לא ניתן לקרוא את תוכנית האקדמיה: ' . $e->getMessage());
+    }
+    if (!is_array($data) || ($data['schemaVersion'] ?? null) !== ACADEMY_SCHEMA_V2) {
+        return $fail(422, 'contract_version', 'תוכנית האקדמיה חייבת להיות בחוזה ' . ACADEMY_SCHEMA_V2);
+    }
+    $errors = academy_validate_v2($data);
+    if (!$errors) { $data = academy_v2_curriculum_only($data); $errors = academy_validate_v2($data); }
+    if ($errors) {
+        return [422, ['ok' => false, 'code' => 'contract_invalid', 'error' => 'תוכנית האקדמיה אינה תואמת לחוזה v2',
+            'errors' => array_slice(array_map(fn($e) => academy_redact($e, $token), $errors), 0, 50), 'errorCount' => count($errors)] + $meta];
+    }
+    $m = academy_model_v2($data);
+    return [200, ['ok' => true] + $meta + ['sourceInfo' => $source->info(), 'filter' => 'approved_curriculum_only', 'curriculum' => [
+        'curriculum' => $m['curriculum'], 'counts' => $m['counts'],
+        'stages' => $m['stages'], 'tracks' => array_map(fn($t) => array_diff_key($t, ['measure' => 1]), $m['tracks']),
+        'modules' => array_map(fn($md) => array_diff_key($md, ['measure' => 1]), $m['modules']),
+    ]]];
+}

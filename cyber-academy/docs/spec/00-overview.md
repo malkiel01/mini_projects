@@ -93,7 +93,13 @@
   מאושרת, ו-`evidence.reference` בטוח (יחסי או https, בלי `..`, בלי נתיב מוחלט, בלי תבניות סוד).
 - **מסכים:** שלב ← מסלול ← מודול (`#/module/<id>`: מטרות, שיעורים עם סוג / אופן הערכה / 🔐 מעבדה מורשית, נושאים,
   מיומנויות). מסלול "מאושר" רק כשגם הסילבוס מאושר. בלי הערכות — "אין הערכות מתועדות", לא 0.
-- **GitHub + v2:** `contract: "v2"` ו-`github.v2_path` (ריק = `source_disabled`). מהמאגר עוברים **רק** מסלולים מאושרים
+- **GitHub + v2:** `contract: "v2"` ו-`github.curriculum_path` (ברירת מחדל `dashboard/data/curriculum-v2-approved.json`; ריק = `source_disabled`). v1: `github.snapshot_path`. `github.contract_v2_path` — לעיון בלבד. מהמאגר עוברים **רק** מסלולים מאושרים
   בסילבוס מאושר, עם המודולים/שיעורים/נושאים/מיומנויות שלהם — **בלי** כשירויות, משימות, הערכות, ראיות או ציר זמן
   (`academy_v2_curriculum_only`). אין endpoint ל-issues. היום (כל המסלולים מוצעים) → 0 מסלולים, ומסך "אין עדיין סילבוס
   מאושר".
+
+## api/curriculum.php — תוכנית האקדמיה בלבד (Issue #6, משימה 4)
+
+GET בלבד, למשתמש **מחובר ומורשה**: בשרת האמיתי `lib/access.php` דורש `$_SERVER['PLATFORM_USER']` עם `granted: true`
+(נקבע רק על ידי השער); בלעדיו → 403 `forbidden`. רק ממאגר האקדמיה (v2, `curriculum_path`), רק סילבוס מאושר, ובלי
+measure, כשירויות, משימות, הערכות, ראיות, ציר זמן או issues. מקור כבוי → 503 `source_disabled` (אין דוגמה).

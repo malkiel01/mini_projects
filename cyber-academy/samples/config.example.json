@@ -2,14 +2,16 @@
   "source": "local",
   "github_enabled": false,
   "privacy_confirmed": false,
+  "fallback_to_sample": true,
+  "contract": "v1",
   "github": {
     "owner": "malkiel01",
     "repo": "offensive-cyber-academy",
     "ref": "main",
-    "path": "dashboard/data/snapshot.json",
-    "v2_path": "",
+    "snapshot_path": "dashboard/data/snapshot.json",
+    "curriculum_path": "dashboard/data/curriculum-v2-approved.json",
+    "contract_v2_path": "dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json",
     "token": ""
   },
-  "cache_ttl": 120,
-  "contract": "v1"
+  "cache_ttl": 120
 }

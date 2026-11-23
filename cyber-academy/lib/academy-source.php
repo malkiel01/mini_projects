@@ -49,14 +49,17 @@ function academy_default_config(): array {
         'privacy_confirmed'  => false,
         // מקור github שאינו מותר: true = מציגים דוגמה (מסומנת), false = מסך "המקור כבוי"
         'fallback_to_sample' => true,
-        // איזה חוזה לקרוא ממאגר האקדמיה: v1 (github.path) או v2 (github.v2_path — ריק = כבוי, fail-closed)
+        // איזה חוזה לקרוא ממאגר האקדמיה: v1 (github.snapshot_path) או v2 (github.curriculum_path — ריק = כבוי, fail-closed)
         'contract'           => 'v1',
         'github'             => [
             'owner' => 'malkiel01',
             'repo'  => 'offensive-cyber-academy',
             'ref'   => 'main',
-            'path'  => 'dashboard/data/snapshot.json',
-            'v2_path' => '',
+            // נתיבים במאגר האקדמיה (הכרעת מנהל 00, 2026-11-23)
+            'snapshot_path'    => 'dashboard/data/snapshot.json',                 // v1
+            'curriculum_path'  => 'dashboard/data/curriculum-v2-approved.json',   // v2 — הסילבוס המאושר (419417a)
+            // לעיון בלבד: מקור הכללים ש-lib/validate-v2.php מממש. הדשבורד לא קורא את הקובץ.
+            'contract_v2_path' => 'dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json',
             'token' => '',
         ],
         'cache_ttl' => 120,
@@ -95,11 +98,10 @@ function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_
     if (($config['source'] ?? 'local') === 'github') {
         if (academy_github_allowed($config, $phase)) {
             $gh = $config['github'];
-            if (($config['contract'] ?? 'v1') === 'v2') {
-                // נתיב v2 לא ידוע עדיין — לא מנחשים. ריק = לא קוראים.
-                if (trim((string) ($gh['v2_path'] ?? '')) === '') throw new AcademySourceError('נתיב קובץ v2 במאגר האקדמיה לא הוגדר', 'source_disabled');
-                $gh['path'] = $gh['v2_path'];
-            }
+            $key = ($config['contract'] ?? 'v1') === 'v2' ? 'curriculum_path' : 'snapshot_path';
+            // נתיב ריק — לא מנחשים ולא קוראים (fail-closed)
+            if (trim((string) ($gh[$key] ?? '')) === '') throw new AcademySourceError("הנתיב github.$key לא הוגדר", 'source_disabled');
+            $gh['path'] = $gh[$key];
             return new GithubAcademySource($gh, ACADEMY_DIR . '/data/cache', (int) ($config['cache_ttl'] ?? 120));
         }
         if (($config['fallback_to_sample'] ?? true) !== true) {

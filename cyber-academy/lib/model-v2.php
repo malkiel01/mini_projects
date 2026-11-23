@@ -18,7 +18,8 @@ function academy_model_v2(array $s): array {
     $byOrder = fn($a, $b) => [$a['order'], $a['id']] <=> [$b['order'], $b['id']];
     $index = fn(array $list) => array_column($list, null, 'id');
     $cur = $s['curriculum'];
-    $curApproved = $cur['status'] === 'approved';
+    // מאושר רק מהקובץ עצמו, ורק עם תאריך ומאשר (גם האימות דורש את זה — כאן ליתר ביטחון)
+    $curApproved = $cur['status'] === 'approved' && !empty($cur['approvedAt']) && !empty($cur['approvedBy']);
 
     $stagesById = $index($s['stages']);
     $tracksById = $index($s['tracks']);
@@ -130,7 +131,7 @@ function academy_model_v2(array $s): array {
         'schemaVersion' => $s['schemaVersion'],
         'updatedAt' => $s['updatedAt'],
         'empty' => !$s['stages'] && !$s['tracks'] && !$s['modules'] && !$s['lessons'],
-        'curriculum' => ['curriculumStatus' => $cur['status'], 'curriculumStatusSource' => 'contract', 'version' => $cur['version'],
+        'curriculum' => ['curriculumStatus' => $curApproved ? 'approved' : 'proposed', 'curriculumStatusSource' => 'contract', 'version' => $cur['version'],
             'approvedAt' => $cur['approvedAt'], 'approvedBy' => $cur['approvedBy']],
         // גודל הסילבוס — לא התקדמות
         'counts' => ['stages' => count($stages), 'tracks' => count($tracks), 'modules' => count($modules), 'lessons' => count($s['lessons']),

@@ -87,6 +87,10 @@ const STATES = {
       if (!n.barEmpty || !/ה-snapshot ריק|אין עדיין סילבוס מאושר/.test(n.bar) || /נתוני אמת/.test(n.bar)) problems.push(`${label}: פס לא נכון: ${n.bar}`);
       if (n.measures) problems.push(`${label}: ${n.measures} רכיבי מדד/מונה`);
     }
+    if (expect.title) {
+      const t = await p.textContent('#title');
+      if (t !== expect.title) problems.push(`${label}: כותרת "${t}", צפוי "${expect.title}"`);
+    }
     if (expect.has || expect.lacks) {
       const txt = await p.evaluate(() => document.getElementById('main').innerText);
       for (const h of expect.has || []) if (!txt.includes(h)) problems.push(`${label}: חסר "${h}"`);
@@ -145,6 +149,9 @@ const STATES = {
       sample: true, real: false, state: null, lacks: ['%'], has: s === 'track/tr-2' ? ['מוצע · לא אושר'] : s === 'tasks/blocked' ? ['ממתינה ל'] : [] }));
     await v2('github-full', ['', 'syllabus', 'track/tr-1', 'module/m-1', 'tasks', 'evidence'], (s) => ({
       sample: false, real: true, state: null, lacks: ['%', 'fixture · track 2', 'evidence/tr-1'] }));
+    await v2('github-approved', ['', 'syllabus', 'track/01', 'module/01.01', 'progress', 'evidence'], (s) => ({
+      sample: false, real: true, state: null, lacks: ['%', '0 מתוך', 'מוצע · לא אושר'],
+      has: s === '' || s === 'progress' || s === 'evidence' ? ['אין הערכות מתועדות'] : s === 'syllabus' ? ['סילבוס מאושר'] : [], title: s === 'syllabus' ? 'תוכנית האקדמיה' : undefined }));
     await v2('github-excerpt', SCREENS.concat(['module/01.01']), () => ({ sample: false, real: true, state: 'real-empty', noNumbers: true, has: ['אין עדיין סילבוס מאושר'] }));
 
     // 3. מצבי שגיאה

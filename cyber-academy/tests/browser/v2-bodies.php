@@ -16,9 +16,13 @@ final class V2FixtureSource implements AcademySource {
 }
 $fx = fn(string $n) => json_decode((string) file_get_contents(__DIR__ . "/../fixtures/v2/$n.json"), true);
 $out = [];
+// כמו הסילבוס המאושר (419417a): אותו מבנה, curriculum + מסלול approved, בלי נתוני לומד
+$appr = $fx('excerpt-49f4b2d');
+$appr['curriculum'] = ['status' => 'approved', 'version' => '1.0.0', 'approvedAt' => '2026-11-23T15:06:23Z', 'approvedBy' => 'academy-manager-00'];
+$appr['tracks'][0]['approvalStatus'] = 'approved';
 foreach (['excerpt' => ['excerpt-49f4b2d', 'local'], 'full' => ['synthetic-full', 'local'],
-          'github-full' => ['synthetic-full', 'github'], 'github-excerpt' => ['excerpt-49f4b2d', 'github']] as $k => [$f, $src]) {
-    [$st, $body] = academy_api_snapshot(academy_default_config(), [], new V2FixtureSource($fx($f), $src));
+          'github-full' => ['synthetic-full', 'github'], 'github-excerpt' => ['excerpt-49f4b2d', 'github'], 'github-approved' => [$appr, 'github']] as $k => [$f, $src]) {
+    [$st, $body] = academy_api_snapshot(academy_default_config(), [], new V2FixtureSource(is_array($f) ? $f : $fx($f), $src));
     if ($st !== 200) { fwrite(STDERR, "$k: $st\n"); exit(1); }
     $out[$k] = $body;
 }

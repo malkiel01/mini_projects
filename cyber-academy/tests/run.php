@@ -324,15 +324,79 @@ check('API github v2: מסונן, בלי מדד ובלי לומד', $st === 200 
 $src = new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($ex2)));
 [$st, $body] = academy_api_snapshot($cfg, [], $src);
 check('API github v2 (49f4b2d): 0 מסלולים → ריק', $st === 200 && $body['model']['empty'] === true && $body['model']['counts']['tracks'] === 0);
-// v2_path: ריק = fail-closed; דגלים כבויים = source_disabled
+// נתיבים: curriculum_path / snapshot_path; ריק = fail-closed; דגלים כבויים = source_disabled
 $ghV2 = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'contract' => 'v2'] + $def;
-try { academy_source($ghV2, '', true); check('v2_path ריק → source_disabled', false); }
-catch (AcademySourceError $e) { check('v2_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
-$ghV2['github'] = ['v2_path' => 'some/path.json'] + $def['github'];
-check('v2_path מוגדר (מעבר למנעול) → github', academy_source($ghV2, '', true) instanceof GithubAcademySource);
+$ghV2['github'] = ['curriculum_path' => ''] + $def['github'];
+try { academy_source($ghV2, '', true); check('curriculum_path ריק → source_disabled', false); }
+catch (AcademySourceError $e) { check('curriculum_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
+$ghV1 = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def;
+$ghV1['github'] = ['snapshot_path' => ''] + $def['github'];
+try { academy_source($ghV1, '', true); check('snapshot_path ריק → source_disabled', false); }
+catch (AcademySourceError $e) { check('snapshot_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
+$ghV2['github'] = $def['github'];
+check('curriculum_path (מעבר למנעול) → github', academy_source($ghV2, '', true) instanceof GithubAcademySource);
+$seen = [];
+$s2 = academy_source($ghV2 + [], '', true);
+$rp = new ReflectionProperty($s2, 'gh');
+check('v2 קורא את curriculum-v2-approved.json', $rp->getValue($s2)['path'] === 'dashboard/data/curriculum-v2-approved.json');
+$s1 = academy_source(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def, '', true);
+check('v1 קורא את snapshot.json', $rp->getValue($s1)['path'] === 'dashboard/data/snapshot.json');
 [$st, $body] = academy_api_snapshot(['contract' => 'v2', 'fallback_to_sample' => false] + $ghV2);
 check('v2: המנעול בקוד סגור → source_disabled', $st === 503 && $body['code'] === 'source_disabled');
-check('ברירת מחדל: contract v1, v2_path ריק', $def['contract'] === 'v1' && $def['github']['v2_path'] === '');
+check('ברירת מחדל: contract v1 + נתיבי מנהל 00', $def['contract'] === 'v1'
+    && $def['github']['snapshot_path'] === 'dashboard/data/snapshot.json'
+    && $def['github']['curriculum_path'] === 'dashboard/data/curriculum-v2-approved.json'
+    && $def['github']['contract_v2_path'] === 'dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json');
+$ex = json_decode((string) file_get_contents(__DIR__ . '/../samples/config.example.json'), true);
+check('config.example: אותם נתיבים, הכול כבוי', $ex['github']['curriculum_path'] === $def['github']['curriculum_path']
+    && $ex['github']['snapshot_path'] === $def['github']['snapshot_path'] && $ex['github_enabled'] === false && $ex['privacy_confirmed'] === false);
+
+// timeout
+$src = new GithubAcademySource($gh, "$tmp/cache", 0, function () { throw new AcademySourceError('תם הזמן לפנייה למאגר האקדמיה', 'source_unavailable'); });
+[$st, $body] = academy_api_snapshot($cfg, [], $src);
+check('github timeout → source_unavailable', $st === 502 && $body['code'] === 'source_unavailable');
+
+// "secrets" בטקסט של תוכנית הלימודים אינו סוד — הסינון רק על evidence.reference
+$sec = $full2; $sec['topics'][0]['title'] = 'least privilege ו-secrets'; $sec['modules'][0]['title'] = 'Docker, רשתות ו-secrets';
+$sec['lessons'][0]['learningObjectives'] = ['ניהול secrets ו-token בצורה בטוחה'];
+check('v2: "secrets"/"token" בטקסט הסילבוס עובר', academy_validate_v2($sec) === [], implode(' | ', academy_validate_v2($sec)));
+
+// מאושר רק מהקובץ: approved + approvedAt + approvedBy, ומסלול approved
+$appr = $ex2; $appr['curriculum'] = ['status' => 'approved', 'version' => '1.0.0', 'approvedAt' => '2026-11-23T15:06:23Z', 'approvedBy' => 'academy-manager-00'];
+$appr['tracks'][0]['approvalStatus'] = 'approved';
+$ma = academy_model_v2($appr);
+check('v2 מאושר: הסילבוס והמסלול "approved"', academy_validate_v2($appr) === [] && $ma['curriculum']['curriculumStatus'] === 'approved' && $ma['tracks'][0]['curriculumStatus'] === 'approved');
+check('v2 מאושר בלי הערכות: measure null', $ma['measure'] === null && $ma['tracks'][0]['measure'] === null);
+$co2 = academy_v2_curriculum_only($appr);
+check('github v2 מאושר: המסלול והשיעורים עוברים', count($co2['tracks']) === 1 && count($co2['lessons']) === 3);
+
+// endpoint תוכנית האקדמיה
+foreach (['POST', 'PUT', 'DELETE'] as $mth) check("curriculum מסרב ל-$mth", academy_api_curriculum($mth, $def)[0] === 405);
+[$st, $body] = academy_api_curriculum('GET', $def);
+check('curriculum: המקור כבוי → source_disabled (אין דוגמה)', $st === 503 && $body['code'] === 'source_disabled' && !isset($body['curriculum']));
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($appr))));
+$out = json_encode($body, JSON_UNESCAPED_UNICODE);
+check('curriculum: מאושר → 200 עם תוכנית בלבד', $st === 200 && $body['curriculum']['counts']['lessons'] === 3 && $body['isSample'] === false
+    && $body['curriculum']['curriculum']['curriculumStatus'] === 'approved');
+check('curriculum: בלי נתוני לומד ובלי measure', !preg_match('/"(competencies|tasks|assessments|evidence|timeline|measure|learned|proven)"/', $out));
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($full2))));
+check('curriculum: רק מסלולים מאושרים', $st === 200 && array_column($body['curriculum']['tracks'], 'id') === ['tr-1', 'tr-3']);
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($valid))));
+check('curriculum: snapshot v1 → contract_version', $st === 422 && $body['code'] === 'contract_version');
+foreach ([401, 403, 404, 429, 500] as $code) {
+    [$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub($code, '{"message":"' . $token . '"}')));
+    check("curriculum $code: fail-closed בלי אסימון", $st >= 500 && !isset($body['curriculum']) && !str_contains(json_encode($body), $token));
+}
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, '{"schemaVersion":"2.0.0",' . $token)));
+check('curriculum JSON שבור: 422 בלי אסימון', $st === 422 && !str_contains(json_encode($body), $token));
+
+// מחובר ומורשה בלבד (בשרת אמיתי — לא CLI ולא php -S)
+check('שרת: בלי PLATFORM_USER → אין תפקיד', academy_role([], 'litespeed') === null);
+check('שרת: PLATFORM_USER בלי הרשאה → אין תפקיד', academy_role(['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => false])], 'litespeed') === null);
+check('שרת: PLATFORM_USER פגום → אין תפקיד', academy_role(['PLATFORM_USER' => '{bad'], 'litespeed') === null);
+check('שרת: מחובר ומורשה → viewer', academy_role(['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => true])], 'litespeed') === 'viewer');
+check('CLI ו-php -S → viewer (פיתוח)', academy_role([], 'cli') === 'viewer' && academy_role([], 'cli-server') === 'viewer');
+check('viewer קורא תוכנית', academy_can('curriculum.read', 'viewer') && !academy_can('curriculum.read', 'nobody'));
 foreach ([401, 403, 404, 429, 500] as $code) {
     $src = new GithubAcademySource(['path' => 'x/v2.json'] + $gh, "$tmp/cache", 0, gh_stub($code, '{"message":"' . $token . '"}'));
     $out = json_encode(academy_api_snapshot($cfg, [], $src), JSON_UNESCAPED_UNICODE);
