@@ -141,7 +141,7 @@ window.CA = window.CA || {};
         <h2 class="sec-title">ראיות (${m.evidence.length})</h2>
         ${listOr(m.evidence.map((e) => `<li><div class="use-row"><span class="use-ic" aria-hidden="true">🧾</span>
           <span class="use-tx"><b>${esc(EVKIND[e.kind] || e.kind)}</b><small>${fmtDate(e.createdAt)}${e.visibility ? ' · ' + (e.visibility === 'private' ? 'פרטי' : 'מוגבל') : ''}</small>
-          <span class="refs"><code title="${esc(e.reference)}">${esc(e.reference)}</code></span></span></div></li>`), 'אין ראיות מתועדות.')}
+          </span></div></li>`), 'אין ראיות מתועדות.')}
       ` };
     },
 

@@ -147,7 +147,7 @@ const STATES = {
       has: s === '' || s === 'progress' || s === 'evidence' ? ['אין הערכות מתועדות']
         : s === 'syllabus' || s === 'track/01' ? ['מוצע · לא אושר'] : s === 'module/01.01' ? ['מעבדה מורשית בלבד', 'מעבדה', 'ניתוח', 'תאוריה'] : [] }));
     await v2('full', ['', 'syllabus', 'track/tr-1', 'track/tr-2', 'module/m-1', 'progress', 'tasks/blocked', 'evidence', 'gaps', 'timeline'], (s) => ({
-      sample: true, real: false, state: null, lacks: ['%'], has: s === 'track/tr-2' ? ['מוצע · לא אושר'] : s === 'tasks/blocked' ? ['ממתינה ל'] : [] }));
+      sample: true, real: false, state: null, lacks: ['%', 'evidence/tr-1/lab-1.md'], has: s === 'track/tr-2' ? ['מוצע · לא אושר'] : s === 'tasks/blocked' ? ['ממתינה ל'] : [] }));
     await v2('github-full', ['', 'syllabus', 'track/tr-1', 'module/m-1', 'tasks', 'evidence'], (s) => ({
       sample: false, real: true, state: null, lacks: ['%', 'fixture · track 2', 'evidence/tr-1'] }));
     await v2('github-approved', ['', 'syllabus', 'track/01', 'module/01.01', 'progress', 'evidence'], (s) => ({
