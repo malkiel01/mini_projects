@@ -10,7 +10,7 @@
     "לומד דוגמה הגדיר את הסביבה בעצמו ואימת את התוצאה לפני שהמשיך.",
     "בשלב הניתוח נדרשה רמז אחד לגבי סדר הפעולות."
   ],
-  "evidenceRefs": ["reports/demo/output-01.txt", "https://example.com/demo-lab-report"],
+  "evidenceRefs": ["reports/demo/output-01.txt", "reports/demo/lab-report-01.txt"],
   "evidenceLimits": [
     "הראיה היא פלט אחד בלבד; לא נבדק אם הפתרון נכון מחוץ לתרגיל הזה.",
     "הדיווח מתייחס למשימה אחת, לא לכל המסלול."

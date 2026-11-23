@@ -27,7 +27,7 @@ const REPORT_REQUIRED = ['reportVersion', 'taskId', 'teacherId', 'date', 'lesson
  *
  * @return list<string>
  */
-function academy_validate_report(mixed $r, ?array $catalog = null): array {
+function academy_validate_report(mixed $r, ?array $catalog = null, array $httpsHosts = []): array {
     $err = [];
     if (!is_array($r) || ($r !== [] && array_is_list($r))) return ['$: הדיווח חייב להיות אובייקט JSON'];
 
@@ -100,7 +100,17 @@ function academy_validate_report(mixed $r, ?array $catalog = null): array {
                     continue;
                 }
                 $why = academy_v2_unsafe_reference($ref);
-                if ($why !== '') $err[] = "\$.evidenceRefs[$i]: הפניה לא בטוחה — $why";
+                if ($why !== '') {
+                    $err[] = "\$.evidenceRefs[$i]: הפניה לא בטוחה — $why";
+                } elseif (preg_match('~^https://~i', $ref)) {
+                    // https רק למארחים ברשימה המאושרת מהקונפיג. ברירת מחדל: רשימה ריקה — כל https נדחה.
+                    $host = strtolower((string) parse_url($ref, PHP_URL_HOST));
+                    if (parse_url($ref, PHP_URL_USER) !== null || parse_url($ref, PHP_URL_PASS) !== null) {
+                        $err[] = "\$.evidenceRefs[$i]: הפניית https עם פרטי התחברות בכתובת — נדחית";
+                    } elseif (!in_array($host, array_map('strtolower', $httpsHosts), true)) {
+                        $err[] = "\$.evidenceRefs[$i]: הפניית https למארח \"$host\" אינה ברשימה המאושרת (כרגע ריקה — רק נתיבים יחסיים)";
+                    }
+                }
             }
         }
     }
