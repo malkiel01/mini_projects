@@ -1158,6 +1158,9 @@ check('אין קישור חזרה לכלים', !preg_match('~href="\.\./|\.\./in
 // ---------- דיווחי מורים (פורמט v1.0.0) ----------
 require __DIR__ . '/report-checks.php';
 
+// ---------- קליטת דיווחי מורים ממקור מורשה ----------
+require __DIR__ . '/ingest-checks.php';
+
 array_map('unlink', glob("$tmp/cache/*") ?: []); @rmdir("$tmp/cache");
 array_map('unlink', glob("$tmp/*") ?: []); @rmdir($tmp);
 

@@ -130,11 +130,22 @@ function _ap_write_action(array $b, string $dir, string $id, string $now, array 
 
         case 'report':
             $p = academy_progress_load($dir, $id) ?? academy_progress_empty($id);
+            $rid = (string) ($b['report']['id'] ?? '');
+            $isDup = false;
+            foreach ($p['reports'] as $old) if (is_array($old) && ($old['id'] ?? null) === $rid) $isDup = true;
             $before = $p['skills'];
-            $p['reports'][] = $b['report'] ?? null;
+            $report = $b['report'] ?? null;
+            // כפילות: המאמת דוחה מזהה כפול, לכן בודקים את שאר התקינות על עותק עם מזהה זמני, ורק אז מחזירים duplicate
+            if ($isDup && is_array($report)) $report['id'] = 'dup-probe-' . bin2hex(random_bytes(4));
+            $p['reports'][] = $report;
             $p['updatedAt'] = $now;
             if ($e = academy_progress_validate($p)) return _ap_fail(422, 'progress_invalid', 'הדיווח נדחה', ['errors' => $e]);
             if ($p['skills'] !== $before) return _ap_fail(500, 'internal', 'דיווח לא אמור לשנות סטטוס'); // הגנה כפולה
+            // דיווח שכבר נקלט (אותו מזהה) לא נקלט שוב — נרשם ביומן בלבד (קליטה חוזרת בטוחה)
+            if ($isDup) {
+                academy_progress_audit($dir, [$audit + ['action' => 'report-duplicate', 'reportId' => $rid]]);
+                return [200, ['ok' => true, 'learnerId' => $id, 'duplicate' => true]];
+            }
             academy_progress_commit($dir, "$dir/learner-$id.json", academy_progress_encode($p),
                 [$audit + ['action' => 'report', 'reportId' => $b['report']['id'], 'target' => $b['report']['skillIds']]], $hooks);
             return [200, ['ok' => true, 'learnerId' => $id, 'progress' => academy_progress_view($p)]];

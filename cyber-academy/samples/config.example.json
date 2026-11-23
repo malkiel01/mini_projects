@@ -17,5 +17,8 @@
   "progress_dir": "",
   "progress": {
     "managers": []
+  },
+  "ingest": {
+    "token_file": ""
   }
 }
