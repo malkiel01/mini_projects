@@ -924,7 +924,7 @@ $cfg = json_decode($cfgJson, true);
 for ($i = 0; $i < $n; $i++) {
     $r = ["id" => "$prefix-$i", "at" => "2026-11-22", "reporter" => "x", "skillIds" => ["sk-1"], "assistanceLevel" => "unknown", "summary" => "x"];
     [$st] = academy_api_progress_write("POST", $cfg, "application/json", json_encode(["action" => "report", "learnerId" => "lrn-2", "report" => $r]),
-        ["server" => ["PLATFORM_USER" => json_encode(["sub" => "mgr-1", "granted" => true]), "HTTP_SEC_FETCH_SITE" => "same-origin"], "sapi" => "litespeed"]);
+        ["server" => ["PLATFORM_USER" => json_encode(["sub" => "mgr-1", "granted" => true]), "HTTP_SEC_FETCH_SITE" => "same-origin", "HTTP_HOST" => "mbe-plus.com", "HTTP_ORIGIN" => "https://mbe-plus.com"], "sapi" => "litespeed"]);
     if ($st !== 200) { fwrite(STDERR, "fail $st\n"); exit(1); }
 }');
 $procs = [];
@@ -1041,6 +1041,32 @@ foreach (['Origin זר' => ['HTTP_ORIGIN' => 'https://evil.example', 'HTTP_HOST'
 check('F5: אחרי כל הדחיות — הקובץ לא השתנה', file_get_contents("$sdir/learner-lrn-1.json") === $beforeF5);
 check('F5: Origin תואם בלי Sec-Fetch-Site → עובר', $noHdr(['HTTP_ORIGIN' => 'https://mbe-plus.com', 'HTTP_HOST' => 'mbe-plus.com'])[0] === 200);
 check('F5: בלי כותרות ב-CLI (בדיקות) → עובר', $noHdr([], 'cli')[0] !== 403);
+// F5 — מטריצת הכרעת מנהל 00: Origin חובה ובדיוק https://<HTTP_HOST>
+$H = ['HTTP_HOST' => 'mbe-plus.com'];
+$f5m = [
+    ['Origin חסר + Sec-Fetch-Site same-origin', $H + ['HTTP_SEC_FETCH_SITE' => 'same-origin'], true, 403],
+    ['Origin = null', $H + ['HTTP_ORIGIN' => 'null', 'HTTP_SEC_FETCH_SITE' => 'same-origin'], true, 403],
+    ['Origin תת-דומיין', $H + ['HTTP_ORIGIN' => 'https://x.mbe-plus.com', 'HTTP_SEC_FETCH_SITE' => 'same-origin'], true, 403],
+    ['סכמה שונה (http מול https)', $H + ['HTTP_ORIGIN' => 'http://mbe-plus.com', 'HTTP_SEC_FETCH_SITE' => 'same-origin'], true, 403],
+    ['Origin עם פורט שונה', $H + ['HTTP_ORIGIN' => 'https://mbe-plus.com:8443'], true, 403],
+    ['Origin עם נתיב', $H + ['HTTP_ORIGIN' => 'https://mbe-plus.com/x'], true, 403],
+    ['Origin בלי HTTP_HOST', ['HTTP_ORIGIN' => 'https://mbe-plus.com'], true, 403],
+    ['cross-site (Origin תואם)', $H + ['HTTP_ORIGIN' => 'https://mbe-plus.com', 'HTTP_SEC_FETCH_SITE' => 'cross-site'], true, 403],
+    ['Origin תואם בלי זהות', $H + ['HTTP_ORIGIN' => 'https://mbe-plus.com', 'HTTP_SEC_FETCH_SITE' => 'same-origin'], false, 403],
+    ['Origin תואם', $H + ['HTTP_ORIGIN' => 'https://mbe-plus.com', 'HTTP_SEC_FETCH_SITE' => 'same-origin'], true, 200],
+    ['Origin תואם, אותיות גדולות', ['HTTP_HOST' => 'MBE-plus.com', 'HTTP_ORIGIN' => 'https://mbe-PLUS.com'], true, 200],
+];
+$f5out = [];
+foreach ($f5m as $n => [$lbl, $hdr, $ident, $want]) {
+    $srv = ($ident ? ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] : []) + $hdr;
+    [$got] = academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN("rp-m$n")]),
+        ['server' => $srv, 'sapi' => 'litespeed']);
+    $f5out[] = sprintf('%-42s → %d (צפוי %d)', $lbl, $got, $want);
+    check("F5 מטריצה: $lbl → $want", $got === $want, "התקבל $got");
+}
+if (getenv('CA_F5_MATRIX')) fwrite(STDERR, "F5 מטריצה:\n  " . implode("\n  ", $f5out) . "\n");
+[$st] = academy_api_progress_read('GET', $scfg, [], ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])], 'sapi' => 'litespeed']);
+check('F5 מטריצה: GET בלי Origin → מתקבל (לא נשבר)', $st === 200, "התקבל $st");
 check('F5: Content-Type application/json-foo → 415', academy_api_progress_write('POST', $scfg, 'application/json-foo', '{}', ['server' => $SAME, 'sapi' => 'litespeed'])[0] === 415);
 check('F5: application/json; charset=utf-8 → מתקבל', academy_api_progress_write('POST', $scfg, 'application/json; charset=utf-8',
     json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-cs')]), ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] + $SAME, 'sapi' => 'litespeed'])[0] === 200);

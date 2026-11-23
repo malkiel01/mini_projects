@@ -102,9 +102,21 @@
   היומן מקוצץ לגודלו שלפני (ftruncate); אם גם זה נכשל — שורת `rollback` עם אותו `tx`. הכול בתוך הנעילה.
 - **`register` (F4):** `sub` שכבר ממופה ללומד אחר, או לומד שכבר ממופה ל-`sub` אחר → **409** `conflict`. שינוי רק עם
   `"force": true` (בוליאני), והיומן רושם `from` (הלומד הקודם) ו-`fromSub` (ה-sub הקודם של הלומד).
-- **CSRF (F5):** כתיבה רק `same-origin`: `Sec-Fetch-Site` (אם נשלח) = `same-origin`, ו-`Origin` (אם נשלח) = המארח. בלי
-  שתיהן — נדחה (403), חוץ מ-CLI (בדיקות). `Content-Type` — בדיוק `application/json` (פרמטרים כמו `charset` מותרים).
-  **השלכה:** כתיבה מ-`curl` בשרת חייבת לשלוח `Origin` תואם; עדיף ממשק בדפדפן.
+- **CSRF (F5) — הכרעת מנהל 00:** בכתיבה (`api/progress-write.php`):
+  - `Origin` **חובה**, ובדיוק `https://<HTTP_HOST>` (סכמה ומארח זהים, בלי פורט או נתיב שונים). חסר, `null`, תת-דומיין
+    או `http` → **403**.
+  - `Sec-Fetch-Site`, אם נשלח, חייב להיות `same-origin` (`same-site` / `cross-site` → 403).
+  - חריג יחיד: sapi `cli` בלי שום כותרת (הבדיקות) — לא נגיש מהרשת.
+  - `Content-Type` — בדיוק `application/json` (פרמטרים כמו `charset` מותרים).
+  - **קריאות (GET) לא דורשות `Origin`.** `api/progress.php` לקריאה בלבד (POST → 405).
+  - **כלי כתיבה מורשה שאינו דפדפן** (למשל `curl` בשרת) חייב לשלוח `Origin: https://<host>`. זו **לא** הגנה מפני כלי כזה —
+    כותרת ניתנת לזיוף. ההגנה האמיתית על הכתיבה היא **זהות המנהל מהשער** (`PLATFORM_USER` עם `granted:true`, ו-`sub`
+    ב-`progress.managers`).
+  - **הגנה נוספת שכבר קיימת:** עוגיית הפלטפורמה `mp_session` היא `SameSite=Lax` ו-`HttpOnly`
+    (`platform/lib/gate.php:101`, `:381`). דפדפן לא שולח אותה ב-POST חוצה-אתר, ולכן בלי זהות מהשער — CSRF חוצה-אתר
+    נחסם עוד לפני בדיקת הכותרות.
+  - **אין אסימון CSRF** בשלב הזה. אם יידרש — שינוי נפרד.
+  - בדיקות: "F5 מטריצה: …" ב-`tests/run.php` (להדפסת המטריצה: `CA_F5_MATRIX=1 php tests/run.php`).
 - **F6–F10:** `json_encode` נבדק; `assessmentId` ביומן — מחרוזת (ההערכה האחרונה של המיומנות); `reason` של 503 — רק למנהל;
   בלי `learnerId` ב-`error_log`; הקבצים נוצרים ב-umask 027 (0640 מההתחלה).
 - **F11 — צומצם (הכרעת הבקרה):** רק `cli` (בדיקות) מקבל viewer בלי זהות. `cli-server` (`php -S`) מכבד `PLATFORM_USER` כמו
