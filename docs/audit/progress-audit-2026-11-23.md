@@ -342,3 +342,23 @@
 - **הגנה נוספת קיימת:** עוגיית `mp_session` היא `SameSite=Lax` ו-`HttpOnly` (`platform/lib/gate.php:101, 381`, לפי הבקרה — לא נבדק כאן).
 - **מצב נוכחי בענף (`534bd2c`):** `academy_progress_same_origin` (`lib/progress-api.php:30-42`) עדיין מקבל בקשה **בלי** `Origin` כשאין `Sec-Fetch-Site` (`:33`: מחזיר `true` ל-`sapi !== 'cli'` רק כשאין שתי כותרות — כלומר נדחה, אבל כשיש רק `Sec-Fetch-Site: same-origin` בלי `Origin` — מתקבל). **לכן Origin עדיין לא חובה.**
 - **סטטוס:** ממתין לתיקון בענף. אחרי הכניסה: בדיקת מטריצה (Origin חסר, `null`, תת-דומיין, סכמה שונה, cross-site, GET), ובדיקה שאין מסלול כתיבה בלי Origin, ובדיקה שהתיעוד לא מציג את הכותרות כאימות.
+
+---
+
+## אימות חוזר 6 — F5 (`8c766e3`, על `claude/cyber-academy-dashboard`)
+
+**מה נבדק:** קריאת הקוד ב-`8c766e3`, הרצת `tests/run.php` בעותק זמני (**979 עברו, 0 נכשלו**), וקריאת `docs/spec/student-progress.md` (סעיף CSRF).
+
+### תנאי הקבלה
+1. **מטריצה — נסגר.** `tests/run.php:1033-1056`: Origin זר, תת-דומיין, `null`, סכמה שונה (http מול https), פורט שונה, נתיב ב-Origin, Origin בלי `HTTP_HOST`, `cross-site` עם Origin תואם, `same-site`; וכן Origin תואם בלי זהות (403) ועם זהות (200). כל אלה עוברים.
+2. **אין מסלול כתיבה בלי Origin — נסגר.** נקודת הכתיבה היחידה היא `academy_api_progress_write` (`lib/progress-api.php:85`), שנקראת רק מ-`api/progress-write.php`. `academy_progress_same_origin` נבדק בשורה 91, **לפני** בדיקת הזהות (`:93`). `api/progress.php` מחזיר 405 ל-POST. `curriculum.php` ו-`snapshot.php` קוראים רק `REQUEST_METHOD` ו-GET.
+3. **התיעוד לא מציג את הכותרות כאימות — נסגר.** `docs/spec/student-progress.md:112-118` כותב במפורש שכותרת ניתנת לזיוף בכלי שאינו דפדפן, ושההגנה האמיתית היא זהות המנהל מהשער (`PLATFORM_USER`). ההסבר נכון גם לגבי עוגיית `SameSite`.
+4. **חריג `cli` — מאושר.** החריג (`sapi === 'cli'` בלי כותרות) לא נגיש מהרשת. בנוסף, ב-`cli` התפקיד הוא `viewer` בלי זהות (`lib/access.php:33`), ו-`viewer` אינו מחזיק `progress.write`. לכן החריג לא מאפשר כתיבה בשום מקרה.
+
+### סטטוס F5
+- **נסגר.** הכתיבה דורשת Origin תואם ל-`https://<HOST>`, `Sec-Fetch-Site` חייב `same-origin` אם נשלח, והזהות של השער נשארת ההגנה האמיתית.
+- **לא ייכלל:** אין אסימון CSRF. הכרעת הבקרה: שינוי נפרד אם ידרש.
+
+### הערה
+- `referenceId`: לפי הבקרה נסגר ב-`534bd2c` ו-`8c766e3`; נבדק בסעיף "אימות חוזר 5".
+- **לא נבדק:** התנהגות השער בשרת (עוגיית `mp_session`), ו-`PHP_SAPI` בשרת.
