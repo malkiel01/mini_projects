@@ -172,3 +172,13 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - **בדיקות:** run.php 772 → 819.
   - נוספו: ברירת מחדל, יחסי, שורש, cyber-academy, public_html, ‎/www/‎, `..`, DOCUMENT_ROOT מדומה, קישור סימבולי, תיקייה חסרה (לא נוצרת), הרשאות 0755/0644/0666/0703, תיקייה חוקית, כשל כתיבה בלי קובץ חלקי, תוכן מזויף שלא דולף.
   - בסוף: הריפו זהה לרשימה שלפני, ואין בו קובץ לומד.
+
+## 2026-11-23 · #1811 — רמת סיוע `hint`, ושדות חדשים בדיווח מורה
+
+- **רמת סיוע בהערכות:** `hints` → `hint`. שונה ב-`ACADEMY_PROGRESS_ASSISTANCE`, ב-19 ה-fixtures ובאפיון.
+- **דיווח מורה — שדות חדשים:**
+  - `lessonIds` — אופציונלי.
+  - `assistanceLevel` — חובה: `none | hint | guided | full | unknown`. ה-fixtures עודכנו ל-`unknown`.
+- **ספירות בתצוגה:** `reportsByAssistance` ו-`reportAssistance` לכל מיומנות. `unknown` נספר בנפרד, לעולם לא כ-`none`.
+- **mastered:** דיווח (גם עם `none`) לא משנה סטטוס ולא מאפשר mastered. נבדק.
+- **בדיקות:** run.php 819 → 829.

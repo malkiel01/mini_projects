@@ -62,7 +62,7 @@
     "sk-2"
    ],
    "status": "evaluated",
-   "assistance": "hints",
+   "assistance": "hint",
    "assessor": "מורה דוגמה",
    "assessedAt": "2026-11-17T12:00:00Z",
    "evidenceIds": [],
@@ -89,7 +89,8 @@
    "skillIds": [
     "sk-4"
    ],
-   "summary": "דוגמה · דיווח מורה שטרם אומת"
+   "summary": "דוגמה · דיווח מורה שטרם אומת",
+   "assistanceLevel": "unknown"
   }
  ]
 }

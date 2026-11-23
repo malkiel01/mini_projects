@@ -700,12 +700,34 @@ check('progress: לומד קורא את עצמו במפורש → 200', $R('u-1'
 check('progress: מנהל קורא כל לומד', $R('mgr-1', ['learner' => 'lrn-b'])[0] === 200);
 check('progress: מזהה לא תקין → 400', $R('mgr-1', ['learner' => '../x'])[0] === 400);
 // דיווח מורה — לא משנה סטטוס
-$rep = ['id' => 'rp-1', 'at' => '2026-11-22T10:00:00Z', 'reporter' => 'מורה דוגמה', 'skillIds' => ['sk-1'], 'summary' => 'דוגמה'];
+$rep = ['id' => 'rp-1', 'at' => '2026-11-22T10:00:00Z', 'reporter' => 'מורה דוגמה', 'skillIds' => ['sk-1'], 'assistanceLevel' => 'unknown', 'summary' => 'דוגמה'];
 [$st, $body] = $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $rep]);
 check('progress: דיווח נשמר, הסטטוס לא השתנה', $st === 200 && $body['progress']['skills']['sk-1']['category'] === 'reported'
     && $body['progress']['skills']['sk-1']['status'] === 'not_assessed');
 [$st] = $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $rep + ['status' => 'mastered']]);
 check('progress: דיווח עם status → נדחה', $st === 422);
+// שדות חדשים בדיווח: lessonIds, assistanceLevel
+$rep2 = ['id' => 'rp-2', 'at' => '2026-11-22T10:10:00Z', 'reporter' => 'מורה דוגמה', 'skillIds' => ['sk-2'], 'lessonIds' => ['l-1', 'l-2'],
+    'assistanceLevel' => 'none', 'summary' => 'דוגמה · ביצע לבד לפי המורה'];
+[$st, $body] = $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $rep2]);
+check('דיווח עם lessonIds + assistanceLevel מתקבל', $st === 200, json_encode($body, JSON_UNESCAPED_UNICODE));
+check('דיווח none לא משנה סטטוס', $body['progress']['skills']['sk-2']['status'] === 'not_assessed' && $body['progress']['skills']['sk-2']['category'] === 'reported');
+check('unknown לא נספר כ-none', $body['progress']['reportsByAssistance']['unknown'] === 1 && $body['progress']['reportsByAssistance']['none'] === 1
+    && $body['progress']['skills']['sk-1']['reportAssistance'] === ['unknown']);
+foreach (['hints' => 'hints', 'בלי assistanceLevel' => null, 'lessonIds לא תקין' => 'bad-lesson'] as $lbl => $val) {
+    $bad = ['id' => 'rp-x', 'assistanceLevel' => 'hint'] + $rep2;
+    if ($lbl === 'בלי assistanceLevel') unset($bad['assistanceLevel']);
+    elseif ($lbl === 'lessonIds לא תקין') $bad['lessonIds'] = ['../x'];
+    else $bad['assistanceLevel'] = $val;
+    check("דיווח $lbl → 422", $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $bad])[0] === 422);
+}
+check('enum ההערכה: hint (לא hints)', ACADEMY_PROGRESS_ASSISTANCE === ['none', 'hint', 'guided', 'full']);
+$asmHints = ['id' => 'as-h', 'skillIds' => ['sk-3'], 'status' => 'planned', 'assistance' => 'hints', 'assessor' => 'x', 'assessedAt' => null, 'evidenceIds' => []];
+check('הערכה עם hints → 422', $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'assessments' => [$asmHints]])[0] === 422);
+check('הערכה עם unknown → 422 (רק בדיווח)', $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'assessments' => [['assistance' => 'unknown'] + $asmHints]])[0] === 422);
+// mastered מדיווח בלבד — נדחה
+[$st, $body] = $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'skills' => ['sk-2' => ['status' => 'mastered', 'updatedAt' => null, 'assessmentIds' => [], 'evidenceIds' => []]]]);
+check('mastered מדיווח בלבד (none) → 422', $st === 422 && (bool) array_filter($body['errors'], fn($e) => str_contains($e, 'assistance: none')));
 // mastered בלי ראיה / בלי אישור → נדחה, והקובץ לא משתנה
 $fileA = "$pdir/learner-lrn-a.json";
 $snap = file_get_contents($fileA);

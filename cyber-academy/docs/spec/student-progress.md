@@ -39,9 +39,9 @@
   "skills":  { "<skillId>": { "status": "<7 הסטטוסים>", "updatedAt": "…|null", "assessmentIds": [], "evidenceIds": [] } },
   "lessons": { "<lessonId>": { "completed": false, "evidenceIds": [], "approvedBy": null, "approvedAt": null } },
   "assessments": [ { "id", "skillIds": [], "status": "planned|in_progress|evaluated",
-                     "assistance": "none|hints|guided|full", "assessor", "assessedAt", "evidenceIds": [], "approvedBy", "approvedAt" } ],
+                     "assistance": "none|hint|guided|full", "assessor", "assessedAt", "evidenceIds": [], "approvedBy", "approvedAt" } ],
   "evidence":    [ { "id", "kind", "reference", "assessor", "createdAt", "approvedBy", "approvedAt" } ],
-  "reports":     [ { "id", "at", "reporter", "skillIds": [], "summary" } ]
+  "reports":     [ { "id", "at", "reporter", "skillIds": [], "lessonIds": [], "assistanceLevel": "none|hint|guided|full|unknown", "summary" } ]
 }
 ```
 
@@ -64,7 +64,7 @@
   `evaluated` על אותה מיומנות, עם `assessedAt` + `approvedBy` + `approvedAt`.
 - `mastered` — בנוסף: הערכה **עצמאית** (`assistance: "none"`) **וגם** ראיה מאומתת.
 - שיעור `completed: true` — רק עם ראיה מאומתת + `approvedBy` + `approvedAt`. לעולם לא אוטומטית.
-- דיווח מורה (`reports`) — **אין בו `status`**. הוא לא משנה סטטוס, רק נוסף למעקב.
+- דיווח מורה (`reports`) — **אין בו `status`**. הוא לא משנה סטטוס, רק נוסף למעקב. `assistanceLevel` חובה; `unknown` נשמר כ"לא ידוע" ולעולם לא נספר כ-`none`. גם דיווח עם `none` **לא** מאפשר `mastered` — רק הערכה מאושרת עם `assistance: "none"`.
 - כל כתיבה בודקת את הקובץ **כולו** אחרי השינוי. כשל → 422 עם השגיאות, והקובץ לא משתנה.
 
 ## גישה
