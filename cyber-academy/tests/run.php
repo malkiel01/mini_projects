@@ -395,6 +395,29 @@ check('curriculum: מאושר → 200 עם תוכנית בלבד', $st === 200 &
 check('curriculum: בלי נתוני לומד ובלי measure', !preg_match('/"(competencies|tasks|assessments|evidence|timeline|measure|learned|proven)"/', $out));
 [$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($full2))));
 check('curriculum: רק מסלולים מאושרים', $st === 200 && array_column($body['curriculum']['tracks'], 'id') === ['tr-1', 'tr-3']);
+
+// reference לא יוצא לשום צופה — גם לא בתוכנית האקדמיה ולא במודל המלא
+$hasKey = function ($v, string $k) use (&$hasKey): bool {
+    if (!is_array($v)) return false;
+    foreach ($v as $kk => $vv) if ($kk === $k || $hasKey($vv, $k)) return true;
+    return false;
+};
+$refFx = $full2; $refFx['evidence'][0]['reference'] = 'evidence/lrn-sample-ref-xyz.md';
+check('reference: fixture מדומה עדיין תקין', academy_validate_v2($refFx) === [], implode(' | ', academy_validate_v2($refFx)));
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($refFx))));
+check('reference: curriculum.php — אין מפתח reference בשום רמה', $st === 200 && !$hasKey($body, 'reference')
+    && !str_contains(json_encode($body), 'lrn-sample-ref-xyz'));
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($refFx));
+check('reference: snapshot v2 — אין מפתח reference בשום רמה', $st === 200 && !$hasKey($body, 'reference')
+    && !str_contains(json_encode($body), 'lrn-sample-ref-xyz'));
+$mr = academy_model_v2($refFx);
+check('reference: ראיה במודל = id, kind, createdAt, visibility', array_keys($mr['evidence'][0]) === ['id', 'kind', 'createdAt', 'visibility']);
+check('reference: visibility נשאר ברמת הסילבוס', $mr['evidence'][0]['visibility'] === ($refFx['evidence'][0]['visibility'] ?? null)
+    && in_array('restricted', array_column($mr['evidence'], 'visibility'), true));
+$badRef = $full2; $badRef['evidence'][0]['reference'] = '/etc/passwd';
+check('reference: הולידציה עדיין דוחה הפניה לא בטוחה', academy_validate_v2($badRef) !== []);
+$badRef['evidence'][0]['reference'] = 'evidence/../x.md';
+check('reference: הולידציה עדיין דוחה ..', academy_validate_v2($badRef) !== []);
 [$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($valid))));
 check('curriculum: snapshot v1 → contract_version', $st === 422 && $body['code'] === 'contract_version');
 foreach ([401, 403, 404, 429, 500] as $code) {

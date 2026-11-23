@@ -87,6 +87,7 @@
 - `assessments` — רק `evaluated` עם `assessedAt` + `approvedBy` + `approvedAt`: `{id, skillIds, at, result, approvedAt}`.
   `result` = הסטטוס המאומת של כל מיומנות שמפנה להערכה (`{skillId: status}`) — אין שדה `result` בהערכה עצמה.
 - `evidence` — רק מאומתת: `{id, kind, createdAt}`. **בלי `reference`.**
+- **גם בתמונת המצב ובתוכנית האקדמיה (v2):** ראיה יוצאת כ-`{id, kind, createdAt, visibility}` בלבד. `reference` נבדק בולידציה ולא יוצא לשום צופה.
 - **אין** `reports`, `assistanceLevel`, `pendingReports`, `reportsByAssistance`, `assessor`, `assistance`, `approvedBy`.
 
 המנהל (`progress.read.all`) מקבל את התצוגה המלאה, כולל דיווחי המורים לפי רמת סיוע.

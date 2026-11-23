@@ -238,3 +238,10 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
   - "tx בשורה האחרונה" → שתי השורות האחרונות: השינוי, ואחריו commit.
   - "F11: cli-server → viewer גם עם PLATFORM_USER" → שלוש בדיקות חדשות.
 - **בדיקות:** run.php 923 → 936. check.js ✓ (עם dev-identity).
+
+## הסרת `reference` מתצוגת תוכנית האקדמיה / תמונת המצב (v2)
+- **הכרעת בקרה:** `model-v2.php` החזיר `evidence[].reference` לכל צופה. עכשיו הראיה יוצאת כ-`{id, kind, createdAt, visibility}` בלבד.
+- **הולידציה לא שונתה** — `reference` לא בטוח עדיין נדחה (`/etc/passwd`, `..`, תבניות סוד).
+- **UI:** מסך "מבחנים וראיות" כבר לא מציג את ההפניה (סוג, תאריך ונראות בלבד).
+- **בדיקות חדשות:** סריקה רקורסיבית — אין מפתח `reference` בתגובת `curriculum.php` ובתמונת המצב v2 עם ראיה מדומה; מפתחות הראיה במודל בדיוק `id, kind, createdAt, visibility`; `visibility` נשאר; הולידציה דוחה הפניה לא בטוחה.
+- **בדיקות:** run.php 937 → 944. check.js ✓ (עם dev-identity).
