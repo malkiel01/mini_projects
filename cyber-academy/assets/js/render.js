@@ -69,9 +69,10 @@ window.CA = window.CA || {};
 
   const emptyLine = (text) => `<p class="empty">${esc(text)}</p>`;
 
-  const row = ({ href, icon, title, sub, end }) => {
+  // השם — העיקר: עובר שורה ולא נחתך. שורת המשנה (sub) נחתכת ב-…; meta — תגיות בשורה משלהן מתחת לשם.
+  const row = ({ href, icon, title, sub, end, meta }) => {
     const inner = `<span class="use-ic" aria-hidden="true">${icon}</span>
-      <span class="use-tx"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span>
+      <span class="use-tx"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}${meta ? `<span class="row-meta">${meta}</span>` : ''}</span>
       ${end ? `<span class="row-end">${end}</span>` : ''}${href ? '<span class="use-go" aria-hidden="true">‹</span>' : ''}`;
     return `<li>${href ? `<a class="use-row" href="${esc(href)}">${inner}</a>` : `<div class="use-row">${inner}</div>`}</li>`;
   };

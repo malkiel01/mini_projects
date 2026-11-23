@@ -36,6 +36,7 @@ const STATES = {
   const browser = await chromium.launch();
   const problems = [];
   let shots = 0;
+  let titlesChecked = 0;
   // הנתונים האמיתיים של הדוגמה — לבסיס של "נתוני אמת" מזויפים
   const ctx0 = await browser.newContext();
   const sample = await (await ctx0.request.get(BASE + 'api/snapshot.php')).json();
@@ -57,7 +58,13 @@ const STATES = {
       real: !document.getElementById('real-bar').hidden,
       state: (document.querySelector('[data-state]') || {}).dataset?.state || null,
       retry: !!document.querySelector('[data-retry]'),
+      // שם בשורת רשימה — לא נחתך (phone-first: השם הוא העיקר)
+      cut: [...document.querySelectorAll('.use-tx > b')].filter((b) =>
+        b.scrollWidth > b.clientWidth + 1 || getComputedStyle(b).textOverflow === 'ellipsis').map((b) => b.textContent.slice(0, 40)),
+      titles: document.querySelectorAll('.use-tx > b').length,
     }));
+    if (r.cut.length) problems.push(`${label}: ${r.cut.length} שמות נחתכים — ${r.cut.slice(0, 3).join(' | ')}`);
+    titlesChecked += r.titles;
     if (r.overflow) problems.push(`${label}: גלילה אופקית`);
     if (expect.sample !== undefined && r.sample !== expect.sample) problems.push(`${label}: פס דוגמה ${r.sample}, צפוי ${expect.sample}`);
     if (expect.real !== undefined && r.real !== expect.real) problems.push(`${label}: פס אמת ${r.real}, צפוי ${expect.real}`);
@@ -116,6 +123,6 @@ const STATES = {
   await pd.close();
 
   await browser.close();
-  console.log(problems.length ? '✗ ' + problems.length + ' בעיות:\n' + problems.join('\n') : `✓ אין בעיות (${shots} צילומים)`);
+  console.log(problems.length ? '✗ ' + problems.length + ' בעיות:\n' + problems.join('\n') : `✓ אין בעיות (${shots} צילומים, ${titlesChecked} שמות ברשימות נבדקו שאינם נחתכים)`);
   process.exit(problems.length ? 1 : 0);
 })();

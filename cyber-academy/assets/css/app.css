@@ -231,7 +231,8 @@ body.banner .tabs { top: calc(var(--head) + var(--bar-h, 31px) + env(safe-area-i
 
 a.use-row { color: inherit; text-decoration: none; }
 .list > li { min-width: 0; } .list > li + li { border-top: 1px solid var(--line); }
-.use-tx b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.use-tx b { font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }   /* השם לא נחתך — עובר שורה */
+.row-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .row-end { display: flex; align-items: center; gap: 6px; flex: none; }
 .num { flex: none; inline-size: 28px; block-size: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 600; font-size: .85rem; }
 .refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }

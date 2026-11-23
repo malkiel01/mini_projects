@@ -31,14 +31,14 @@ window.CA = window.CA || {};
     icon: c.evidenceRefs.length ? '🧾' : '🎯',
     title: esc(c.title),
     sub: [withTrack ? esc(trackTitle(m, c.trackId)) : '', assessedText(c), evidenceText(c)].filter(Boolean).join(' · '),
-    end: chip(c.status),
+    meta: chip(c.status),
   });
 
   const taskRow = (t, m) => row({
     icon: TASK[t.status].icon,
     title: esc(t.title),
     sub: [MODE[t.mode].icon + ' ' + MODE[t.mode].label, t.trackIds.map((id) => esc(trackTitle(m, id))).join(', ')].filter(Boolean).join(' · '),
-    end: taskChip(t.status),
+    meta: taskChip(t.status),
   });
 
   const screens = {
@@ -71,7 +71,7 @@ window.CA = window.CA || {};
           icon: `<span class="num">${t.order}</span>`,
           title: esc(t.title),
           sub: t.measure.total + ' כשירויות · ' + prereqText(t),
-          end: `<span class="chip learn" title="נלמד">📘 ${t.measure.learned}</span><span class="chip ok" title="הוכח במעשה">🧪 ${t.measure.proven}</span>${currTag(t, true)}`,
+          meta: `<span class="chip learn" title="נלמד">📘 ${t.measure.learned}</span><span class="chip ok" title="הוכח במעשה">🧪 ${t.measure.proven}</span>${currTag(t, true)}`,
         })).join('')}</ul>
         <h2 class="sec-title">פירוק עמוק יותר</h2>
         ${noContract('שלבים, מודולים, נושאים ומיומנויות', 'בחוזה יש רק מסלול ← כשירות. יגיע כשהחוזה יכלול אותם (v2).')}
@@ -134,9 +134,9 @@ window.CA = window.CA || {};
         <p class="hint">מה שהחוזה מכיל: הפניות לראיות (evidenceRefs) ומועד ההערכה האחרונה לכל כשירות. ההפניות מוצגות כטקסט.</p>
         <ul class="list">${withEv.map((c) => `<li><a class="use-row" href="${trackHref(c.trackId)}">
             <span class="use-ic" aria-hidden="true">${c.evidenceRefs.length ? '🧾' : '📝'}</span>
-            <span class="use-tx"><b>${esc(c.title)}</b><small>${esc(trackTitle(m, c.trackId))} · ${assessedText(c)}</small>
+            <span class="use-tx"><b>${esc(c.title)}</b><span class="row-meta">${chip(c.status)}</span><small>${esc(trackTitle(m, c.trackId))} · ${assessedText(c)}</small>
               ${c.evidenceRefs.length ? `<span class="refs">${c.evidenceRefs.map((r) => `<code title="${esc(r)}">${esc(r)}</code>`).join('')}</span>` : `<small>${evidenceText(c)}</small>`}</span>
-            <span class="row-end">${chip(c.status)}</span></a></li>`).join('') || '<li>' + emptyLine('אין עדיין הערכות או ראיות.') + '</li>'}</ul>
+            <span class="use-go" aria-hidden="true">‹</span></a></li>`).join('') || '<li>' + emptyLine('אין עדיין הערכות או ראיות.') + '</li>'}</ul>
         <h2 class="sec-title">מבחנים והערכות</h2>
         ${noContract('מבחן / הערכה / ראיה כאובייקט', 'אין ציון, מעריך, סוג מבחן או תוצאה — רק הפניה ומועד.')}
       ` };
@@ -171,7 +171,7 @@ window.CA = window.CA || {};
         <p class="hint">מה שיש בחוזה: מועד עדכון ה-snapshot ומועד ההערכה האחרונה של כל כשירות — לא היסטוריה מלאה.</p>
         ${days.map((d) => `<div class="day">${d.day}</div><ul class="list">${d.items.map((e) => e.kind === 'snapshot'
           ? row({ icon: '🔄', title: esc(e.title), sub: fmtDate(e.at, true) })
-          : row({ href: trackHref(e.ref.trackId), icon: '📝', title: esc(e.title), sub: 'הערכה אחרונה · ' + esc(e.trackTitle) + ' · ' + fmtDate(e.at, true), end: chip(e.status) })).join('')}</ul>`).join('')
+          : row({ href: trackHref(e.ref.trackId), icon: '📝', title: esc(e.title), sub: 'הערכה אחרונה · ' + esc(e.trackTitle) + ' · ' + fmtDate(e.at, true), meta: chip(e.status) })).join('')}</ul>`).join('')
           || emptyLine('אין עדיין אירועים.')}
         <h2 class="sec-title">היסטוריית שינויים</h2>
         ${noContract('אירועי ציר זמן', 'רואים רק את המצב האחרון, לא "ממה למה".')}
