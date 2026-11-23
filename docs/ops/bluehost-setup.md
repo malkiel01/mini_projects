@@ -103,7 +103,16 @@ chmod 600 /home2/mbeplusc/academy-secrets/github-token
 - `github.token_file` — נדרש רק כשמפעילים את מקור ה-GitHub. יש שדות נוספים בקונפיג (`source`, `github_enabled`, `contract` ועוד) עם ברירות מחדל ב-`academy-source.php:49-74`; לא לשנות אותם בלי צורך.
 - **JSON תקין חשוב:** קובץ שאינו JSON נטען כברירת מחדל בשקט (`academy-source.php:85`). לבדוק לפני השמירה, למשל: `php -r 'var_dump(is_array(json_decode(file_get_contents("/home2/mbeplusc/public_html/mini_projects/cyber-academy/data/config.json"), true)));'` — צריך להדפיס `bool(true)`.
 
-**מזהה `sub` של המנהל:** הקוד לא מתעד בשום מקום איך מקבלים אותו (לא נבדק — ראה "מה לא נבדק" בביקורת). לקבל אותו מהפלטפורמה עצמה (מסך ניהול החשבון / `platform/docs/auth.md`), ולא להזין ערך מוכן.
+**מזהה `sub` של המנהל — מה נבדק ומה לא:**
+- **נבדק בקוד:** `sub` הוא `(string)users.id` (`platform/lib/gate.php:118`, הפונקציה `identity`). הטבלה `users` כוללת `id` ו-`username` (`platform/lib/admin.php:35`). לכן `sub` של מנהל = מזהה המשתמש שלו בטבלה, כמחרוזת.
+- **לא נבדק:** הערך עצמו בשרת. בסביבת העבודה אין גישת SSH לשרת, ולא נקראה `platform/data/platform.sqlite`. **לא לכתוב `sub` בקונפיג לפני שאומת בשרת.**
+- **אימות (קריאה בלבד, בלי `password_hash`), ב-SSH:**
+  ```bash
+  sqlite3 -readonly /home2/mbeplusc/public_html/mini_projects/platform/data/platform.sqlite \
+    "SELECT id, username FROM users WHERE username = '[שם המשתמש של המנהל בפלטפורמה]';"
+  ```
+  אם `sqlite3` לא מותקן בשרת: שאילתת PDO לקריאה בלבד ב-`php -r` עם `new PDO('sqlite:…')` ו-`SELECT id, username …` בלבד. הערך שיוחזר (`id`) הוא ה-`sub`.
+- **שים לב:** `admin.php:195` מוחק משתמשים. אם חשבון המנהל נמחק ונוצר מחדש, ה-`id` משתנה, ה-`sub` משתנה, ו-`progress.managers` צריך לעדכן. לבדוק את הערך אחרי כל יצירה מחדש.
 
 ## 5. בדיקה אחרי ההגדרה
 
