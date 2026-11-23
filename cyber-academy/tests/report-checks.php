@@ -73,6 +73,17 @@ foreach (['UNKNOWN', 'hints', 'partial', '', null, 0] as $bad) {
 check('unknown לא מומר ל-none במיפוי לשרת',
     academy_report_to_progress_payload($withLevel('unknown'), 'lrn-demo-01')['report']['assistanceLevel'] === 'unknown');
 
+// ---------- כותרות שידור (F5): Origin חובה ותואם ----------
+$hdr = report_dispatch_headers('mbe-plus.com');
+check('כותרות שידור: Origin = https://<HOST>', $hdr['Origin'] === 'https://mbe-plus.com', $hdr['Origin']);
+check('כותרות שידור: Sec-Fetch-Site = same-origin', $hdr['Sec-Fetch-Site'] === 'same-origin');
+check('כותרות שידור: Content-Type בדיוק application/json', $hdr['Content-Type'] === 'application/json');
+foreach ([null, '', 'bad host', 'https://mbe-plus.com', 'mbe-plus.com:443', 'mbe-plus.com/x'] as $bad) {
+    $threw = false;
+    try { report_dispatch_headers($bad); } catch (InvalidArgumentException) { $threw = true; }
+    check('בלי מארח תקין הכלי לא שולח: ' . var_export($bad, true), $threw);
+}
+
 // ---------- מיפוי לשרת (action=report) ----------
 $payload = academy_report_to_progress_payload($goodReport, 'lrn-demo-01');
 check('גוף הבקשה: action=report ו-learnerId מהקריאה', $payload['action'] === 'report' && $payload['learnerId'] === 'lrn-demo-01');

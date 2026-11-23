@@ -64,7 +64,7 @@
 { "action": "report", "learnerId": "<learnerId>", "report": { … } }
 ```
 
-- **כותרות חובה (F5, לפי `cab574f`):** `Content-Type` בדיוק `application/json`. ו-`Sec-Fetch-Site: same-origin` ו-`Origin` תואם למארח (השרת דורש לפחות אחת מהן, ובודק כל אחת שנשלחה). בלעדיהן — 403. עם `multipart/form-data` — 415. הקוד שלנו בונה רק את הגוף ולא שולח בקשה; המשגר אחראי לכותרות.
+- **כותרות (F5, הכרעת הבקרה):** `Origin` **חובה** ותואם `https://<HOST>`. `Sec-Fetch-Site` — אם נשלח, חייב להיות `same-origin`. `Content-Type` בדיוק `application/json`. **בלי Origin → 403**; `multipart/form-data` → 415. הקוד שלנו בונה את הגוף ואת הכותרות (`report_dispatch_headers`) ולא שולח בקשה. הכלי ששולח חייב להיכשל בלי מארח תקין, ואסור לו לשלוח בלי Origin (נבדק).
 - `learnerId` מגיע בגוף הבקשה לצד הדיווח, לא בתוך הדיווח. המיפוי מ-`sub` של הפלטפורמה ל-`learnerId` נעשה בשרת (`learners.json`).
 - הדיווח נשמר כ-`reports[]` בקובץ הלומד. **הוא לא משנה סטטוס** (בקוד יש הגנה כפולה).
 

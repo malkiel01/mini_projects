@@ -187,3 +187,21 @@ function report_string_leaves(mixed $node, string $path = '$'): array {
     }
     return $out;
 }
+
+/**
+ * כותרות השידור של action=report (F5, הכרעת הבקרה): Origin חובה ותואם למארח; Sec-Fetch-Site same-origin;
+ * Content-Type בדיוק application/json. בלי מארח תקין — נזרקת חריגה: הכלי לא שולח בלי Origin.
+ * הפונקציה לא שולחת כלום; היא רק בונה את הכותרות לשכבת השידור.
+ *
+ * @return array<string, string>
+ */
+function report_dispatch_headers(?string $host): array {
+    if ($host === null || !preg_match('/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/', strtolower($host))) {
+        throw new InvalidArgumentException('בלי מארח תקין אין Origin — הכלי לא שולח');
+    }
+    return [
+        'Content-Type' => 'application/json',
+        'Origin' => 'https://' . strtolower($host),
+        'Sec-Fetch-Site' => 'same-origin',
+    ];
+}
