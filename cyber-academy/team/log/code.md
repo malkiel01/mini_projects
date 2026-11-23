@@ -106,3 +106,16 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - **timeout:** stub → `source_unavailable`.
 - **תצוגה:** מסך הסילבוס ב-v2 נקרא "תוכנית האקדמיה". נוסף מצב "מאושר" לבדיקת הדפדפן.
 - **בדיקות:** run.php 564 → 596. check.js 224 → 242 צילומים.
+
+## 2026-11-23 · v2 — תיקון אבטחה: האסימון רק מקובץ מחוץ לאתר (חוסם מיזוג של #1809, מנהל 00)
+
+- `github.token_file`, נתיב מוחלט. מפתח `token` הוסר מהקונפיג ומהתבנית. אם הוא קיים, גם ריק → `source_disabled`/`token_in_config`, והקובץ לא נפתח.
+- **בתוך עץ האתר → `secret_in_webroot`.** נבדקים: שורש mini_projects, cyber-academy, DOCUMENT_ROOT, וכל `public_html`/`www`/`htdocs`, לפי הנתיב המבוקש וגם לפי realpath (לחסימת קישור סימבולי).
+  - שיניתי מהבקשה: הבקרה הציעה `ACADEMY_DIR/../..`. זה תיקייה אחת מעל השורש, וזה עלול לחסום נתיב תקין בבית המשתמש. במקומו — השורש עצמו ועוד הכללים למעלה.
+- **הרשאות:** o+r → `secret_insecure_perms`.
+- **תוכן:** אחרי trim, ערך קצר מ-20 או עם רווח → `source_unauthorized`/`token_invalid`.
+- **מתי נפתח:** רק כשכל המנעולים פתוחים. נבדק עם reader שרושם קריאות.
+- **`.gitignore`:** של האפליקציה (`cyber-academy/.gitignore`), לא השורשי — הוא משותף לכל האפליקציות, ומחוץ לתחום שלי. מכסה `data/config.json`, `data/cache/`, `*.token`.
+- **בדיקה שעודכנה:** "config.example: אסימון ריק" → "אין אסימון", בכוונה.
+- **בדיקות:** run.php 596 → 623.
+- **לבקרה:** `docs/owner-brief.md` סעיף 2 עדיין אומר "אסימון … ב-`data/config.json`". הקובץ שלכם — לא שיניתי.

@@ -11,7 +11,7 @@
     "snapshot_path": "dashboard/data/snapshot.json",
     "curriculum_path": "dashboard/data/curriculum-v2-approved.json",
     "contract_v2_path": "dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json",
-    "token": ""
+    "token_file": ""
   },
   "cache_ttl": 120
 }

@@ -28,7 +28,8 @@ v1 פעיל. v2 (הצעה, עם שיעורים) נתמך בקריאה — ראו
 ## מקור GitHub — כבוי
 
 `data/config.json` (תבנית: `samples/config.example.json`). נדלק רק עם `github_enabled` + `privacy_confirmed` **וגם**
-`ACADEMY_GITHUB_PHASE_ALLOWED` בקוד — היום `false`. האסימון (fine-grained, `Contents: Read`, מאגר אחד) נשאר בשרת.
+`ACADEMY_GITHUB_PHASE_ALLOWED` בקוד — היום `false`. האסימון (fine-grained, `Contents: Read`, מאגר אחד) — **רק בקובץ
+`github.token_file` מחוץ ל-public_html**, chmod 600; לא בקונפיג ולא בגיט. פירוט: `docs/spec/00-overview.md`.
 
 ## מה טרם הוכרע
 

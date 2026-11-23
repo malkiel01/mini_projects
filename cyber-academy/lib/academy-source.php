@@ -23,9 +23,11 @@ const ACADEMY_DIR = __DIR__ . '/..';
 /**
  * כשל במקור, עם קוד יציב שה-UI מציג לפיו מסך משלו:
  * source_disabled · source_unauthorized · source_not_found · source_unavailable · contract_invalid
+ * $reason — פירוט פנימי יציב (למשל secret_in_webroot), בלי נתיבים ובלי ערכים.
  */
 final class AcademySourceError extends RuntimeException {
-    public function __construct(string $message, public readonly string $errorCode = 'source_unavailable') {
+    public function __construct(string $message, public readonly string $errorCode = 'source_unavailable',
+                                public readonly ?string $reason = null) {
         parent::__construct($message);
     }
 }
@@ -60,7 +62,9 @@ function academy_default_config(): array {
             'curriculum_path'  => 'dashboard/data/curriculum-v2-approved.json',   // v2 — הסילבוס המאושר (419417a)
             // לעיון בלבד: מקור הכללים ש-lib/validate-v2.php מממש. הדשבורד לא קורא את הקובץ.
             'contract_v2_path' => 'dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json',
-            'token' => '',
+            // האסימון — רק מקובץ, בנתיב מוחלט מחוץ לעץ האתר, לא קריא לאחרים (academy_github_token). ריק = fail-closed.
+            // אין יותר מפתח "token" בקונפיג: אם הוא קיים — המקור מסרב.
+            'token_file' => '',
         ],
         'cache_ttl' => 120,
     ];
@@ -94,7 +98,7 @@ function academy_github_allowed(array $config, bool $phase = ACADEMY_GITHUB_PHAS
  * בוחר את המקור. הבחירה היא רק מהקונפיג שבשרת — $demo משפיע רק על איזה קובץ דוגמה, ורק במקור local.
  * @throws AcademySourceError source_disabled — github מבוקש, אסור, ו-fallback_to_sample כבוי.
  */
-function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_GITHUB_PHASE_ALLOWED): AcademySource {
+function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_GITHUB_PHASE_ALLOWED, ?callable $reader = null): AcademySource {
     if (($config['source'] ?? 'local') === 'github') {
         if (academy_github_allowed($config, $phase)) {
             $gh = $config['github'];
@@ -102,6 +106,9 @@ function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_
             // נתיב ריק — לא מנחשים ולא קוראים (fail-closed)
             if (trim((string) ($gh[$key] ?? '')) === '') throw new AcademySourceError("הנתיב github.$key לא הוגדר", 'source_disabled');
             $gh['path'] = $gh[$key];
+            // רק כאן — אחרי שכל המנעולים פתוחים — נוגעים בקובץ האסימון
+            $gh['token'] = academy_github_token($gh, $reader);
+            unset($gh['token_file']);
             return new GithubAcademySource($gh, ACADEMY_DIR . '/data/cache', (int) ($config['cache_ttl'] ?? 120));
         }
         if (($config['fallback_to_sample'] ?? true) !== true) {
@@ -109,6 +116,55 @@ function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_
         }
     }
     return new LocalAcademySource($demo === 'empty' ? 'empty-snapshot.json' : 'demo-snapshot.json');
+}
+
+/**
+ * קורא את אסימון GitHub — רק מ-github.token_file. כל כשל: חריגה בלי נתיב ובלי ערך.
+ *  - מפתח "token" בקונפיג (גם ריק)      → source_disabled / token_in_config (הקובץ לא נפתח)
+ *  - token_file ריק או לא מוחלט          → source_disabled / token_file_missing
+ *  - הקובץ בתוך עץ האתר                  → source_disabled / secret_in_webroot
+ *  - הקובץ לא קיים / לא נקרא             → source_disabled / token_file_missing
+ *  - קריא לאחרים (o+r)                   → source_disabled / secret_insecure_perms
+ *  - ערך קצר מ-20 או עם רווח באמצע        → source_unauthorized / token_invalid
+ * $reader — להזרקה בבדיקות: fn(string $path): string|false. ברירת מחדל file_get_contents.
+ */
+function academy_github_token(array $gh, ?callable $reader = null): string {
+    if (array_key_exists('token', $gh)) {
+        throw new AcademySourceError('אסימון בקובץ הקונפיג אינו נתמך — יש להעביר אותו לקובץ מחוץ לאתר (github.token_file)', 'source_disabled', 'token_in_config');
+    }
+    $file = trim((string) ($gh['token_file'] ?? ''));
+    if ($file === '' || !str_starts_with($file, '/')) {
+        throw new AcademySourceError('לא הוגדר קובץ אסימון (github.token_file, נתיב מוחלט)', 'source_disabled', 'token_file_missing');
+    }
+    $real = realpath($file);
+    // לפי הנתיב המבוקש וגם לפי הנתיב האמיתי (קישור סימבולי לא עוקף)
+    foreach (array_filter([$file, $real]) as $p) {
+        if (academy_path_in_webroot($p)) {
+            throw new AcademySourceError('קובץ האסימון נמצא בתוך עץ האתר — הוא חייב להיות מחוץ ל-public_html', 'source_disabled', 'secret_in_webroot');
+        }
+    }
+    if ($real === false || !is_file($real)) {
+        throw new AcademySourceError('קובץ האסימון לא נמצא', 'source_disabled', 'token_file_missing');
+    }
+    if ((fileperms($real) & 0o004) !== 0) {
+        throw new AcademySourceError('קובץ האסימון קריא לכל המשתמשים בשרת — יש להגביל הרשאות (chmod 600)', 'source_disabled', 'secret_insecure_perms');
+    }
+    $raw = ($reader ?? 'file_get_contents')($real);
+    if (!is_string($raw)) throw new AcademySourceError('קובץ האסימון לא נקרא', 'source_disabled', 'token_file_missing');
+    $token = trim($raw);
+    if (strlen($token) < 20 || preg_match('/\s/', $token)) {
+        throw new AcademySourceError('האסימון בקובץ אינו תקין', 'source_unauthorized', 'token_invalid');
+    }
+    return $token;
+}
+
+/** האם הנתיב בתוך עץ האתר: שורש mini_projects, DOCUMENT_ROOT, או כל נתיב עם public_html / www. */
+function academy_path_in_webroot(string $path): bool {
+    $roots = array_filter([realpath(ACADEMY_DIR . '/..'), realpath(ACADEMY_DIR), ($_SERVER['DOCUMENT_ROOT'] ?? '') !== '' ? realpath($_SERVER['DOCUMENT_ROOT']) : false]);
+    foreach ($roots as $r) {
+        if ($path === $r || str_starts_with($path, rtrim($r, '/') . '/')) return true;
+    }
+    return (bool) preg_match('~/(public_html|www|htdocs)(/|$)~', $path);
 }
 
 /** מסיר את האסימון מכל טקסט שעלול לצאת החוצה. */

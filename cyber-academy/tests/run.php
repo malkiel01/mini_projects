@@ -71,6 +71,14 @@ check('מודל ריק מסומן empty', $e['empty'] === true && $e['measure'] 
 // ---------- המקור: github כבוי כברירת מחדל ----------
 check('קבוע השלב: github אסור בשלב הזה', ACADEMY_GITHUB_PHASE_ALLOWED === false);
 $def = academy_default_config();
+// קובץ אסימון תקין לבדיקות — מחוץ לריפו, 0600. הערך נבנה בזמן ריצה (סריקת הסודות לא תמצא אותו בקובץ הזה).
+$tokDir = sys_get_temp_dir() . '/ca-secret-' . getmypid();
+@mkdir($tokDir, 0700);
+$tokFile = "$tokDir/github-token";
+define('FILE_TOKEN', 'github' . '_pat_' . 'FILE' . str_repeat('k7', 14));
+file_put_contents($tokFile, FILE_TOKEN . "\n");
+chmod($tokFile, 0600);
+$withTok = fn(array $c) => array_replace_recursive($c, ['github' => ['token_file' => $tokFile]]);
 check('ברירת מחדל: github_enabled=false', $def['github_enabled'] === false && $def['privacy_confirmed'] === false);
 check('ברירת מחדל: מקור local', academy_source($def) instanceof LocalAcademySource);
 $on = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def;
@@ -173,8 +181,8 @@ check('redact: תבנית ghp_ מוסתרת גם בלי קונפיג', !str_cont
 
 // ---------- מקור: בחירה רק מהשרת ----------
 $ghOn = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def;
-check('מעבר למנעול: שני הדגלים + שלב → github', academy_source($ghOn, '', true) instanceof GithubAcademySource);
-check('מעבר למנעול: demo=empty לא מחליף github לדוגמה', academy_source($ghOn, 'empty', true) instanceof GithubAcademySource);
+check('מעבר למנעול: שני הדגלים + שלב → github', academy_source($withTok($ghOn), '', true) instanceof GithubAcademySource);
+check('מעבר למנעול: demo=empty לא מחליף github לדוגמה', academy_source($withTok($ghOn), 'empty', true) instanceof GithubAcademySource);
 foreach ([['source' => 'github'], ['isSample' => '0'], ['isSample' => 'false'], ['demo' => 'real'], ['demo' => 'empty', 'source' => 'github', 'sample' => '0']] as $q) {
     [$st, $body] = academy_api_snapshot($def, $q);
     check('פרמטר לא הופך דוגמה לאמת: ' . http_build_query($q), $st === 200 && $body['isSample'] === true && $body['source'] === 'local');
@@ -232,7 +240,7 @@ foreach ($all as $f) {
 }
 check('נסרקו קבצים (כולל data/, lib/, tests/, samples/)', $scanned > 30);
 $ex = json_decode((string) file_get_contents("$root/samples/config.example.json"), true);
-check('config.example: אסימון ריק ושני הדגלים כבויים', $ex['github']['token'] === '' && $ex['github_enabled'] === false && $ex['privacy_confirmed'] === false);
+check('config.example: אין אסימון, ושני הדגלים כבויים', !array_key_exists('token', $ex['github']) && $ex['github_enabled'] === false && $ex['privacy_confirmed'] === false);
 check('index.html: פס הדוגמה גלוי כברירת מחדל (עד שהשרת אומר אחרת)', (bool) preg_match('/id="sample-bar"(?![^>]*hidden)/', (string) file_get_contents("$root/index.html")));
 
 // ---------- snapshot אמת ריק (c4e7a8d) ----------
@@ -334,12 +342,13 @@ $ghV1['github'] = ['snapshot_path' => ''] + $def['github'];
 try { academy_source($ghV1, '', true); check('snapshot_path ריק → source_disabled', false); }
 catch (AcademySourceError $e) { check('snapshot_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
 $ghV2['github'] = $def['github'];
+$ghV2 = $withTok($ghV2);
 check('curriculum_path (מעבר למנעול) → github', academy_source($ghV2, '', true) instanceof GithubAcademySource);
 $seen = [];
 $s2 = academy_source($ghV2 + [], '', true);
 $rp = new ReflectionProperty($s2, 'gh');
 check('v2 קורא את curriculum-v2-approved.json', $rp->getValue($s2)['path'] === 'dashboard/data/curriculum-v2-approved.json');
-$s1 = academy_source(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def, '', true);
+$s1 = academy_source($withTok(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true] + $def), '', true);
 check('v1 קורא את snapshot.json', $rp->getValue($s1)['path'] === 'dashboard/data/snapshot.json');
 [$st, $body] = academy_api_snapshot(['contract' => 'v2', 'fallback_to_sample' => false] + $ghV2);
 check('v2: המנעול בקוד סגור → source_disabled', $st === 503 && $body['code'] === 'source_disabled');
@@ -406,6 +415,87 @@ $src = new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, '{"schemaVersi
 $out = json_encode(academy_api_snapshot($cfg, [], $src), JSON_UNESCAPED_UNICODE);
 check('github v2 JSON שבור: contract_invalid בלי אסימון', str_contains($out, 'contract_invalid') && !str_contains($out, $token));
 check('אין endpoint ל-issues', !glob(__DIR__ . '/../api/*issue*') && !preg_match('/\/issues/', (string) file_get_contents(__DIR__ . '/../lib/academy-source.php')));
+
+// ---------- האסימון: רק מקובץ מחוץ לאתר ----------
+$on = $withTok(['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'fallback_to_sample' => false] + $def);
+$reads = [];
+$rec = function (string $p) use (&$reads) { $reads[] = $p; return file_get_contents($p); };
+$srcOk = academy_source($on, '', true, $rec);
+check('token_file תקין מחוץ לעץ → נקרא פעם אחת', $srcOk instanceof GithubAcademySource && count($reads) === 1);
+$seen = [];
+$srcOk2 = new GithubAcademySource((new ReflectionProperty($srcOk, 'gh'))->getValue($srcOk), "$tmp/cache", 0, gh_stub(200, json_encode($valid), $seen));
+$srcOk2->fetch();
+check('ה-stub מקבל את האסימון מהקובץ (בכותרת בלבד)', in_array('Authorization: Bearer ' . FILE_TOKEN, $seen[0]['headers'], true));
+check('token_file לא נשמר באובייקט המקור', !array_key_exists('token_file', (new ReflectionProperty($srcOk, 'gh'))->getValue($srcOk)));
+$why = function (array $cfgX, ?callable $reader = null) {
+    try { academy_source($cfgX, '', true, $reader); return ['ok', null]; }
+    catch (AcademySourceError $e) { return [$e->errorCode, $e->reason, $e->getMessage()]; }
+};
+// בתוך עץ הריפו
+$inRepo = __DIR__ . '/fixtures/ca-test.token';
+file_put_contents($inRepo, FILE_TOKEN); chmod($inRepo, 0600);
+$reads = [];
+$r = $why(array_replace_recursive($on, ['github' => ['token_file' => $inRepo]]), $rec);
+check('token_file בתוך עץ הריפו → secret_in_webroot, לא נקרא', $r[0] === 'source_disabled' && $r[1] === 'secret_in_webroot' && $reads === []);
+check('הודעה בלי נתיב', !str_contains($r[2] ?? '', $inRepo) && !str_contains($r[2] ?? '', 'fixtures'));
+unlink($inRepo);
+check('נתיב עם public_html → בתוך האתר', academy_path_in_webroot('/home2/u/public_html/x/t') && !academy_path_in_webroot($tokFile));
+// קישור סימבולי מחוץ לעץ שמצביע לתוך העץ
+$inRepo2 = __DIR__ . '/fixtures/ca-test2.token';
+file_put_contents($inRepo2, FILE_TOKEN); chmod($inRepo2, 0600);
+@symlink($inRepo2, "$tokDir/link-token");
+$r = $why(array_replace_recursive($on, ['github' => ['token_file' => "$tokDir/link-token"]]), $rec);
+check('קישור סימבולי אל תוך העץ → secret_in_webroot', $r[1] === 'secret_in_webroot');
+@unlink("$tokDir/link-token"); unlink($inRepo2);
+// token בקונפיג
+$reads = [];
+$withCfgTok = array_replace_recursive($on, ['github' => ['token' => FAKE_TOKEN]]);
+$r = $why($withCfgTok, $rec);
+check('token בקונפיג → token_in_config, הקובץ לא נקרא', $r[0] === 'source_disabled' && $r[1] === 'token_in_config' && $reads === []);
+$r = $why(array_replace_recursive($on, ['github' => ['token' => '']]), $rec);
+check('גם token ריק בקונפיג → נחסם', $r[1] === 'token_in_config');
+[$st, $body] = academy_api_snapshot($withCfgTok);
+$out = json_encode($body, JSON_UNESCAPED_UNICODE);
+check('token בקונפיג: API → source_disabled בלי הערך', $st === 503 && $body['code'] === 'source_disabled' && !str_contains($out, FAKE_TOKEN));
+// world-readable
+$wr = "$tokDir/world-readable"; file_put_contents($wr, FILE_TOKEN); chmod($wr, 0644);
+$reads = [];
+$r = $why(array_replace_recursive($on, ['github' => ['token_file' => $wr]]), $rec);
+check('קובץ 0644 → secret_insecure_perms, לא נקרא', $r[1] === 'secret_insecure_perms' && $reads === []);
+// חסר / יחסי / ריק בקונפיג
+$r = $why(array_replace_recursive($on, ['github' => ['token_file' => "$tokDir/missing"]]));
+check('קובץ חסר → source_disabled בלי נתיב', $r[0] === 'source_disabled' && $r[1] === 'token_file_missing' && !str_contains($r[2], $tokDir));
+check('token_file יחסי → נחסם', $why(array_replace_recursive($on, ['github' => ['token_file' => 'secrets/t']]))[1] === 'token_file_missing');
+check('token_file ריק → נחסם', $why(array_replace_recursive($on, ['github' => ['token_file' => '']]))[1] === 'token_file_missing');
+// תוכן קצר / ריק / עם רווח
+foreach (['קצר' => 'abc', 'ריק' => "  \n", 'רווח באמצע' => substr(FILE_TOKEN, 0, 15) . ' ' . substr(FILE_TOKEN, 15)] as $label => $val) {
+    $f = "$tokDir/bad-" . md5($label); file_put_contents($f, $val); chmod($f, 0600);
+    $r = $why(array_replace_recursive($on, ['github' => ['token_file' => $f]]));
+    check("תוכן $label → source_unauthorized", $r[0] === 'source_unauthorized' && $r[1] === 'token_invalid' && !str_contains($r[2], trim($val) ?: '§'));
+}
+$nl = "$tokDir/newline"; file_put_contents($nl, "  " . FILE_TOKEN . "\n\n"); chmod($nl, 0600);
+check('רווחים ושורות בקצוות מקוצצים', academy_github_token(['token_file' => $nl]) === FILE_TOKEN);
+// דגלים כבויים: הקובץ לא נפתח בכלל
+foreach ([['github_enabled' => false], ['privacy_confirmed' => false]] as $off) {
+    $reads = [];
+    academy_source(array_replace($on, $off, ['fallback_to_sample' => true]), '', true, $rec);
+    check('דגל כבוי → הקובץ לא נפתח: ' . key($off), $reads === []);
+}
+$reads = [];
+academy_source(array_replace($on, ['fallback_to_sample' => true]), '', false, $rec);
+check('מנעול השלב כבוי → הקובץ לא נפתח', $reads === []);
+$reads = [];
+academy_source(array_replace($on, ['fallback_to_sample' => true]), '', ACADEMY_GITHUB_PHASE_ALLOWED, $rec);
+check('ברירת המחדל של הקוד (היום) → הקובץ לא נפתח', $reads === [] && ACADEMY_GITHUB_PHASE_ALLOWED === false);
+// קונפיג ותבנית
+check('ברירת מחדל: אין "token", יש token_file ריק', !array_key_exists('token', $def['github']) && $def['github']['token_file'] === '');
+$exT = json_decode((string) file_get_contents(__DIR__ . '/../samples/config.example.json'), true);
+check('config.example: אין "token", token_file ריק', !array_key_exists('token', $exT['github']) && $exT['github']['token_file'] === '');
+check('config.example: שאר הקונפיג נשמר', $exT['source'] === 'local' && $exT['github_enabled'] === false && $exT['contract'] === 'v1'
+    && $exT['github']['curriculum_path'] === 'dashboard/data/curriculum-v2-approved.json' && $exT['cache_ttl'] === 120);
+$gi = (string) @file_get_contents(__DIR__ . '/../.gitignore');
+check('.gitignore: config, cache, *.token', str_contains($gi, 'data/config.json') && str_contains($gi, 'data/cache/') && str_contains($gi, '*.token'));
+array_map('unlink', glob("$tokDir/*") ?: []); @rmdir($tokDir);
 
 // ---------- הרשאות ----------
 check('viewer קורא', academy_can('snapshot.read', 'viewer'));
