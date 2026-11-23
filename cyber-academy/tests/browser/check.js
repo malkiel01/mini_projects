@@ -1,7 +1,8 @@
 /*
  * בדיקת דפדפן — כל המסכים וכל המצבים, ב-320 / 390 / 1280.
  * מקומית בלבד (בשרת אין Node):
- *   php -S 127.0.0.1:8765 -t .            (משורש הריפו)
+ *   php -S 127.0.0.1:8765 -t . -d auto_prepend_file=$PWD/cyber-academy/tests/browser/dev-identity.php   (משורש הריפו; נתיב מוחלט)
+ *   (מאז F11 גם php -S דורש זהות מורשית — dev-identity.php נותן אותה, ורק ב-cli-server)
  *   node cyber-academy/tests/browser/check.js [תיקיית-צילומים]
  * מצבי שגיאה מוזרקים רק כאן, דרך page.route של Playwright — לא דרך פרמטר בפרודקשן.
  * יוצא בקוד 1 על שגיאת קונסול, גלילה אופקית, או פס/מסך לא צפוי.
