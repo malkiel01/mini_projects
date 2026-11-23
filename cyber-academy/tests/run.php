@@ -612,13 +612,17 @@ $listRepo = function () use ($repoRoot) {
     return $out;
 };
 $repoBefore = $listRepo();
-$userSrv = fn(string $sub = 'mgr-1') => ['server' => ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => true])], 'sapi' => 'litespeed'];
+// כותרות של בקשה מאותו מקור (F5) — כמו ש-fetch בדפדפן שולח
+$SAME = ['HTTP_SEC_FETCH_SITE' => 'same-origin', 'HTTP_HOST' => 'mbe-plus.com', 'HTTP_ORIGIN' => 'https://mbe-plus.com'];
+$userSrv = fn(string $sub = 'mgr-1') => ['server' => ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => true])] + $SAME, 'sapi' => 'litespeed'];
 $regBody = json_encode(['action' => 'register', 'learnerId' => 'lrn-x', 'sub' => 'u-x']);
 $blocked = function (array $cfgX, string $reason, string $label, ?string $secret = null) use ($userSrv, $regBody) {
-    [$st, $body] = academy_api_progress_read('GET', $cfgX, [], $userSrv('u-x'));
+    [$st, $body] = academy_api_progress_read('GET', $cfgX, [], $userSrv('mgr-1'));
+    [$stL, $bodyL] = academy_api_progress_read('GET', $cfgX, [], $userSrv('u-x'));
     [$st2, $body2] = academy_api_progress_write('POST', $cfgX, 'application/json', $regBody, $userSrv('mgr-1'));
-    $out = json_encode([$body, $body2], JSON_UNESCAPED_UNICODE);
+    $out = json_encode([$body, $bodyL, $body2], JSON_UNESCAPED_UNICODE);
     check("progress_dir $label → קריאה חסומה (503 $reason)", $st === 503 && $body['code'] === 'progress_unavailable' && $body['reason'] === $reason, $out);
+    check("progress_dir $label → לומד: 503 בלי reason (F8)", $stL === 503 && $bodyL['code'] === 'progress_unavailable' && !isset($bodyL['reason']), $out);
     check("progress_dir $label → כתיבה חסומה", $st2 === 503 && $body2['code'] === 'progress_unavailable' && $body2['reason'] === $reason, $out);
     if ($secret !== null) check("progress_dir $label → בלי נתיב בתשובה", !str_contains($out, $secret));
 };
@@ -674,7 +678,7 @@ $pdir = sys_get_temp_dir() . '/ca-progress-' . getmypid();
 @mkdir($pdir, 0700);
 chmod($pdir, 0700);
 $pcfg = $mgrCfg(['progress_dir' => $pdir]);
-$as = fn(?string $sub, bool $granted = true) => ['server' => $sub === null ? [] : ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => $granted])],
+$as = fn(?string $sub, bool $granted = true) => ['server' => ($sub === null ? [] : ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => $granted])]) + $SAME,
     'sapi' => 'litespeed', 'now' => '2026-11-23T12:00:00Z'];
 $W = fn(array $body, ?string $sub = 'mgr-1') => academy_api_progress_write('POST', $pcfg, 'application/json', json_encode($body, JSON_UNESCAPED_UNICODE), $as($sub));
 $R = fn(?string $sub, array $q = [], bool $granted = true) => academy_api_progress_read('GET', $pcfg, $q, $as($sub, $granted));
@@ -803,8 +807,11 @@ check('תיקייה חוקית: הקבצים נוצרו שם', is_file("$pdir/le
 // כשל כתיבה — לא נשאר קובץ חלקי: יעד ה-rename הוא תיקייה, ולכן ההחלפה נכשלת
 mkdir("$pdir/learner-lrn-c.json");
 [$st, $body] = $W(['action' => 'report', 'learnerId' => 'lrn-c', 'report' => $rep]);
-check('כשל כתיבה → 500 בלי נתיב', $st === 500 && $body['code'] === 'internal' && !str_contains(json_encode($body), $pdir));
+check('יעד שאינו קובץ → 503 (פגום, F1) בלי נתיב', $st === 503 && $body['code'] === 'progress_unavailable' && !str_contains(json_encode($body), $pdir));
 check('כשל כתיבה → אין קובץ זמני שנשאר', glob("$pdir/*.tmp-*") === []);
+$threw = false;
+try { academy_progress_write_atomic("$pdir/learner-lrn-c.json", '{"x":1}'); } catch (AcademyProgressError $e) { $threw = $e->http === 500; }
+check('כתיבה אטומית שנכשלת (rename) → חריגה, בלי קובץ זמני', $threw && glob("$pdir/*.tmp-*") === []);
 rmdir("$pdir/learner-lrn-c.json");
 // שגיאות בלי נתוני תלמיד: תוכן מזויף בקובץ לא תקין לא יוצא ללומד
 file_put_contents("$pdir/learner-lrn-a.json", json_encode(['schema' => 'progress-1', 'learnerId' => 'lrn-a', 'updatedAt' => null, 'skills' => [],
@@ -812,6 +819,140 @@ file_put_contents("$pdir/learner-lrn-a.json", json_encode(['schema' => 'progress
 [$st, $body] = $R('u-1');
 check('קובץ לא תקין → 422 ללומד בלי פירוט ובלי תוכן', $st === 422 && !isset($body['errors']) && !str_contains(json_encode($body, JSON_UNESCAPED_UNICODE), 'SECRET-STUDENT'));
 array_map('unlink', glob("$pdir/*") ?: []); @rmdir($pdir);
+// ---------- תיקוני ביקורת צוות 1 (F1–F10) ----------
+$sdir = sys_get_temp_dir() . '/ca-audit-' . getmypid();
+@mkdir($sdir, 0700); chmod($sdir, 0700);
+$scfg = $mgrCfg(['progress_dir' => $sdir]);
+$W2 = fn(array $body, string $sub = 'mgr-1', array $hdr = []) => academy_api_progress_write('POST', $scfg, 'application/json',
+    json_encode($body, JSON_UNESCAPED_UNICODE), ['server' => ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => true])] + $hdr + $SAME, 'sapi' => 'litespeed', 'now' => '2026-11-23T12:00:00Z']);
+$R2 = fn(string $sub, array $q = []) => academy_api_progress_read('GET', $scfg, $q, ['server' => ['PLATFORM_USER' => json_encode(['sub' => $sub, 'granted' => true])], 'sapi' => 'litespeed']);
+$repN = fn(string $id) => ['id' => $id, 'at' => '2026-11-22', 'reporter' => 'מורה דוגמה', 'skillIds' => ['sk-1'], 'assistanceLevel' => 'unknown', 'summary' => 'דוגמה'];
+check('F: רישום התחלתי', $W2(['action' => 'register', 'learnerId' => 'lrn-1', 'sub' => 'u-1'])[0] === 200
+    && $W2(['action' => 'register', 'learnerId' => 'lrn-2', 'sub' => 'u-2'])[0] === 200);
+
+// F1 — קובץ פגום: לא ריק, לא נדרס
+$corrupt = '{"schema":"progress-1", "learnerId": "lrn-1", BROKEN';
+file_put_contents("$sdir/learner-lrn-1.json", $corrupt);
+[$st, $body] = $R2('mgr-1', ['learner' => 'lrn-1']);
+check('F1: קריאה של קובץ פגום → 503, הסיבה למנהל', $st === 503 && $body['reason'] === 'progress_file_corrupt');
+[$st, $body] = $R2('u-1');
+check('F1: קריאה של קובץ פגום → 503 ללומד, בלי סיבה', $st === 503 && !isset($body['reason']));
+foreach (['report' => ['report' => $repN('rp-c1')], 'apply' => ['skills' => ['sk-9' => ['status' => 'learning', 'updatedAt' => null, 'assessmentIds' => [], 'evidenceIds' => []]]]] as $act => $extra) {
+    [$st, $body] = $W2(['action' => $act, 'learnerId' => 'lrn-1'] + $extra);
+    check("F1: $act על קובץ פגום → 503, הקובץ לא נדרס", $st === 503 && $body['code'] === 'progress_unavailable' && file_get_contents("$sdir/learner-lrn-1.json") === $corrupt);
+}
+file_put_contents("$sdir/learner-lrn-1.json", '[1,2,3]');
+check('F1: JSON שאינו אובייקט → 503, לא נדרס', $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-c2')])[0] === 503
+    && file_get_contents("$sdir/learner-lrn-1.json") === '[1,2,3]');
+unlink("$sdir/learner-lrn-1.json");
+$idxOk = file_get_contents("$sdir/learners.json");
+file_put_contents("$sdir/learners.json", '{bad');
+check('F1: learners.json פגום → קריאה 503 (לא "לא רשום")', $R2('u-1')[0] === 503);
+check('F1: learners.json פגום → register 503, לא נדרס', $W2(['action' => 'register', 'learnerId' => 'lrn-3', 'sub' => 'u-3'])[0] === 503
+    && file_get_contents("$sdir/learners.json") === '{bad');
+file_put_contents("$sdir/learners.json", $idxOk);
+check('F1: קובץ שאינו קיים — עדיין ריק, לא שגיאה', $R2('u-1')[0] === 200 && $R2('u-1')[1]['progress']['counts']['verified'] === 0);
+
+// F2 — נעילה: כתיבות רצופות ומקבילות לא מאבדות זו את זו
+check('F2: שתי כתיבות רצופות', $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-s1')])[0] === 200
+    && $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-s2')])[0] === 200
+    && count(academy_progress_load($sdir, 'lrn-1')['reports']) === 2);
+$child = "$sdir/child.php";
+file_put_contents($child, '<?php require ' . var_export(realpath(__DIR__ . '/../lib/progress-api.php'), true) . ';
+[$cfgJson, $prefix, $n] = [$argv[1], $argv[2], (int) $argv[3]];
+$cfg = json_decode($cfgJson, true);
+for ($i = 0; $i < $n; $i++) {
+    $r = ["id" => "$prefix-$i", "at" => "2026-11-22", "reporter" => "x", "skillIds" => ["sk-1"], "assistanceLevel" => "unknown", "summary" => "x"];
+    [$st] = academy_api_progress_write("POST", $cfg, "application/json", json_encode(["action" => "report", "learnerId" => "lrn-2", "report" => $r]),
+        ["server" => ["PLATFORM_USER" => json_encode(["sub" => "mgr-1", "granted" => true]), "HTTP_SEC_FETCH_SITE" => "same-origin"], "sapi" => "litespeed"]);
+    if ($st !== 200) { fwrite(STDERR, "fail $st\n"); exit(1); }
+}');
+$procs = [];
+foreach (['pa', 'pb', 'pc'] as $pfx) {
+    $procs[] = proc_open([PHP_BINARY, $child, json_encode($scfg), $pfx, '20'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+}
+$codes = array_map(fn($pr) => proc_close($pr), $procs);
+$reportsB = academy_progress_load($sdir, 'lrn-2')['reports'] ?? [];
+check('F2: 3 תהליכים × 20 כתיבות במקביל — אף דיווח לא אבד', $codes === [0, 0, 0] && count($reportsB) === 60, count($reportsB) . ' / codes ' . implode(',', $codes));
+check('F2: יומן — 60 שורות report ל-lrn-2', count(array_filter(file("$sdir/audit.log"), fn($l) => str_contains($l, '"lrn-2"') && str_contains($l, '"report"'))) === 60);
+unlink($child);
+
+// F3 — כשל ביומן → השינוי לא נשמר
+$beforeF3 = file_get_contents("$sdir/learner-lrn-1.json");
+rename("$sdir/audit.log", "$sdir/audit.keep");
+mkdir("$sdir/audit.log");
+[$st, $body] = $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-f3')]);
+check('F3: יומן לא נכתב → 500, הקובץ לא השתנה', $st === 500 && file_get_contents("$sdir/learner-lrn-1.json") === $beforeF3);
+[$st] = $W2(['action' => 'register', 'learnerId' => 'lrn-9', 'sub' => 'u-9']);
+check('F3: register עם יומן שנכשל → 500, המיפוי לא נשמר', $st === 500 && !isset(academy_progress_index($sdir)['u-9']));
+rmdir("$sdir/audit.log");
+rename("$sdir/audit.keep", "$sdir/audit.log");
+check('F3: אין @ שבולע את כתיבת היומן', !preg_match('/@file_put_contents\(\$f, \$lines/', (string) file_get_contents(__DIR__ . '/../lib/progress.php')));
+
+// F4 — register לא דורס
+[$st, $body] = $W2(['action' => 'register', 'learnerId' => 'lrn-2', 'sub' => 'u-1']);
+check('F4: sub ממופה ללומד אחר → 409, בלי שינוי', $st === 409 && $body['code'] === 'conflict' && academy_progress_index($sdir)['u-1'] === 'lrn-1');
+[$st] = $W2(['action' => 'register', 'learnerId' => 'lrn-1', 'sub' => 'u-new']);
+check('F4: לומד שכבר ממופה ל-sub אחר → 409', $st === 409 && !isset(academy_progress_index($sdir)['u-new']));
+check('F4: אותו מיפוי שוב → 200 בלי שינוי', $W2(['action' => 'register', 'learnerId' => 'lrn-1', 'sub' => 'u-1'])[1]['unchanged'] === true);
+[$st] = $W2(['action' => 'register', 'learnerId' => 'lrn-2', 'sub' => 'u-1', 'force' => 'yes']);
+check('F4: force שאינו true → עדיין 409', $st === 409);
+[$st] = $W2(['action' => 'register', 'learnerId' => 'lrn-2', 'sub' => 'u-1', 'force' => true]);
+$idxNow = academy_progress_index($sdir);
+check('F4: force: true → המיפוי הוחלף, והמיפוי הישן של lrn-2 הוסר', $st === 200 && $idxNow['u-1'] === 'lrn-2' && !isset($idxNow['u-2']));
+$regLog = array_values(array_filter(array_map(fn($l) => json_decode($l, true), file("$sdir/audit.log")), fn($e) => $e['action'] === 'register' && $e['to'] === 'lrn-2' && $e['target'] === 'u-1'));
+check('F4: היומן מתעד את המקור (from, fromSub)', count($regLog) === 1 && $regLog[0]['from'] === 'lrn-1' && $regLog[0]['fromSub'] === 'u-2');
+
+// F5 — רק same-origin
+$noHdr = fn(array $hdr, string $sapi = 'litespeed') => academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-o')]),
+    ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] + $hdr, 'sapi' => $sapi]);
+$beforeF5 = file_get_contents("$sdir/learner-lrn-1.json");
+foreach (['Origin זר' => ['HTTP_ORIGIN' => 'https://evil.example', 'HTTP_HOST' => 'mbe-plus.com'],
+          'Origin תת-דומיין' => ['HTTP_ORIGIN' => 'https://x.mbe-plus.com', 'HTTP_HOST' => 'mbe-plus.com', 'HTTP_SEC_FETCH_SITE' => 'same-site'],
+          'Sec-Fetch-Site cross-site' => ['HTTP_SEC_FETCH_SITE' => 'cross-site'],
+          'Sec-Fetch-Site same-site' => ['HTTP_SEC_FETCH_SITE' => 'same-site'],
+          'Origin null' => ['HTTP_ORIGIN' => 'null', 'HTTP_HOST' => 'mbe-plus.com'],
+          'בלי כותרות בשרת' => []] as $lbl => $hdr) {
+    check("F5: $lbl → 403", $noHdr($hdr)[0] === 403);
+}
+check('F5: אחרי כל הדחיות — הקובץ לא השתנה', file_get_contents("$sdir/learner-lrn-1.json") === $beforeF5);
+check('F5: Origin תואם בלי Sec-Fetch-Site → עובר', $noHdr(['HTTP_ORIGIN' => 'https://mbe-plus.com', 'HTTP_HOST' => 'mbe-plus.com'])[0] === 200);
+check('F5: בלי כותרות ב-CLI (בדיקות) → עובר', $noHdr([], 'cli')[0] !== 403);
+check('F5: Content-Type application/json-foo → 415', academy_api_progress_write('POST', $scfg, 'application/json-foo', '{}', ['server' => $SAME, 'sapi' => 'litespeed'])[0] === 415);
+check('F5: application/json; charset=utf-8 → מתקבל', academy_api_progress_write('POST', $scfg, 'application/json; charset=utf-8',
+    json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-cs')]), ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] + $SAME, 'sapi' => 'litespeed'])[0] === 200);
+
+// F6 — json_encode נבדק
+$threw = false;
+try { academy_progress_encode(['x' => "\xB1\x31"]); } catch (AcademyProgressError $e) { $threw = true; }
+check('F6: קידוד שנכשל → חריגה (לא קובץ ריק)', $threw);
+// F7 — assessmentId מחרוזת
+$asmA = ['id' => 'as-1', 'skillIds' => ['sk-2'], 'status' => 'evaluated', 'assistance' => 'hint', 'assessor' => 'x', 'assessedAt' => '2026-11-22T11:00:00Z',
+    'evidenceIds' => [], 'approvedBy' => 'role-manager', 'approvedAt' => '2026-11-22T12:00:00Z'];
+$W2(['action' => 'apply', 'learnerId' => 'lrn-1', 'assessments' => [$asmA], 'skills' => ['sk-2' => ['status' => 'theory_demonstrated', 'updatedAt' => null, 'assessmentIds' => ['as-1'], 'evidenceIds' => []]]]);
+$st7 = array_values(array_filter(array_map(fn($l) => json_decode($l, true), file("$sdir/audit.log")), fn($e) => $e['action'] === 'skill_status' && $e['target'] === 'sk-2'));
+check('F7: assessmentId ביומן — מחרוזת', count($st7) === 1 && $st7[0]['assessmentId'] === 'as-1');
+// F9 — learnerId לא נכתב ללוג
+$elog = "$sdir/php-error.log";
+$oldLog = ini_set('error_log', $elog);
+file_put_contents("$sdir/learner-lrn-2.json", json_encode(['schema' => 'progress-1', 'learnerId' => 'lrn-2', 'updatedAt' => null, 'skills' => ['sk-1' => ['status' => 'mastered', 'updatedAt' => null, 'assessmentIds' => [], 'evidenceIds' => []]],
+    'lessons' => [], 'assessments' => [], 'evidence' => [], 'reports' => []]));
+$R2('u-1');
+ini_set('error_log', (string) $oldLog);
+$logText = (string) @file_get_contents($elog);
+check('F9: נרשם ללוג, בלי learnerId', str_contains($logText, 'אינו תקין') && !str_contains($logText, 'lrn-2'));
+@unlink($elog);
+// F10 — audit.log נוצר 0640 גם עם umask פתוח
+$fdir = "$sdir/f10"; mkdir($fdir, 0700); chmod($fdir, 0700);
+$oldMask = umask(0);
+academy_progress_audit($fdir, [['at' => 'x', 'action' => 'register']]);
+umask($oldMask);
+check('F10: audit.log נוצר 0640 (umask 0)', (fileperms("$fdir/audit.log") & 0o777) === 0o640);
+unlink("$fdir/audit.log"); rmdir($fdir);
+check('F: אין קובצי זמני / נעילה מיותרים', glob("$sdir/*.tmp-*") === []);
+array_map('unlink', array_merge(glob("$sdir/*") ?: [], glob("$sdir/.lock") ?: [])); @rmdir($sdir);
+array_map('unlink', glob("$pdir/.lock") ?: []); @rmdir($pdir);
+
 // הריפו לא השתנה, ואין בו קובץ נתוני לומד
 check('הבדיקות לא יצרו שום קובץ בריפו', $listRepo() === $repoBefore, implode(', ', array_diff($listRepo(), $repoBefore)));
 $learnerFiles = array_filter($listRepo(), fn($f) => preg_match('~/(learner-[^/]+\.json|learners\.json|audit\.log)$~', $f));

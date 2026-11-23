@@ -197,3 +197,19 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - **סוג חדש `date_or_dt` ב-`_av2_type`:** `YYYY-MM-DD` תקין (checkdate), או RFC 3339 עם אזור זמן. הערך נשמר כמו שנשלח.
 - **רק ב-`reports[].at`.** `createdAt`, `assessedAt`, `approvedAt` ו-`updatedAt` נשארים `dt`/`dt?`.
 - **בדיקות:** run.php 838 → 854.
+
+## 2026-11-23 · #1811 — תיקוני ביקורת צוות 1 (docs/audit/progress-audit-2026-11-23.md בענף claude/aca-security-audit)
+
+תוקנו F1–F10. F11 נשאר — מידע בלבד (php -S לפיתוח), ותועד באפיון.
+
+| ממצא | התיקון |
+| --- | --- |
+| F1 | קובץ פגום → 503 `progress_file_corrupt`. לא "ריק", ולא נכתב מעליו |
+| F2 | `flock` על `.lock` סביב כל כתיבה. נבדק עם 3 תהליכים × 20 כתיבות במקביל: 60/60 |
+| F3 | היומן נכתב לפני השמירה, בלי `@`. כשל → 500 בלי שמירה |
+| F4 | 409 על מיפוי קיים, `force: true` בלבד. היומן רושם `from`/`fromSub` |
+| F5 | same-origin בלבד (Sec-Fetch-Site/Origin), ו-media type מדויק |
+| F6–F10 | `JSON_THROW_ON_ERROR`, `assessmentId` כמחרוזת, `reason` רק למנהל, בלי `learnerId` בלוג, umask 027 |
+
+**בדיקה שעודכנה בכוונה:** "כשל כתיבה → 500" — יעד שהוא תיקייה נחשב עכשיו קובץ פגום (503, F1). נוספה בדיקה ישירה של כשל rename.
+**בדיקות:** run.php 854 → 906.

@@ -56,18 +56,33 @@ function academy_progress_dir(array $config): string {
 
 /** מזהה לומד פנימי לפי sub של הפלטפורמה, או null אם אינו רשום. */
 function academy_progress_learner_id(string $dir, string $sub): ?string {
-    $idx = json_decode((string) @file_get_contents("$dir/learners.json"), true);
-    $id = is_array($idx) ? ($idx[$sub] ?? null) : null;
+    $id = academy_progress_index($dir)[$sub] ?? null;
     return is_string($id) && preg_match(ACADEMY_V2_ID, $id) ? $id : null;
+}
+
+/** learners.json — [] אם אינו קיים; קובץ פגום → חריגה (לא "ריק"). */
+function academy_progress_index(string $dir): array {
+    return _ap_read_json("$dir/learners.json") ?? [];
+}
+
+/**
+ * קורא JSON של אחסון ההתקדמות. null = **אין קובץ** (מותר). קובץ שקיים ולא נקרא / לא JSON / לא אובייקט →
+ * 503 progress_unavailable / progress_file_corrupt — לעולם לא מתייחסים אליו כריק, ולכן גם לא דורסים אותו (F1).
+ */
+function _ap_read_json(string $f): ?array {
+    if (!file_exists($f)) return null;
+    $raw = is_file($f) ? @file_get_contents($f) : false;
+    $d = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($d) || ($d !== [] && array_is_list($d))) {
+        throw new AcademyProgressError('קובץ התקדמות פגום', 503, 'progress_unavailable', [], 'progress_file_corrupt');
+    }
+    return $d;
 }
 
 /** הקובץ של הלומד, או null כשאין (לא שגיאה). מזהה לא תקין — null, בלי לגעת בדיסק. */
 function academy_progress_load(string $dir, string $learnerId): ?array {
     if (!preg_match(ACADEMY_V2_ID, $learnerId)) return null;
-    $f = "$dir/learner-$learnerId.json";
-    if (!is_file($f)) return null;
-    $d = json_decode((string) file_get_contents($f), true);
-    return is_array($d) ? $d : null;
+    return _ap_read_json("$dir/learner-$learnerId.json");
 }
 
 function academy_progress_empty(string $learnerId): array {
@@ -76,24 +91,63 @@ function academy_progress_empty(string $learnerId): array {
 }
 
 function academy_progress_save(string $dir, array $p): void {
-    academy_progress_write_atomic("$dir/learner-{$p['learnerId']}.json", json_encode($p, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    academy_progress_write_atomic("$dir/learner-{$p['learnerId']}.json", academy_progress_encode($p));
+}
+
+/** JSON בלי כשל שקט (F6): כשל קידוד → חריגה, ולא כותבים קובץ ריק. */
+function academy_progress_encode(array $d, int $flags = JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT): string {
+    try {
+        return json_encode($d, $flags | JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new AcademyProgressError('קידוד ההתקדמות נכשל', 500, 'internal');
+    }
+}
+
+/**
+ * נעילה על מחזור קריאה-שינוי-שמירה (F2): flock על קובץ נעילה נפרד בתיקייה. כל כתיבה (register / report / apply)
+ * רצה בתוכה, כך ששתי כתיבות במקביל לא מאבדות אחת את השנייה.
+ */
+function academy_progress_locked(string $dir, callable $fn): mixed {
+    $old = umask(0027);
+    $h = @fopen("$dir/.lock", 'c');
+    umask($old);
+    if ($h === false || !flock($h, LOCK_EX)) {
+        if ($h) fclose($h);
+        throw new AcademyProgressError('נעילת ההתקדמות נכשלה', 500, 'internal');
+    }
+    try {
+        return $fn();
+    } finally {
+        flock($h, LOCK_UN);
+        fclose($h);
+    }
 }
 
 /** כתיבה אטומית: קובץ זמני באותה תיקייה ואז rename. כשל — הזמני נמחק, ולא נשאר קובץ חלקי. התיקייה לא נוצרת. */
 function academy_progress_write_atomic(string $f, string $content): void {
     $tmp = $f . '.tmp-' . bin2hex(random_bytes(6));
-    $ok = @file_put_contents($tmp, $content, LOCK_EX) !== false && @chmod($tmp, 0640) && @rename($tmp, $f);
+    $old = umask(0027);                                    // נוצר כבר בלי הרשאות לאחרים (F10)
+    $ok = @file_put_contents($tmp, $content) === strlen($content) && @chmod($tmp, 0640) && @rename($tmp, $f);
+    umask($old);
     if (!$ok) {
         if (is_file($tmp)) @unlink($tmp);
         throw new AcademyProgressError('שמירת ההתקדמות נכשלה', 500, 'internal');
     }
 }
 
-/** יומן ביקורת — שורה לכל שינוי. בלי reference ובלי תוכן ראיה. */
-function academy_progress_audit(string $dir, array $entry): void {
-    $allowed = array_intersect_key($entry, array_flip(['at', 'by', 'learnerId', 'action', 'target', 'from', 'to', 'assessmentId', 'evidenceIds', 'reportId']));
-    @file_put_contents("$dir/audit.log", json_encode($allowed, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
-    @chmod("$dir/audit.log", 0640);
+/** יומן ביקורת — שורה לכל שינוי, נכתב **לפני** השמירה. בלי reference ובלי תוכן ראיה. כשל → חריגה. */
+function academy_progress_audit(string $dir, array $entries): void {
+    $keys = array_flip(['at', 'by', 'learnerId', 'action', 'target', 'from', 'to', 'fromSub', 'assessmentId', 'evidenceIds', 'reportId']);
+    $lines = '';
+    foreach ($entries as $e) $lines .= academy_progress_encode(array_intersect_key($e, $keys), JSON_UNESCAPED_UNICODE) . "\n";
+    if ($lines === '') return;
+    $f = "$dir/audit.log";
+    $old = umask(0027);                                    // נוצר כבר 0640, בלי חלון של הרשאות ברירת מחדל (F10)
+    $ok = file_put_contents($f, $lines, FILE_APPEND | LOCK_EX) === strlen($lines);   // בלי @ (F3): כשל נרשם בלוג השרת
+    umask($old);
+    // כשל ביומן אינו נבלע (F3): הקורא מבטל את השמירה
+    if (!$ok) throw new AcademyProgressError('רישום יומן הביקורת נכשל', 500, 'internal');
+    @chmod($f, 0640);
 }
 
 // ---------------------------------------------------------------- אימות וכללי מצב
