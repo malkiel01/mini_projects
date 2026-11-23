@@ -1155,6 +1155,9 @@ foreach (glob("$root/assets/js/*.js") as $f) {
 $idx = (string) file_get_contents("$root/index.html");
 check('אין קישור חזרה לכלים', !preg_match('~href="\.\./|\.\./index\.html~', $idx));
 
+// ---------- דיווחי מורים (פורמט v1.0.0) ----------
+require __DIR__ . '/report-checks.php';
+
 array_map('unlink', glob("$tmp/cache/*") ?: []); @rmdir("$tmp/cache");
 array_map('unlink', glob("$tmp/*") ?: []); @rmdir($tmp);
 
