@@ -151,3 +151,38 @@
 - **תוצאה — נכשלת כרגע, לא נדחית רק בתנאי:** `_av2_item` דוחה כל מפתח שאינו מוגדר בספק (`lib/validate-v2.php:205`: `שדה "…" אינו קיים בחוזה v2`). הספק של `reports` (`lib/progress.php:117`) כולל רק `id, at, reporter, skillIds, summary`. **לכן דיווח עם `lessonIds` או `assistanceLevel` ייכשל כיום ב-422** ולא יישמר. הכשל בטוח (לא משנה סטטוס), אבל הפיצ'ר לא יעבוד עד שהספק יתעדכן. כדי לתקן: להוסיף את השדות לספק של `reports` ב-`progress.php:117`, ולהוסיף ל-`_av2_item` של הדיווח את הערכים המותרים.
 - **`unknown` לא נספר כ-`none`:** בקוד הנוכחי אין ספירה של `assistance` מדיווחים. `progress.php:165` סופר `none` רק מתוך הערכות מאושרות (`assessments`). לכן `unknown` בדיווח לא יכול להיספר כ-`none` כיום. אם יתווסף בעתיד ספירה על דיווחים — לבדוק שוב. בנוסף, `unknown` לא נמצא כיום ב-enum של `assistanceLevel` (ל-`reports` עדיין אין שדה כזה), ולכן צריך להוסיפו במפורש כערך מותר ולא להסתמך על "חסר".
 - **הכרעה `hint` (בקשת הבקרה):** השינוי ב-`progress.php:24` ישנה גם את ה-enum של ההערכות (`assessments.assistance`), כי שניהם משתמשים באותה קבוע (`:114`). יש לוודא שנתוני ההערכות הקיימים (אם יש) לא משתמשים ב-`hints`, לפני השינוי.
+
+---
+
+## אימות תיקונים (נבדק מול הענף של PR #1811)
+
+נבדק: `origin/claude/cyber-academy-dashboard` בקומיטים `41cc237`, `27b3e86`, `693a896` (מעל `f3556d0`). **הקוד לא הורץ**, ולכן כל "נסגר" מבוסס על קריאת הקוד בלבד. `tests/run.php` שונה בקומיטים אלה, ולא הורץ.
+
+| # | מצב | ראיה בקוד (PR #1811) |
+| --- | --- | --- |
+| F1 | **נשאר פתוח** | `lib/progress.php:63-69` ללא שינוי; `lib/progress-api.php:35, 85, 96` עדיין `?? academy_progress_empty` |
+| F2 | **נשאר פתוח** | אין `flock` ב-`lib/progress.php` וב-`lib/progress-api.php` |
+| F3 | **נשאר פתוח** | `lib/progress.php:93-94` עדיין `@file_put_contents`; הסדר שמירה→יומן ללא שינוי |
+| F4 | **נשאר פתוח** | `lib/progress-api.php:78-81` ללא בדיקת מיפוי קיים |
+| F5 | **נשאר פתוח** | `api/progress-write.php` ו-`lib/progress-api.php:53-54` ללא שינוי; אין בדיקת `Origin` / `Sec-Fetch-Site` |
+| F6 | **נשאר פתוח** | `lib/progress.php:77, 83` ללא שינוי |
+| F7 | **נשאר פתוח** | `lib/progress-api.php:113` עדיין `'assessmentId' => $s['assessmentIds']` |
+| F8 | **נשאר פתוח** | `lib/progress-api.php:23, 60` עדיין מחזירים `reason` לכל תפקיד |
+| F9 | **נשאר פתוח** | `lib/progress-api.php:38` עדיין כותב `learnerId` ל-`error_log` |
+| F10 | **נשאר פתוח** | `lib/progress.php:93-94` ללא `umask` |
+| F11 | **נשאר פתוח** | `lib/access.php:33` לא שונה בקומיטים |
+
+**תיקונים שכן נכנסו (נסגרו):**
+- `hint` במקום `hints` ב-`lib/progress.php:24`, עם enum אחד לכל המקומות.
+- `reports[]` מקבל `lessonIds` (אופציונלי) ו-`assistanceLevel` (חובה) — `lib/progress.php:118-120`.
+- `unknown` נספר בנפרד ב-`reportsByAssistance` (`lib/progress.php:198-200, 225`) ולא מצטרף ל-`none`.
+- `reports[].at` מקבל תאריך בלבד (`date_or_dt`), `lib/progress.php:118`.
+- תצוגת הלומד מצומצמת ב-`academy_progress_learner_view` (`lib/progress.php:228-256`): בלי `reference`, בלי מעריכים, בלי `pendingReports`, `reportAssistance`, `reportsByAssistance`. `api`/`progress-api.php:42` בוחר בין התצוגות לפי `progress.read.all`.
+
+**בדיקות שנעשו בקריאה (לא בהרצה):**
+- `academy_v2_unsafe_reference` מחזיר מחרוזת; הערך `''` מסמן הפניה בטוחה, לכן ה-`!== ''` בתצוגת הלומד נכון.
+- `date_or_dt` קיים ב-`validate-v2.php:237` ומקבל `YYYY-MM-DD` או RFC 3339.
+
+**נקודה פתוחה חדשה להכרעת הבקרה (לא ממצא נסגר/נפתח של F1–F11):** תצוגת הלומד עדיין חושפת `counts.reported` ו-`category: "reported"` לכל מיומנות שיש לה דיווח מורה. כלומר ללומד יש ידיעה שדיווח קיים, אף שתוכנו מוסתר. זו החלטת מוצר: האם דיווח מורה נחשף ללומד בכלל.
+
+**מה עוד לא נבדק:** הרצת `tests/run.php` אחרי התיקונים; התנהגות השער והעוגייה (SameSite); הרצה על קובץ לומד אמיתי או לדוגמה.
