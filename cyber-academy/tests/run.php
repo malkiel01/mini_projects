@@ -66,7 +66,7 @@ check('כל ההמלצות מסומנות נגזר', $m['recommendations'] && !a
 check('המלצה להערכה מחדש קודמת', $m['recommendations'][0]['kind'] === 'reassess');
 check('ציר זמן: updatedAt + lastAssessedAt, חדש קודם', array_column($m['timeline'], 'kind') === ['snapshot', 'assessment']);
 $e = academy_model(fixture('empty-template.json'));
-check('מודל ריק מסומן empty', $e['empty'] === true && $e['measure']['total'] === 0 && $e['recommendations'] === [] && $e['timeline'] === []);
+check('מודל ריק מסומן empty', $e['empty'] === true && $e['measure'] === null && $e['recommendations'] === [] && $e['timeline'] === []);
 
 // ---------- המקור: github כבוי כברירת מחדל ----------
 check('קבוע השלב: github אסור בשלב הזה', ACADEMY_GITHUB_PHASE_ALLOWED === false);
@@ -234,6 +234,26 @@ check('נסרקו קבצים (כולל data/, lib/, tests/, samples/)', $scanned
 $ex = json_decode((string) file_get_contents("$root/samples/config.example.json"), true);
 check('config.example: אסימון ריק ושני הדגלים כבויים', $ex['github']['token'] === '' && $ex['github_enabled'] === false && $ex['privacy_confirmed'] === false);
 check('index.html: פס הדוגמה גלוי כברירת מחדל (עד שהשרת אומר אחרת)', (bool) preg_match('/id="sample-bar"(?![^>]*hidden)/', (string) file_get_contents("$root/index.html")));
+
+// ---------- snapshot אמת ריק (c4e7a8d) ----------
+$realEmpty = fixture('academy-snapshot-c4e7a8d.json');
+check('c4e7a8d: עובר אימות', academy_validate($realEmpty) === []);
+foreach (['updatedAt null' => null, 'updatedAt תאריך' => '2026-11-23T12:00:00Z'] as $label => $upd) {
+    $snap = ['updatedAt' => $upd] + $realEmpty;
+    $src = new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($snap)));
+    [$st, $body] = academy_api_snapshot($cfg, [], $src);
+    $mm = $body['model'] ?? [];
+    check("אמת ריק ($label): ok, לא דוגמה, empty", $st === 200 && $body['ok'] === true && $body['isSample'] === false
+        && $body['source'] === 'github' && ($mm['empty'] ?? null) === true);
+    check("אמת ריק ($label): הקומיט מוחזר", $body['sourceInfo']['commit'] === FAKE_SHA);
+    check("אמת ריק ($label): אין מדד התקדמות", array_key_exists('measure', $mm) && $mm['measure'] === null);
+    check("אמת ריק ($label): אין מסלולים, המלצות או פערים", $mm['tracks'] === [] && $mm['recommendations'] === []
+        && $mm['gaps'] === [] && $mm['unmetPrerequisites'] === []);
+    check("אמת ריק ($label): ציר זמן רק מ-updatedAt", array_column($mm['timeline'], 'kind') === ($upd ? ['snapshot'] : []));
+    check("אמת ריק ($label): אין learned/proven בפלט", !preg_match('/"(learned|proven)"/', json_encode($body)));
+}
+check('דוגמה ריקה: גם בלי מדד', academy_api_snapshot($def, ['demo' => 'empty'])[1]['model']['measure'] === null);
+check('דוגמה מלאה: יש מדד', is_array(academy_api_snapshot($def)[1]['model']['measure']));
 
 // ---------- הרשאות ----------
 check('viewer קורא', academy_can('snapshot.read', 'viewer'));

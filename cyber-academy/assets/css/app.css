@@ -268,3 +268,4 @@ a.tile { color: inherit; text-decoration: none; }
 .sk-card { block-size: 74px; } .sk-block { block-size: 96px; margin-bottom: var(--s3); } .sk-line { block-size: 14px; inline-size: 30%; margin: var(--s3) 0 var(--s2); }
 .sk-row { block-size: 52px; margin-bottom: 4px; }
 @keyframes sk { from { opacity: .55; } to { opacity: 1; } }
+.sample-bar.real.empty { background: var(--brand-soft); border-bottom-color: color-mix(in srgb, var(--brand) 35%, transparent); }

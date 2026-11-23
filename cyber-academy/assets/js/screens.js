@@ -41,6 +41,25 @@ window.CA = window.CA || {};
     meta: taskChip(t.status),
   });
 
+  // שם המסך במצב "מאגר מחובר, snapshot ריק"
+  const SCREEN_NAME = { home: 'תמונת מצב', syllabus: 'סילבוס', track: 'מסלול', progress: 'התקדמות', tasks: 'משימות',
+    evidence: 'מבחנים וראיות', gaps: 'פערים והמלצות', timeline: 'ציר זמן' };
+
+  /**
+   * מקור אמת (isSample=false) עם snapshot ריק — הנחיית מנהל האקדמיה: לא להציג אותו כהתקדמות או כסילבוס.
+   * בלי מדדים, מונים, לשוניות או ספרות; רק הסבר על המסך הזה.
+   */
+  const realEmpty = (name) => {
+    const title = SCREEN_NAME[name] || SCREEN_NAME.home;
+    return { title, back: name === 'track' ? '#/syllabus' : null, html: `
+      <div class="state" data-state="real-empty">
+        <div class="state-ic" aria-hidden="true">🗂️</div>
+        <h2>${esc(title)}: עדיין אין נתוני לימוד</h2>
+        <p>מאגר האקדמיה מחובר, אבל ה-snapshot בו ריק — אין בו מסלולים, כשירויות או משימות.</p>
+        <p class="state-todo">זה <b>לא</b> מצב התקדמות ולא סילבוס מלא. המסך הזה יתמלא כשהאקדמיה תכניס נתונים לקובץ.</p>
+      </div>` };
+  };
+
   const screens = {
     home(m) {
       if (m.empty) return { title: 'תמונת מצב', html: emptySnapshot() };
@@ -180,4 +199,5 @@ window.CA = window.CA || {};
   };
 
   CA.screens = screens;
+  CA.realEmpty = realEmpty;
 })();

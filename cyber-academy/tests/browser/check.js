@@ -40,6 +40,7 @@ const STATES = {
   // הנתונים האמיתיים של הדוגמה — לבסיס של "נתוני אמת" מזויפים
   const ctx0 = await browser.newContext();
   const sample = await (await ctx0.request.get(BASE + 'api/snapshot.php')).json();
+  const emptySample = await (await ctx0.request.get(BASE + 'api/snapshot.php?demo=empty')).json();
   await ctx0.close();
   if (!sample.ok || sample.isSample !== true) problems.push('API: הדוגמה לא מסומנת isSample');
 
@@ -70,7 +71,19 @@ const STATES = {
     if (expect.real !== undefined && r.real !== expect.real) problems.push(`${label}: פס אמת ${r.real}, צפוי ${expect.real}`);
     if (r.sample && r.real) problems.push(`${label}: שני הפסים יחד`);
     if (expect.state !== undefined && r.state !== expect.state) problems.push(`${label}: מצב ${r.state}, צפוי ${expect.state}`);
-    if (expect.state && !r.retry) problems.push(`${label}: אין "נסה שוב"`);
+    if (expect.state && expect.state !== 'real-empty' && !r.retry) problems.push(`${label}: אין "נסה שוב"`);
+    if (expect.noNumbers) {
+      // אמת ריק: אין מונה, מדד או ספרה — לא בתוכן ולא בלשוניות; הפס הוא פס "ריק"
+      const n = await p.evaluate(() => ({
+        digits: (document.getElementById('main').innerText + document.getElementById('tabs').innerText).match(/[0-9٠-٩]/g) || [],
+        bar: document.getElementById('real-bar').textContent,
+        barEmpty: document.getElementById('real-bar').classList.contains('empty'),
+        measures: document.querySelectorAll('.measure, .dist, .seg-tabs, .tiles, .track').length,
+      }));
+      if (n.digits.length) problems.push(`${label}: ספרות בדף (${n.digits.join('')})`);
+      if (!n.barEmpty || !/ה-snapshot ריק/.test(n.bar) || /נתוני אמת/.test(n.bar)) problems.push(`${label}: פס לא נכון: ${n.bar}`);
+      if (n.measures) problems.push(`${label}: ${n.measures} רכיבי מדד/מונה`);
+    }
     if (OUT) { await p.screenshot({ path: path.join(OUT, label.replace(/[^\w.-]+/g, '_') + '.png'), fullPage: true }); shots++; }
   }
 
@@ -97,6 +110,16 @@ const STATES = {
     const realText = await pr.textContent('#real-bar');
     if (!/קומיט abcdef0/.test(realText) || !/נאסף ב-/.test(realText)) problems.push(`${w}: טקסט פס האמת: ${realText}`);
     await pr.close();
+
+    // 2א. אמת ריק (c4e7a8d) — מאגר מחובר, snapshot ריק: לא התקדמות ולא סילבוס
+    const pz = await page(w, h);
+    await pz.route('**/api/snapshot.php*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      ...emptySample, source: 'github', isSample: false, sourceInfo: { commit: 'c4e7a8dedabfff552a161005e166ab5c25273375', collectedAt: '2026-11-23T10:00:00Z' } }) }));
+    for (const s of SCREENS) {
+      await pz.goto(BASE + '#/' + s);
+      await verify(pz, `${w}-real-empty-${s || 'home'}`, { sample: false, real: true, state: 'real-empty', noNumbers: true });
+    }
+    await pz.close();
 
     // 3. מצבי שגיאה
     for (const [name, st] of Object.entries(STATES)) {

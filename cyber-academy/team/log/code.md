@@ -36,3 +36,11 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - שם בשורת רשימה (`.use-tx > b`) עובר שורה ולא נחתך. התגים עברו לשורה מתחת לשם (`meta` ב-`row()`): בסילבוס 📘/🧪/מוצע, ובכשירויות, במשימות, בציר הזמן ובראיות — תג הסטטוס. שורת המשנה עדיין נחתכת ב-….
 - `tests/browser/check.js`: בכל מסך ומצב, ובכל רוחב, אף `.use-tx > b` לא נחתך (`scrollWidth ≤ clientWidth` ובלי ellipsis). 410 שמות נבדקו. וידאתי שהבדיקה תופסת את הבאג: מול ה-CSS הקודם היא מדווחת 44 בעיות.
 - **forbidden מהשער — נבדק בקריאת קוד, לא בבדיקה חיה:** `deny()` ב-`platform/lib/gate.php` מחזיר JSON עם 401/403 כשה-Accept לא כולל text/html. ה-fetch שלנו שולח `Accept: application/json`, ולכן הבקשה לא מופנית, והקוד 401/403 ממופה ל-forbidden ב-`states.js`.
+
+## 2026-11-23 · פרוסה 03 — snapshot אמת ריק (c4e7a8d)
+
+- `measure: null` כשאין כשירויות. אחת מבדיקות פרוסה 01 ("מודל ריק מסומן empty") ציפתה ל-`measure.total === 0`, ועודכנה ל-`null`. זה שינוי מכוון: אין "0 מתוך 0".
+- אמת + ריק → `CA.realEmpty(name)` בכל מסך, ופס "מאגר מחובר · snapshot ריק · קומיט". דוגמה ריקה לא השתנתה.
+- fixture `tests/fixtures/academy-snapshot-c4e7a8d.json` הוא שחזור לפי תיאור (README). הבדיקה מכסה את שני המקרים של `updatedAt`: null ותאריך.
+- `samples/config.example.json`: הנתיב `dashboard/data/snapshot.json` — אומת. המנעולים לא שונו.
+- run.php: 265 → 281. check.js: 80 → 113 צילומים (11 מסכים × 3 רוחבים של אמת-ריק). וידאתי שהבדיקה נכשלת בלי התיקון: 51 בעיות, כולל מונים בלשוניות המשימות.

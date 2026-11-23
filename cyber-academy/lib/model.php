@@ -97,7 +97,8 @@ function academy_model(array $s): array {
         'updatedAt' => $s['updatedAt'],
         'empty' => !$s['tracks'] && !$s['competencies'] && !$s['tasks'],
         'curriculum' => academy_curriculum_status([], $s['schemaVersion']),
-        'measure' => academy_measure($comps),
+        // snapshot ריק — אין מדד בכלל (לא "0 מתוך 0"), כדי שלא ייראה כהתקדמות
+        'measure' => $comps ? academy_measure($comps) : null,
         'tracks' => $outTracks,
         'competencies' => $comps,
         'tasks' => $tasks,

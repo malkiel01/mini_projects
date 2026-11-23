@@ -12,13 +12,17 @@
     const ok = !!(body && body.ok);
     const sample = !body || body.isSample !== false;
     const real = ok && body.isSample === false && body.source === 'github';
+    const realEmpty = real && !!(body.model && body.model.empty);
     document.body.classList.toggle('banner', sample || real);
     $('sample-bar').hidden = !sample;
     $('real-bar').hidden = !real;
+    $('real-bar').classList.toggle('empty', realEmpty);
     if (real) {
       const i = body.sourceInfo || {};
-      $('real-bar').textContent = '✅ נתוני אמת ממאגר האקדמיה · קומיט ' + String(i.commit || '—').slice(0, 7)
-        + ' · נאסף ב-' + (i.collectedAt ? fmtDate(i.collectedAt, true) : '—');
+      const commit = String(i.commit || '—').slice(0, 7);
+      $('real-bar').textContent = realEmpty
+        ? '🗂️ מאגר האקדמיה מחובר · ה-snapshot ריק — עדיין אין נתוני לימוד · קומיט ' + commit
+        : '✅ נתוני אמת ממאגר האקדמיה · קומיט ' + commit + ' · נאסף ב-' + (i.collectedAt ? fmtDate(i.collectedAt, true) : '—');
     }
     // הפס יכול לרדת לשתי שורות בטלפון — הלשוניות הדביקות יושבות מתחתיו
     const bar = real ? $('real-bar') : $('sample-bar');
@@ -43,6 +47,7 @@
     let view;
     if (!state) view = { title: 'טוען…', html: CA.states.skeleton() };
     else if (state.status !== 200 || !state.body || !state.body.ok || !state.body.model) view = CA.states.errorView(state);
+    else if (state.body.model.empty && state.body.isSample === false) view = CA.realEmpty(name); // אמת, ריק — לא התקדמות
     else view = CA.screens[name](state.body.model, route.arg);
     main.setAttribute('aria-busy', state ? 'false' : 'true');
     $('title').textContent = view.title || 'אקדמיית סייבר התקפי';
