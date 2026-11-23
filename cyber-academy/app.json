@@ -1,0 +1,11 @@
+{
+  "id": "cyber-academy",
+  "name": "אקדמיית סייבר התקפי",
+  "icon": "🧰",
+  "description": "בפיתוח.",
+  "category": "dev",
+  "entry": "index.html",
+  "version": "0.0",
+  "gate": true,
+  "restricted": true
+}
