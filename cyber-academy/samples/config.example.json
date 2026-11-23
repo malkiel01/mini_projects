@@ -1,0 +1,13 @@
+{
+  "source": "local",
+  "github_enabled": false,
+  "privacy_confirmed": false,
+  "github": {
+    "owner": "malkiel01",
+    "repo": "offensive-cyber-academy",
+    "ref": "main",
+    "path": "dashboard/data/snapshot.json",
+    "token": ""
+  },
+  "cache_ttl": 120
+}

@@ -149,6 +149,10 @@ jobs:
       - name: sforno tests
         run: php sforno/tests/run.php
 
+      # אקדמיית סייבר — אימות החוזה v1 מול fixtures, מקור GitHub כבוי, אסימון לא דולף. נכשל → אין פריסה.
+      - name: cyber-academy tests
+        run: php cyber-academy/tests/run.php
+
       # קול מרוקו — הבדיקות של האפליקציה (מסד זמני, בלי Composer, לא נוגע ב-data/): הרשאות לכל פעולה, חתימת הפרסום,
       # מיגרציות, יומן המפתח והספרייה. בדיקה שנכשלת עוצרת את הפריסה. ו-dev/build.json — הקומיט והשעה, למסך המפתח
       # ("גרסה וקומיט"); הקובץ נוצר כאן בלבד, אינו בגיט, ו-dev/.htaccess חוסם אותו מהדפדפן.
@@ -339,6 +343,8 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/cyber-academy/team/' \
+            --include='/cyber-academy/data/.htaccess' --exclude='/cyber-academy/data/*' \
             --exclude='/sforno/team/' \
             --include='/sforno/data/.htaccess' --exclude='/sforno/data/*' \
             --exclude='/grave-prices/team/' \
