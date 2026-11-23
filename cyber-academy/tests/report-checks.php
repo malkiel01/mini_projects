@@ -77,7 +77,8 @@ check('unknown לא מומר ל-none במיפוי לשרת',
 $payload = academy_report_to_progress_payload($goodReport, 'lrn-demo-01');
 check('גוף הבקשה: action=report ו-learnerId מהקריאה', $payload['action'] === 'report' && $payload['learnerId'] === 'lrn-demo-01');
 check('מזהה הדיווח: taskId-Tמורה', $payload['report']['id'] === 'ACA-DEMO-001-T02', $payload['report']['id']);
-check('at = תאריך-שעה RFC 3339 מהתאריך של הדיווח', $payload['report']['at'] === '2026-11-10T00:00:00Z', $payload['report']['at']);
+check('at = התאריך כמו שהוא (YYYY-MM-DD), בלי שעה ממצאה', $payload['report']['at'] === '2026-11-10', $payload['report']['at']);
+check('אין T00:00:00Z מומצא בגוף', !str_contains(json_encode($payload), 'T00:00:00'));
 check('reporter = teacherId', $payload['report']['reporter'] === '02');
 check('lessonIds נשמרים בדיווח', $payload['report']['lessonIds'] === $goodReport['lessonIds']);
 check('assistanceLevel נשמר בדיווח בשם האחיד hint', $payload['report']['assistanceLevel'] === 'hint');

@@ -139,7 +139,7 @@ function academy_report_to_progress_payload(array $r, string $learnerId): array 
         'learnerId' => $learnerId,
         'report' => [
             'id' => $r['taskId'] . '-T' . $r['teacherId'],
-            'at' => $r['date'] . 'T00:00:00Z',
+            'at' => $r['date'], // בלי שעה: לא ממציאים חצות (הכרעת מנהל 00)
             'reporter' => $r['teacherId'],
             'skillIds' => $r['skillIds'],
             'lessonIds' => $r['lessonIds'],
