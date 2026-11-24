@@ -244,7 +244,19 @@ textarea.grow { resize: none; overflow: hidden; min-height: var(--tap); line-hei
 #preview { min-height: 50dvh; }
 #tokenDialog .sheet-body input { font-family: ui-monospace, monospace; }
 
-<<<<<<< HEAD
+/* ===== פרוסה 01: בורר ארגון, חברים, מסך מפתח ===== */
+.org-pick { max-inline-size: 60vw; min-height: 28px; padding: 0 var(--s1); border: 1px solid rgba(255, 255, 255, .4); border-radius: var(--r);
+    background: transparent; color: inherit; font: inherit; font-size: .78rem; }
+.org-pick option { color: var(--ink); background: var(--surface); }
+select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; padding: 0 var(--s1); border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; }
+.card .chip { margin-inline-start: auto; }
+#devBody .card .l2 { white-space: normal; }
+#devBody .chips { margin-bottom: var(--s2); }
+.btn.sm { min-height: var(--tap); }
+.seg-tabs button { min-height: var(--tap); }
+#noorg p { margin: var(--s2) 0 0; }
+
 /* ===== פרוסה 02 — טופס חכם ===== */
 .seg-tabs.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .seg-tabs button { min-height: 44px; }
@@ -262,17 +274,3 @@ textarea.grow { resize: none; overflow: hidden; min-height: var(--tap); line-hei
 .hist .src { font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
 .hist-ch { list-style: none; display: grid; gap: 2px; font-size: .85rem; overflow-wrap: anywhere; }
 #fNotes { min-block-size: 6em; }
-=======
-/* ===== פרוסה 01: בורר ארגון, חברים, מסך מפתח ===== */
-.org-pick { max-inline-size: 60vw; min-height: 28px; padding: 0 var(--s1); border: 1px solid rgba(255, 255, 255, .4); border-radius: var(--r);
-    background: transparent; color: inherit; font: inherit; font-size: .78rem; }
-.org-pick option { color: var(--ink); background: var(--surface); }
-select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; padding: 0 var(--s1); border: 1px solid var(--line); border-radius: var(--r);
-    background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; }
-.card .chip { margin-inline-start: auto; }
-#devBody .card .l2 { white-space: normal; }
-#devBody .chips { margin-bottom: var(--s2); }
-.btn.sm { min-height: var(--tap); }
-.seg-tabs button { min-height: var(--tap); }
-#noorg p { margin: var(--s2) 0 0; }
->>>>>>> origin/claude/funerals-dashboard-01-infra

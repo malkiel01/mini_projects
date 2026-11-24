@@ -38,7 +38,8 @@ function resolveAccess(array $pu): array {
     $st->execute([$pu['sub']]);
     $user = $st->fetch() ?: null;
     $actorSys = ['id' => null, 'actor' => 'system'];
-    if ($user === null && $pu['email'] !== '') {
+    $verified = $pu['email'] !== '' && $pu['email_verified'];
+    if ($user === null && $verified) {
         $st = $pdo->prepare('SELECT * FROM users WHERE email = ? AND sub IS NULL');
         $st->execute([$pu['email']]);
         $user = $st->fetch() ?: null;
@@ -48,7 +49,7 @@ function resolveAccess(array $pu): array {
         }
     }
     if ($user === null) {
-        $email = $pu['email'] !== '' ? $pu['email'] : null;
+        $email = $verified ? $pu['email'] : null;   // מייל לא מאומת לא נשמר — הוא לא יקשר ולא יממש הזמנה
         if ($email !== null) {
             $st = $pdo->prepare('SELECT 1 FROM users WHERE email = ?');
             $st->execute([$email]);
@@ -64,9 +65,15 @@ function resolveAccess(array $pu): array {
     $isDev = $pu['platform_admin'];
     $pdo->prepare('UPDATE users SET last_seen_at = ?, name = CASE WHEN ? <> \'\' THEN ? ELSE name END, platform_admin = ? WHERE id = ?')
         ->execute([$now, $pu['name'], $pu['name'], $isDev ? 1 : 0, $uid]);
+    // מייל שאומת עכשיו, לחשבון שנוצר בלי מייל — נשמר (אם אינו של חשבון אחר)
+    if (empty($user['email']) && $verified) {
+        $st = $pdo->prepare('UPDATE users SET email = ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM users WHERE email = ?)');
+        $st->execute([$pu['email'], $uid, $pu['email']]);
+        if ($st->rowCount()) $user['email'] = $pu['email'];
+    }
 
     // הזמנות פתוחות במייל של המשתמש → חברות (מזמינים, לא מאשרים)
-    if (!empty($user['email'])) acceptInvites($uid, (string)$user['email'], $pu['actor']);
+    if (!empty($user['email']) && $verified && $user['email'] === $pu['email']) acceptInvites($uid, (string)$user['email'], $pu['actor']);
     // המפתח הראשון אחרי המיגרציה — admin של ארגון 1, כדי שהבעלים לא יינעל מחוץ לתיקים שלו
     if ($isDev && !(int)$pdo->query("SELECT COUNT(*) FROM members WHERE org_id = 1 AND role = 'admin'")->fetchColumn()) {
         $pdo->prepare("INSERT OR REPLACE INTO members(org_id, user_id, role, created_at, created_by) VALUES (1, ?, 'admin', ?, NULL)")->execute([$uid, $now]);
@@ -85,7 +92,7 @@ function resolveAccess(array $pu): array {
     }
     if ($org !== null) $_SESSION['fd_org'] = (int)$org['id'];
     return $GLOBALS['fd_ctx'] = [
-        'user' => ['id' => $uid, 'name' => $pu['name'] !== '' ? $pu['name'] : (string)$user['name'], 'email' => (string)($user['email'] ?? $pu['email'])],
+        'user' => ['id' => $uid, 'name' => $pu['name'] !== '' ? $pu['name'] : (string)$user['name'], 'email' => (string)($user['email'] ?? '') ?: $pu['email']],
         'actor' => ['id' => $uid, 'actor' => $pu['actor']],
         'dev' => $isDev, 'active' => $active, 'orgs' => $orgs, 'org' => $org,
         'role' => $org['role'] ?? null,
@@ -96,7 +103,7 @@ function resolveAccess(array $pu): array {
 function userOrgs(int $uid, bool $isDev): array {
     $sql = $isDev
         ? 'SELECT o.id, o.name, m.role FROM orgs o LEFT JOIN members m ON m.org_id = o.id AND m.user_id = ? ORDER BY o.id'
-        : 'SELECT o.id, o.name, m.role FROM orgs o JOIN members m ON m.org_id = o.id AND m.user_id = ? ORDER BY o.id';
+        : 'SELECT o.id, o.name, m.role FROM orgs o JOIN members m ON m.org_id = o.id AND m.user_id = ? AND m.active = 1 ORDER BY o.id';
     $st = db()->prepare($sql);
     $st->execute([$uid]);
     return array_map(fn($r) => ['id' => (int)$r['id'], 'name' => $r['name'], 'role' => $r['role']], $st->fetchAll());

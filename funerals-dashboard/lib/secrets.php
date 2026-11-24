@@ -13,6 +13,7 @@ function secretKeyPath(): string { return dataDir() . '/secret.key'; }
 function secretKey(): string {
     static $key = null;
     if (is_string($key)) return $key;
+    if (!extension_loaded('sodium')) reply(503, ['error' => 'הרחבת sodium חסרה בשרת — אי אפשר לשמור או לקרוא סודות']);
     $path = secretKeyPath();
     if (!is_file($path)) {
         $old = umask(0077);
@@ -61,6 +62,7 @@ function secretGet(string $name, int $orgId): ?string {
 }
 /** בדיקת תקינות: הצפנה ופענוח של ערך בדיקה, בלי לכתוב למסד. */
 function secretSelfTest(): bool {
+    if (!extension_loaded('sodium')) return false;
     $probe = bin2hex(random_bytes(8));
     return secretDecrypt(secretEncrypt($probe)) === $probe;
 }
