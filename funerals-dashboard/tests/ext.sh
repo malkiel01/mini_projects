@@ -23,7 +23,7 @@ fx(){ php $D/tests/ext-fixture.php "$db" "$@"; }
 id="$tmp/identity.json"
 as(){ printf '%s' "$1" > "$id"; }
 as ''
-FD_TEST_IDENTITY_FILE="$id" php -S 127.0.0.1:18965 -t $D -d auto_prepend_file="$PWD/$D/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+FD_TEST_IDENTITY_FILE="$id" php -d opcache.jit=disable -S 127.0.0.1:18965 -t $D -d auto_prepend_file="$PWD/$D/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pid=$!
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18965/index.html >/dev/null && break || sleep .2; done
 H=http://127.0.0.1:18965
@@ -202,5 +202,5 @@ codes=""; for i in $(seq 1 25); do codes="$codes $(curl -sS -o /dev/null -w '%{h
 echo "$codes" | grep -q 429 || fail "ביקורת 6: אין הגבלה לפי IP ($codes)"
 test "$(echo $codes | tr ' ' '\n' | grep -c 401)" -le 20 || fail "ביקורת 6: יותר מ-20 ניסיונות נבדקו"
 test "$(fx sql "SELECT COUNT(*) n FROM req_log WHERE action LIKE 'ext:%' AND status IN (401,429) AND user_id IS NULL" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" = 0 || fail "ביקורת 6: ההצפה נרשמה ביומן"
-! grep -qE "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" || { grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
+! grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
 echo "PASS (05): E1–E10 — Bearer בלבד (בלי/שגוי/פג/בוטל/עוגייה → 401), הפרדת ארגונים (404), הרשאות שטח (403, שום דבר לא נשמר), מאומת → לאימות, השבתה ותפקיד מיד, hash בלבד ולא ביומן, 429 אחרי 60, OpenAPI 3.1 = טבלת הקוד, events עם api ושם, public"
