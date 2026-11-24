@@ -145,6 +145,11 @@ $auth = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
 if (!str_starts_with($auth, 'Bearer ') || !isset($S['access'][substr($auth, 7)])) out(401, ['error_summary' => 'expired_access_token/', 'error' => ['.tag' => 'expired_access_token']]);
 $arg = isset($_SERVER['HTTP_DROPBOX_API_ARG']) ? json_decode($_SERVER['HTTP_DROPBOX_API_ARG'], true) : json_decode($raw, true);
 
+// השהיה מלאכותית ברשימות (בדיקת נעילה שאבדה) — בלי להחזיק את נעילת קובץ המצב
+if (!empty($S['delay_ms']) && str_starts_with($ep, 'files/list_folder')) {
+    save(); flock($fh, LOCK_UN); usleep((int)$S['delay_ms'] * 1000); flock($fh, LOCK_EX);
+    $S = json_decode((string)(rewind($fh) ? stream_get_contents($fh) : ''), true) ?: $S;
+}
 switch ($ep) {
     case 'users/get_current_account':
         out(200, ['account_id' => $S['account']['id'], 'name' => ['display_name' => $S['account']['name']], 'email' => 'mock@example.com']);

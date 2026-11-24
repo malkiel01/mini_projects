@@ -23,12 +23,22 @@ final class DbxError extends RuntimeException {
     }
 }
 
+/**
+ * שורה אחת, והסמן נסגר מיד. סמן פתוח מחזיק נעילת קריאה של SQLite — ובזמן קריאה ל-Dropbox היא חוסמת את ה-COMMIT של
+ * בקשות אחרות ("database is locked"). לכן כל שליפה של שורה אחת כאן עוברת בפונקציה הזו.
+ */
+function dbxRow(PDOStatement $st): ?array {
+    $r = $st->fetch();
+    $st->closeCursor();
+    return is_array($r) ? $r : null;
+}
+
 /* ---------- טבלאות: migrateV2() ב-lib/schema.php (מוסיפה בלבד) ---------- */
 
 function dbxOrg(PDO $pdo, int $orgId): array {
     $st = $pdo->prepare('SELECT * FROM dbx_orgs WHERE org_id=?');
     $st->execute([$orgId]);
-    $row = $st->fetch();
+    $row = dbxRow($st);
     if ($row) return $row;
     $pdo->prepare('INSERT OR IGNORE INTO dbx_orgs(org_id) VALUES(?)')->execute([$orgId]);
     return dbxOrg($pdo, $orgId);
@@ -84,7 +94,8 @@ function dbxBase(string $kind): string {
 }
 
 /** @return array{0:int,1:string,2:array<string,string>} סטטוס, גוף, כותרות (באותיות קטנות) */
-function dbxHttp(string $url, array $headers, string $body, int $timeout = 30, $sink = null): array {
+/** $maxBytes > 0 — תקרה לתשובה שנכתבת ל-$sink: מעבר לה ההורדה נקטעת (DbxError too_large). */
+function dbxHttp(string $url, array $headers, string $body, int $timeout = 30, $sink = null, int $maxBytes = 0): array {
     $respHeaders = [];
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -98,10 +109,19 @@ function dbxHttp(string $url, array $headers, string $body, int $timeout = 30, $
         },
     ]);
     if ($sink !== null) curl_setopt($ch, CURLOPT_FILE, $sink);
+    $tooLarge = false;
+    if ($maxBytes > 0) {
+        curl_setopt_array($ch, [CURLOPT_MAXFILESIZE => $maxBytes, CURLOPT_NOPROGRESS => false,
+            CURLOPT_XFERINFOFUNCTION => static function ($c, $dlTotal, $dl) use ($maxBytes, &$tooLarge) {
+                if ($dl > $maxBytes || $dlTotal > $maxBytes) { $tooLarge = true; return 1; }
+                return 0;
+            }]);
+    }
     $out = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $err = curl_errno($ch);
     curl_close($ch);
+    if ($tooLarge || $err === CURLE_FILESIZE_EXCEEDED) throw new DbxError('too_large', 0);
     if ($err !== 0) throw new DbxError('network', 0);
     return [$status, $sink === null ? (string)$out : '', $respHeaders];
 }
@@ -151,9 +171,9 @@ final class DbxClient {
     }
 
     /** קריאת content: הגוף נשלח כמו שהוא, התוצאה ב-Dropbox-API-Result. $sink — קובץ פתוח לכתיבת התוכן. */
-    public function content(string $endpoint, array $arg, string $data = '', $sink = null): array {
+    public function content(string $endpoint, array $arg, string $data = '', $sink = null, int $maxBytes = 0): array {
         [$st, $body, $h] = $this->send(dbxBase('content') . '/2/' . $endpoint,
-            ['Content-Type: application/octet-stream', 'Dropbox-API-Arg: ' . dbxArg($arg)], $data, 120, $sink);
+            ['Content-Type: application/octet-stream', 'Dropbox-API-Arg: ' . dbxArg($arg)], $data, 120, $sink, $maxBytes);
         if ($st !== 200) {
             if ($sink !== null) throw new DbxError('content_http_' . $st, $st);
             throw $this->error($st, json_decode($body, true));
@@ -164,9 +184,9 @@ final class DbxClient {
         return ['result' => is_array($res) ? $res : [], 'body' => $body, 'type' => $h['content-type'] ?? ''];
     }
 
-    private function send(string $url, array $headers, string $body, int $timeout = 30, $sink = null): array {
+    private function send(string $url, array $headers, string $body, int $timeout = 30, $sink = null, int $maxBytes = 0): array {
         for ($try = 0; ; $try++) {
-            $r = dbxHttp($url, [...$headers, 'Authorization: Bearer ' . $this->token($try > 0)], $body, $timeout, $sink);
+            $r = dbxHttp($url, [...$headers, 'Authorization: Bearer ' . $this->token($try > 0)], $body, $timeout, $sink, $maxBytes);
             if ($r[0] === 401 && $try === 0) continue;   // אסימון גישה שפג — רענון אחד ונסיון חוזר
             return $r;
         }
@@ -220,13 +240,14 @@ function dbxCaseForPath(PDO $pdo, int $orgId, string $lower): ?string {
 function dbxUpsertFile(PDO $pdo, int $orgId, array $e, string $via, ?string $by): bool {
     $lower = (string)$e['path_lower'];
     $caseId = dbxCaseForPath($pdo, $orgId, $lower);
-    $st = $pdo->prepare('SELECT id, case_id, deleted FROM files WHERE dbx_id=?');
-    $st->execute([(string)$e['id']]);
-    $old = $st->fetch();
+    // לפי (org_id, dbx_id): אותו חשבון בשני ארגונים — שורה לכל ארגון, ו-org_id לעולם לא נכתב מחדש
+    $st = $pdo->prepare('SELECT id, case_id, deleted FROM files WHERE org_id=? AND dbx_id=?');
+    $st->execute([$orgId, (string)$e['id']]);
+    $old = dbxRow($st);
     $now = gmdate('c');
     if ($old) {
-        $pdo->prepare('UPDATE files SET org_id=?, case_id=?, path=?, path_lower=?, name=?, size=?, rev=?, server_modified=?, deleted=0, updated_at=? WHERE id=?')
-            ->execute([$orgId, $caseId, $e['path_display'], $lower, $e['name'], (int)($e['size'] ?? 0), $e['rev'] ?? null, $e['server_modified'] ?? null, $now, $old['id']]);
+        $pdo->prepare('UPDATE files SET case_id=?, path=?, path_lower=?, name=?, size=?, rev=?, server_modified=?, deleted=0, updated_at=? WHERE id=? AND org_id=?')
+            ->execute([$caseId, $e['path_display'], $lower, $e['name'], (int)($e['size'] ?? 0), $e['rev'] ?? null, $e['server_modified'] ?? null, $now, $old['id'], $orgId]);
         return $caseId !== null && ($old['case_id'] !== $caseId || (int)$old['deleted'] === 1);
     }
     $pdo->prepare('INSERT INTO files(org_id,case_id,dbx_id,path,path_lower,name,size,rev,server_modified,deleted,added_via,added_by,kind,created_at,updated_at)
@@ -252,9 +273,9 @@ function dbxApplyEntries(PDO $pdo, array $org, array $entries): array {
             $pdo->prepare('UPDATE case_folders SET dbx_path=? WHERE org_id=? AND dbx_folder_id=?')->execute([$e['path_display'], $orgId, $e['id']]);
         } elseif ($tag === 'file') {
             if (dbxUpsertFile($pdo, $orgId, $e, 'dropbox', null)) {
-                $st = $pdo->prepare('SELECT case_id, name, added_via FROM files WHERE dbx_id=?');
-                $st->execute([$e['id']]);
-                $r = $st->fetch();
+                $st = $pdo->prepare('SELECT case_id, name, added_via FROM files WHERE org_id=? AND dbx_id=?');
+                $st->execute([$orgId, $e['id']]);
+                $r = dbxRow($st);
                 if ($r && $r['added_via'] === 'dropbox') $added[] = $r;
             }
         } elseif ($tag === 'deleted') {
@@ -320,7 +341,10 @@ function dbxSync(PDO $pdo, int $orgId, float $budget): array {
             $pdo->beginTransaction();
             try {
                 $newFiles = dbxApplyEntries($pdo, $org, is_array($page['entries'] ?? null) ? $page['entries'] : []);
-                $pdo->prepare('UPDATE dbx_orgs SET cursor=? WHERE org_id=? AND lock_token=?')->execute([(string)$page['cursor'], $orgId, $lock]);
+                $cur = $pdo->prepare('UPDATE dbx_orgs SET cursor=? WHERE org_id=? AND lock_token=? AND lock_until>=?');
+                $cur->execute([(string)$page['cursor'], $orgId, $lock, time()]);
+                // הנעילה אבדה (פגה וסנכרון אחר תפס אותה) — העמוד לא נכתב, ועוצרים: האחר ממשיך מה-cursor שלו
+                if ($cur->rowCount() !== 1) { $pdo->rollBack(); return ['ok' => true, 'skipped' => 'lost_lock', 'pages' => $pages]; }
                 $pdo->commit();
             } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
             foreach ($newFiles as $f) {
@@ -369,7 +393,7 @@ function dbxCreateCaseFolder(PDO $pdo, array $org, array $case, array $actor): a
     $orgId = (int)$org['org_id'];
     $st = $pdo->prepare('SELECT dbx_folder_id, dbx_path FROM case_folders WHERE org_id=? AND case_id=?');
     $st->execute([$orgId, $case['id']]);
-    if ($row = $st->fetch()) return [$row['dbx_folder_id'], $row['dbx_path']];
+    if ($row = dbxRow($st)) return [$row['dbx_folder_id'], $row['dbx_path']];
     $month = preg_match('/^\d{4}-\d\d$/D', (string)($case['month'] ?? '')) ? $case['month'] : substr((string)($case['date'] ?? ''), 0, 7);
     if (!preg_match('/^\d{4}-\d\d$/D', (string)$month)) $month = gmdate('Y-m');
     $base = trim(((string)($case['date'] ?? '') !== '' ? $case['date'] . ' ' : '') . dbxSafeName((string)$case['name']));
@@ -388,6 +412,43 @@ function dbxCreateCaseFolder(PDO $pdo, array $org, array $case, array $actor): a
     dbxEvent($orgId, (string)$case['id'], 'ui', 'dropbox_folder_created', ['dropbox_folder' => [null, $meta['path_display']]], $actor);
     return [$meta['id'], $meta['path_display']];
 }
+/**
+ * תיקיית התיק, מוכנה להעלאה: נבדקת ב-Dropbox לפי id (הנתיב העדכני נשמר); נמחקה או יצאה מהראשית — הקישור מוסר
+ * ונפתחת תיקייה חדשה. בנעילת קובץ לתיק, כך ששתי העלאות ראשונות במקביל לא יפתחו שתי תיקיות.
+ * @return string הנתיב (display) של התיקייה
+ */
+function dbxEnsureCaseFolder(PDO $pdo, array $org, array $case, array $actor): string {
+    $orgId = (int)$org['org_id'];
+    $dir = dataDir() . '/locks';
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    $fh = @fopen($dir . '/case-' . hash('sha256', $orgId . '|' . $case['id']) . '.lock', 'c');
+    if ($fh === false || !flock($fh, LOCK_EX)) throw new DbxError('lock');
+    try {
+        $st = $pdo->prepare('SELECT dbx_folder_id FROM case_folders WHERE org_id=? AND case_id=?');
+        $st->execute([$orgId, $case['id']]);
+        if ($link = dbxRow($st)) {
+            // תמיד לפי id מול Dropbox (קריאה אחת): המטמון עלול להחזיק נתיב ישן של תיקייה שהוזזה, וההעלאה הייתה נוחתת
+            // בתיקייה חדשה בנתיב הישן, בלי תיק
+            $meta = null;
+            try { $meta = (new DbxClient($pdo, $orgId))->rpc('files/get_metadata', ['path' => $link['dbx_folder_id']]); }
+            catch (DbxError $e) { if (!str_contains($e->tag, 'not_found')) throw $e; }
+            if (is_array($meta) && ($meta['.tag'] ?? '') === 'folder' && dbxLowerInRoot($org, (string)$meta['path_lower'])) {
+                $pdo->prepare('INSERT INTO dbx_folders(org_id,dbx_id,path,path_lower) VALUES(?,?,?,?)
+                    ON CONFLICT(org_id,dbx_id) DO UPDATE SET path=excluded.path, path_lower=excluded.path_lower')
+                    ->execute([$orgId, $meta['id'], $meta['path_display'], $meta['path_lower']]);
+                $pdo->prepare('UPDATE case_folders SET dbx_path=? WHERE org_id=? AND case_id=?')->execute([$meta['path_display'], $orgId, $case['id']]);
+                return (string)$meta['path_display'];
+            }
+            $pdo->prepare('DELETE FROM case_folders WHERE org_id=? AND case_id=?')->execute([$orgId, $case['id']]);
+            dbxEvent($orgId, (string)$case['id'], 'system', 'dropbox_folder_unlinked', ['dropbox_folder' => [$link['dbx_folder_id'], null], 'via' => [null, 'dropbox']]);
+        }
+        return dbxCreateCaseFolder($pdo, $org, $case, $actor)[1];
+    } finally {
+        flock($fh, LOCK_UN);
+        fclose($fh);
+    }
+}
+
 /** קישור תיקייה (מטא-נתונים של Dropbox או שורה מ-dbx_folders) לתיק. */
 function dbxLinkFolder(PDO $pdo, array $org, string $caseId, array $meta, string $actor): void {
     $orgId = (int)$org['org_id'];

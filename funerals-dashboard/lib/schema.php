@@ -96,7 +96,8 @@ function migrateV1(PDO $pdo): void {
 
 /**
  * גרסה 2 (פרוסה 03, Dropbox): חיבור לארגון, מטמון התיקיות שבתוך הראשית, תיק ↔ תיקייה, וקבצים.
- * מוסיפה טבלאות בלבד; אין בהן סודות (אלה ב-secrets). upload_id — מזהה חד-פעמי של העלאה (חוזרת → אותה שורה).
+ * מוסיפה טבלאות בלבד; אין בהן סודות (אלה ב-secrets; ה-verifier של OAuth — מוצפן). files ייחודי לפי (org_id, dbx_id):
+ * אותו חשבון Dropbox בשני ארגונים לא מערבב קבצים. upload_id — מזהה חד-פעמי של העלאה (חוזרת → אותה שורה).
  */
 function migrateV2(PDO $pdo): void {
     $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_orgs (
@@ -111,10 +112,13 @@ function migrateV2(PDO $pdo): void {
         org_id INTEGER NOT NULL, case_id TEXT NOT NULL, dbx_folder_id TEXT NOT NULL, dbx_path TEXT NOT NULL,
         linked_at TEXT NOT NULL, linked_by TEXT, PRIMARY KEY(org_id, case_id), UNIQUE(org_id, dbx_folder_id))');
     $pdo->exec('CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, case_id TEXT, dbx_id TEXT NOT NULL UNIQUE,
+        id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, case_id TEXT, dbx_id TEXT NOT NULL,
         path TEXT NOT NULL, path_lower TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, rev TEXT,
         server_modified TEXT, deleted INTEGER NOT NULL DEFAULT 0, added_via TEXT NOT NULL, added_by TEXT, kind TEXT NOT NULL DEFAULT \'\', upload_id TEXT,
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(org_id, dbx_id))');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_files_case ON files(org_id, case_id)');
     $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_files_upload ON files(org_id, upload_id) WHERE upload_id IS NOT NULL');
+    // OAuth: state ממתין בשרת (לא ב-session), לפי hash, קשור ל-sub ולארגון, חד-פעמי, 10 דקות. ה-verifier מוצפן.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_oauth (state_hash TEXT PRIMARY KEY, org_id INTEGER NOT NULL, sub TEXT NOT NULL,
+        verifier_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at TEXT)');
 }

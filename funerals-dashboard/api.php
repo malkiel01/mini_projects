@@ -38,6 +38,13 @@ if (in_array($action, DEVAPI_ACTIONS, true)) runDevloop(fn() => devapiAction($ac
 $pu = platformUser();
 if ($pu === null) reply(401, ['error' => 'אין הרשאה לאפליקציה. יש להיכנס דרך הפלטפורמה ולקבל אישור לאפליקציה.']);
 
+// החזרה מ-Dropbox (OAuth): לפני ה-session — עוגיית fd_session (SameSite=Strict) לא נשלחת בניווט מ-dropbox.com,
+// וה-state נבדק בשרת מול ה-sub של השער (פרוסה 03). לא פותחים session ולא מחליפים אותו.
+if ($action === 'dropbox_callback') {
+    require_once __DIR__ . '/dropbox/actions.php';
+    dbxCallbackNoSession($pu);
+}
+
 $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 session_name('fd_session');

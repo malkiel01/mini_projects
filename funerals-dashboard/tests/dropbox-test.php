@@ -38,10 +38,10 @@ function serve(array $cmd, array $env, string $log) {
     $procs[] = $p;
     return $p;
 }
-serve(['php', '-d', 'opcache.jit=disable', '-S', "127.0.0.1:$mockPort", "$app/tests/dropbox-mock.php"], ['DBX_MOCK_STATE' => $mockState], "$tmp/mock.log");
+serve(['php', '-d', 'opcache.jit=disable', '-S', "127.0.0.1:$mockPort", "$app/tests/dropbox-mock.php"], ['DBX_MOCK_STATE' => $mockState, 'PHP_CLI_SERVER_WORKERS' => '4'], "$tmp/mock.log");
 serve(['php', '-d', 'opcache.jit=disable', '-S', "127.0.0.1:$appPort", '-t', $app, '-d', "auto_prepend_file=$app/tests/gate-prepend.php",
     '-d', "upload_tmp_dir=$tmp/up", '-d', 'upload_max_filesize=60M', '-d', 'post_max_size=64M', '-d', 'memory_limit=256M'],
-    ['FD_TEST_IDENTITY_FILE' => $identity, 'DBX_API_BASE' => $mockBase], "$tmp/app.log");
+    ['FD_TEST_IDENTITY_FILE' => $identity, 'DBX_API_BASE' => $mockBase, 'PHP_CLI_SERVER_WORKERS' => '4'], "$tmp/app.log");
 for ($i = 0; $i < 50; $i++) { if (@file_get_contents("$base/index.html") !== false && @file_get_contents("$mockBase/_mock/state") !== false) break; usleep(100000); }
 
 /** בקשה → [status, body, headers] */
@@ -173,20 +173,33 @@ parse_str((string)parse_url($j['url'], PHP_URL_QUERY), $q);
 ok($q['code_challenge_method'] === 'S256' && $q['token_access_type'] === 'offline' && $q['client_id'] === 'mockkey123' && strlen($q['state']) >= 32, 'פרמטרי authorize');
 $code = json_decode(http('GET', "$mockBase/_mock/authorize?" . http_build_query(['code_challenge' => $q['code_challenge'], 'redirect_uri' => $q['redirect_uri']]))[1], true)['code'];
 mock('clear_calls');
-[$st] = api('GET', 'dropbox_callback', ['state' => 'wrong' . $q['state'], 'code' => $code]);
+/** ה-callback כמו שהדפדפן מגיע מ-dropbox.com: בלי עוגיית fd_session (SameSite=Strict), רק עם הזהות מהשער. */
+$callback = static function (array $params) use ($base, $tmp): array {
+    @unlink("$tmp/jar-callback");
+    return http('GET', "$base/api.php?" . http_build_query(['action' => 'dropbox_callback'] + $params), ['jar' => "$tmp/jar-callback"]);
+};
+[$st] = $callback(['state' => 'wrong' . $q['state'], 'code' => $code]);
 ok($st === 400, "C11 state שגוי ($st)");
-ok(mstate()['calls'] === [], 'C11 state שגוי — בלי קריאה ל-Dropbox');
-[$st] = api('GET', 'dropbox_callback', ['state' => $q['state'], 'code' => $code]);
-ok($st === 400, "C11 state נשרף אחרי נסיון כושל ($st)");
-// חיבור מחדש — עכשיו נכון, ואחר כך חוזר
-[$st, $j] = api('POST', 'dropbox_connect', [], []);
-parse_str((string)parse_url($j['url'], PHP_URL_QUERY), $q);
-$code = json_decode(http('GET', "$mockBase/_mock/authorize?" . http_build_query(['code_challenge' => $q['code_challenge'], 'redirect_uri' => $q['redirect_uri']]))[1], true)['code'];
-// state של משתמש אחר: מנהל אחר באותו session לא יכול להשתמש בו (ה-session מתחלף לפי sub)
-[$st, , $h] = api('GET', 'dropbox_callback', ['state' => $q['state'], 'code' => $code]);
-ok($st === 302 && ($h['location'] ?? '') === 'index.html#dropbox', "callback ($st)");
-[$st] = api('GET', 'dropbox_callback', ['state' => $q['state'], 'code' => $code]);
+[$st] = $callback(['code' => $code]);
+ok($st === 400, "C11 בלי state ($st)");
+// state של משתמש אחר (sub אחר מהשער) → נדחה, וה-state לא נשרף לבעליו
+as_($FIELD);
+[$st] = $callback(['state' => $q['state'], 'code' => $code]);
+ok($st === 400, "C11 state של משתמש אחר ($st)");
+as_($ADMIN);
+ok(mstate()['calls'] === [], 'C11 נדחה — בלי קריאה ל-Dropbox');
+// 🔴1: בלי עוגיית fd_session → מצליח; וה-session של הלשונית המקורית לא נדרס (ה-CSRF הישן עדיין עובד)
+[$st, $b, $h] = $callback(['state' => $q['state'], 'code' => $code]);
+ok($st === 302 && ($h['location'] ?? '') === 'index.html#dropbox', "callback בלי עוגיית session ($st)");
+ok(!isset($h['set-cookie']) || !str_contains($h['set-cookie'], 'fd_session'), 'callback לא פותח session');
+[$st] = $callback(['state' => $q['state'], 'code' => $code]);
 ok($st === 400, "C11 state חוזר ($st)");
+// state שפג (10 דקות)
+[$st, $j] = api('POST', 'dropbox_connect', [], []);
+parse_str((string)parse_url($j['url'], PHP_URL_QUERY), $q2);
+pdo()->exec('UPDATE dbx_oauth SET expires_at = ' . (time() - 1) . ' WHERE used_at IS NULL');
+[$st] = $callback(['state' => $q2['state'], 'code' => 'x']);
+ok($st === 400, "C11 state שפג ($st)");
 [$st, $j] = api('GET', 'dropbox_status');
 ok($j['dropbox']['status'] === 'connected' && $j['dropbox']['account_name'] === 'חשבון בדיקה', 'מחובר, עם שם החשבון');
 $refreshTokens = array_keys(mstate()['refresh']);
@@ -389,6 +402,63 @@ foreach (['dropbox/lib.php', 'dropbox/actions.php', 'dropbox/compat.php'] as $f)
     ok($st === 404, "$f נגיש ישירות ($st)");
 }
 
+/* ---------- ביקורת 🟡4: תיקיית התיק הוזזה אל מחוץ לראשית (בלי סנכרון) → נפתחת חדשה, והקובץ בתיק ---------- */
+mock('move', ['from' => '/Funerals/2026-10/2026-10-07 שרה כהן (2)', 'to' => '/Other/הועבר']);
+[$st, $j] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'file' => new CURLFile($small, 'image/png', 'אחרי הזזה.png')]]);
+ok($st === 200, "🟡4 העלאה אחרי הזזת התיקייה ($st)");
+$row = q("SELECT case_id, path FROM files WHERE org_id=1 AND name='אחרי הזזה.png'")[0] ?? [];
+ok(($row['case_id'] ?? null) === $cases['שרה כהן'] && str_starts_with((string)$row['path'], '/Funerals/2026-10/'), '🟡4 הקובץ בתיק, בתוך הראשית: ' . json_encode($row, JSON_UNESCAPED_UNICODE));
+ok(str_starts_with((string)q1('SELECT dbx_path FROM case_folders WHERE org_id=1 AND case_id=?', [$cases['שרה כהן']]), '/Funerals/'), '🟡4 קושרה תיקייה חדשה');
+// שינוי שם בתוך הראשית (בלי סנכרון) → ההעלאה לנתיב החדש, אותה תיקייה
+$cfOld = q('SELECT dbx_folder_id, dbx_path FROM case_folders WHERE org_id=1 AND case_id=?', [$cases['שרה כהן']])[0];
+mock('move', ['from' => $cfOld['dbx_path'], 'to' => '/Funerals/2026-10/שרה כהן - שם חדש']);
+[$st] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'file' => new CURLFile($small, 'image/png', 'אחרי שינוי שם.png')]]);
+ok($st === 200 && q1("SELECT path FROM files WHERE org_id=1 AND name='אחרי שינוי שם.png'") === '/Funerals/2026-10/שרה כהן - שם חדש/אחרי שינוי שם.png'
+    && q1('SELECT dbx_folder_id FROM case_folders WHERE org_id=1 AND case_id=?', [$cases['שרה כהן']]) === $cfOld['dbx_folder_id'], '🟡4 שינוי שם — אותה תיקייה, הנתיב החדש');
+
+/* ---------- ביקורת ⚪8: שתי העלאות ראשונות במקביל לתיק בלי תיקייה → תיקייה אחת, שני הקבצים בתיק ---------- */
+$jars = [];
+// שני sessions נפרדים של אותו מנהל (שתי לשוניות / שני מכשירים) — PHP נועל session, ולכן רק כך הבקשות באמת מקבילות
+foreach ([0, 1] as $i) { login($ADMIN); $jars[$i] = ["$tmp/jar-par$i", $csrf]; copy("$tmp/jar", "$tmp/jar-par$i"); }
+$mh = curl_multi_init(); $hs = [];
+foreach ($jars as $i => [$jar, $tok]) {
+    $ch = curl_init("$base/api.php?action=dropbox_upload");
+    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEFILE => $jar, CURLOPT_HTTPHEADER => ["X-CSRF-Token: $tok"],
+        CURLOPT_POSTFIELDS => ['case_id' => $cases['דוד לוי'], 'file' => new CURLFile($small, 'image/png', "מקביל $i.png")]]);
+    curl_multi_add_handle($mh, $ch); $hs[] = $ch;
+}
+do { curl_multi_exec($mh, $running); curl_multi_select($mh); } while ($running);
+$codes = array_map(static fn($ch) => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), $hs);
+ok($codes === [200, 200], '⚪8 שתי העלאות במקביל: ' . json_encode($codes));
+ok((int)q1('SELECT COUNT(*) FROM case_folders WHERE org_id=1 AND case_id=?', [$cases['דוד לוי']]) === 1
+    && (int)q1('SELECT COUNT(*) FROM files WHERE org_id=1 AND case_id=? AND name LIKE ?', [$cases['דוד לוי'], 'מקביל %']) === 2, '⚪8 תיקייה אחת, שני הקבצים בתיק');
+$orphans = array_filter(mstate()['entries'], static fn($e) => $e['tag'] === 'folder' && str_contains($e['path_display'], 'דוד לוי ('));
+ok($orphans === [], '⚪8 בלי תיקייה "(2)" יתומה');
+login($ADMIN);
+
+/* ---------- ביקורת 🟡5: תקרה לתצוגה ולהורדה ---------- */
+pdo()->exec("UPDATE files SET size=" . (60 * 1024 * 1024) . " WHERE id=$pdfId");
+[$st] = api('GET', 'file_view', ['id' => $pdfId]);
+ok($st === 413, "🟡5 PDF מעל 50MB → 413 בלי הורדה ($st)");
+pdo()->exec("UPDATE files SET size=5 WHERE id=$pdfId");   // הגודל במסד קטן, התוכן בפועל גדול מהתקרה → ההורדה נקטעת
+$out = $run('try { dropboxFileContent(db(), 1, ' . $pdfId . ', 10); echo "no"; } catch (DbxError $e) { echo $e->tag; }');
+ok($out === 'too_large', '🟡5 הורדה נקטעת בתקרה: ' . $out);
+pdo()->exec("UPDATE files SET size=2000 WHERE id=$pdfId");
+
+/* ---------- ביקורת 🟡6: סנכרון שאיבד את הנעילה נעצר, ולא כותב ---------- */
+mock('set', ['values' => ['page_size' => 1, 'delay_ms' => 700]]);
+pdo()->exec('UPDATE dbx_orgs SET cursor=NULL WHERE org_id=1');
+$p = proc_open(['php', "$app/bin/dropbox-sync.php"], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, ['DBX_API_BASE' => $mockBase] + getenv());
+usleep(1500000);
+pdo()->exec("UPDATE dbx_orgs SET lock_token='thief', lock_until=" . (time() + 100) . " WHERE org_id=1");
+$out = stream_get_contents($pipes[1]); proc_close($p);
+ok(str_contains($out, '"skipped":"lost_lock"'), '🟡6 נעצר: ' . $out);
+ok(q1('SELECT lock_token FROM dbx_orgs WHERE org_id=1') === 'thief', '🟡6 לא שחרר נעילה של אחר');
+mock('set', ['values' => ['page_size' => 1000, 'delay_ms' => 0]]);
+pdo()->exec("UPDATE dbx_orgs SET lock_token=NULL, lock_until=0, cursor=NULL WHERE org_id=1");
+[$st, $j] = api('POST', 'dropbox_sync', [], []);
+ok($j['ok'] && empty($j['result']['skipped']), '🟡6 סנכרון מלא אחרי');
+
 /* ---------- C8: invalid_grant ---------- */
 mock('set', ['values' => ['fail_refresh' => true]]);
 mock('expire_access');
@@ -404,16 +474,41 @@ login($DEV);
 [$st, $j] = api('GET', 'dropbox_health');
 ok($st === 200 && $j['app_key_set'] && $j['orgs'][0]['status'] === 'reauth' && str_ends_with($j['webhook_uri'], '/dropbox-webhook.php'), "health ($st)");
 
+/* ---------- ביקורת 🔴2: אותו חשבון Dropbox בשני ארגונים — כל ארגון עם השורות שלו ---------- */
+login($ADMIN);
+pdo()->exec("UPDATE dbx_orgs SET status='connected' WHERE org_id=1");
+$org1Before = q('SELECT id, dbx_id, case_id FROM files WHERE org_id=1 ORDER BY id');
+login($OTHER);
+[$st, $j] = api('POST', 'dropbox_connect', [], []);
+parse_str((string)parse_url($j['url'], PHP_URL_QUERY), $q);
+$code = json_decode(http('GET', "$mockBase/_mock/authorize?" . http_build_query(['code_challenge' => $q['code_challenge'], 'redirect_uri' => $q['redirect_uri']]))[1], true)['code'];
+[$st] = $callback(['state' => $q['state'], 'code' => $code]);
+ok($st === 302, "🔴2 ארגון ב מתחבר לאותו חשבון ($st)");
+$refreshTokens = array_values(array_unique(array_merge($refreshTokens, array_keys(mstate()['refresh']))));
+[$st, $j] = api('POST', 'dropbox_set_root', [], ['path' => '/Funerals']);
+ok($st === 200 && $j['sync']['ok'], "🔴2 ארגון ב — ראשית וסנכרון ($st)");
+ok(q('SELECT id, dbx_id, case_id FROM files WHERE org_id=1 ORDER BY id') === $org1Before, '🔴2 השורות של ארגון א לא זזו');
+ok((int)q1('SELECT COUNT(*) FROM files WHERE org_id=2') > 0 && (int)q1('SELECT COUNT(*) FROM files WHERE org_id=2 AND case_id IS NOT NULL') === 0, '🔴2 לארגון ב שורות משלו, בלי תיקים של א');
+$payload = json_encode(['list_folder' => ['accounts' => ['dbid:AAA111']]]);
+mock('add_file', ['path' => '/Funerals/2026-10/2026-10-05 ישראל ישראלי - סגור/שני ארגונים.pdf', 'size' => 10]);
+[$st] = webhook($payload, hash_hmac('sha256', $payload, 'mocksecret456'));
+ok((int)q1("SELECT COUNT(*) FROM files WHERE name='שני ארגונים.pdf'") === 2
+    && q1("SELECT case_id FROM files WHERE org_id=1 AND name='שני ארגונים.pdf'") === $cases['ישראל ישראלי'], '🔴2 webhook — שורה לכל ארגון, התיק של א נשאר של א');
+[$st] = api('GET', 'file_view', ['id' => (int)q1("SELECT id FROM files WHERE org_id=1 AND name='רישיון.pdf'")]);
+ok($st === 404, "🔴2 ארגון ב לא רואה קובץ של א ($st)");
+$mockFilesBefore = count(array_filter(mstate()['entries'], static fn($e) => $e['tag'] === 'file'));
+
 /* ---------- ניתוק ---------- */
 login($ADMIN);
+$caseFilesBefore = count(api('GET', 'case_files', ['case_id' => $cases['ישראל ישראלי']])[1]['files']);
 pdo()->exec("UPDATE dbx_orgs SET status='connected'");
 [$st, $j] = api('POST', 'dropbox_disconnect', [], []);
 ok($st === 200 && $j['dropbox']['status'] === 'disconnected', "ניתוק ($st)");
-ok((int)q1("SELECT COUNT(*) FROM secrets WHERE name='dropbox_refresh'") === 0, 'ניתוק — האסימון נמחק');
+ok((int)q1("SELECT COUNT(*) FROM secrets WHERE name='dropbox_refresh' AND org_id=1") === 0, 'ניתוק — האסימון נמחק');
 ok(mstate()['revoked'] === 1, 'ניתוק — token/revoke');
 [$st, $j] = api('GET', 'case_files', ['case_id' => $cases['ישראל ישראלי']]);
-ok($j['connected'] === false && count($j['files']) === 2, 'ניתוק — רשימת הקבצים נשארת, מסומנת מנותק');
-ok(count(array_filter(mstate()['entries'], static fn($e) => $e['tag'] === 'file')) === 7, 'ניתוק — שום קובץ לא נמחק ב-Dropbox');
+ok($j['connected'] === false && count($j['files']) === $caseFilesBefore && $caseFilesBefore > 0, 'ניתוק — רשימת הקבצים נשארת, מסומנת מנותק');
+ok(count(array_filter(mstate()['entries'], static fn($e) => $e['tag'] === 'file')) === $mockFilesBefore, 'ניתוק — שום קובץ לא נמחק ב-Dropbox');
 
 /* ---------- C9: סודות ---------- */
 $db = pdo();

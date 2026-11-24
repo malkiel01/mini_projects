@@ -9,7 +9,7 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/lib.php';
 
-const DBX_ACTIONS = ['dropbox_status', 'dropbox_connect', 'dropbox_callback', 'dropbox_disconnect', 'dropbox_browse',
+const DBX_ACTIONS = ['dropbox_status', 'dropbox_connect', 'dropbox_disconnect', 'dropbox_browse',
     'dropbox_set_root', 'dropbox_sync', 'dropbox_scan', 'dropbox_link', 'dropbox_unlink', 'dropbox_folder_create',
     'dropbox_upload', 'case_files', 'file_view', 'dropbox_health', 'dropbox_app_set'];
 
@@ -23,6 +23,7 @@ function dbxUserError(DbxError $e): never {
         $e->tag === 'not_connected' => [409, 'Dropbox לא מחובר לארגון'],
         $e->tag === 'reauth' => [409, 'החיבור ל-Dropbox פג — מנהל הארגון צריך לחבר מחדש'],
         $e->tag === 'no_app_key' => [409, 'מפתח האפליקציה של Dropbox לא הוגדר (מסך המפתח)'],
+        $e->tag === 'too_large' => [413, 'הקובץ גדול מדי — לפתוח ב-Dropbox'],
         $e->tag === 'network' => [502, 'Dropbox לא זמין כרגע. נסו שוב בעוד רגע'],
         str_contains($e->tag, 'not_found') => [404, 'לא נמצא ב-Dropbox'],
         str_contains($e->tag, 'insufficient_space') => [507, 'אין מספיק מקום בחשבון ה-Dropbox'],
@@ -36,13 +37,10 @@ function dbxNeed(array $who, string $perm): void {
 function dbxMethod(string $method, string $want): void {
     if ($method !== $want) reply(405, ['error' => 'שיטה לא מורשית']);
 }
-function dbxRedirectUri(): string {
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-    $host = preg_replace('/[^A-Za-z0-9.:\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
-    $dir = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/api.php'))), '/');
-    return ($secure ? 'https' : 'http') . '://' . $host . $dir . '/api.php?action=dropbox_callback';
-}
-function dbxWebhookUri(): string { return str_replace('/api.php?action=dropbox_callback', '/dropbox-webhook.php', dbxRedirectUri()); }
+/** קבועות (אפיון 03 §2) — לא נבנות מ-HTTP_HOST. בבדיקות (DBX_API_BASE מקומי) — אותה כתובת; המדומה רק משווה. */
+const DBX_APP_URL = 'https://mbe-plus.com/mini_projects/funerals-dashboard';
+function dbxRedirectUri(): string { return DBX_APP_URL . '/api.php?action=dropbox_callback'; }
+function dbxWebhookUri(): string { return DBX_APP_URL . '/dropbox-webhook.php'; }
 
 /** מצב החיבור לתצוגה — בלי שום סוד. */
 function dbxPublicStatus(array $org): array {
@@ -81,7 +79,6 @@ function dbxAction(string $action, string $method, array $pu): never {
         match ($action) {
             'dropbox_status' => dbxActStatus($pdo, $who),
             'dropbox_connect' => dbxActConnect($pdo, $who, $method, $user),
-            'dropbox_callback' => dbxActCallback($pdo, $who, $method, $user),
             'dropbox_disconnect' => dbxActDisconnect($pdo, $who, $method),
             'dropbox_browse' => dbxActBrowse($pdo, $who, $method),
             'dropbox_set_root' => dbxActSetRoot($pdo, $who, $method),
@@ -123,8 +120,10 @@ function dbxActConnect(PDO $pdo, array $who, string $method, array $user): never
     if ($key === null || DbxClient::appSecret() === null) throw new DbxError('no_app_key');
     $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
     $state = bin2hex(random_bytes(24));
-    // state חד-פעמי, קשור לארגון ולמשתמש, תקף 10 דקות
-    $_SESSION['fd_dbx_oauth'] = ['state' => $state, 'verifier' => $verifier, 'org_id' => $who['org_id'], 'sub' => $user['sub'], 'exp' => time() + 600];
+    // state חד-פעמי בשרת (לא ב-session — עוגיית ה-session לא חוזרת מ-dropbox.com), קשור ל-sub ולארגון, 10 דקות
+    $pdo->prepare('DELETE FROM dbx_oauth WHERE expires_at < ?')->execute([time() - 3600]);
+    $pdo->prepare('INSERT INTO dbx_oauth(state_hash, org_id, sub, verifier_enc, expires_at) VALUES (?,?,?,?,?)')
+        ->execute([hash('sha256', $state), $who['org_id'], $user['sub'], secretEncrypt($verifier), time() + 600]);
     $url = dbxBase('authorize') . '/oauth2/authorize?' . http_build_query([
         'client_id' => $key, 'response_type' => 'code', 'redirect_uri' => dbxRedirectUri(), 'state' => $state,
         'code_challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
@@ -133,30 +132,46 @@ function dbxActConnect(PDO $pdo, array $who, string $method, array $user): never
     reply(200, ['ok' => true, 'url' => $url]);
 }
 
-/** החזרה מ-Dropbox. state שגוי, חוזר, פג או של משתמש/ארגון אחר → נדחה, בלי קריאה ל-Dropbox. */
-function dbxActCallback(PDO $pdo, array $who, string $method, array $user): never {
-    dbxMethod($method, 'GET');
-    $pending = $_SESSION['fd_dbx_oauth'] ?? null;
-    unset($_SESSION['fd_dbx_oauth']);                 // חד-פעמי: גם נסיון כושל שורף אותו
+/**
+ * החזרה מ-Dropbox — נקרא מ-api.php לפני ה-session (dbxCallbackNoSession). state שגוי, חוזר, פג, של sub אחר, או של
+ * ארגון שהמשתמש אינו מנהל בו → נדחה, בלי קריאה ל-Dropbox. השימוש ב-state אטומי (UPDATE … WHERE used_at IS NULL).
+ */
+function dbxCallbackNoSession(array $pu): never {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
+    $pdo = db();
     $state = (string)($_GET['state'] ?? '');
-    $ok = is_array($pending) && $state !== '' && hash_equals((string)$pending['state'], $state)
-        && (int)$pending['exp'] >= time() && $pending['sub'] === $user['sub'] && (int)$pending['org_id'] === $who['org_id']
-        && dbxCan($who, 'dropbox_admin');
-    if (!$ok) dbxCallbackPage(400, 'state');
+    $row = null;
+    if ($state !== '' && strlen($state) <= 200) {
+        $h = hash('sha256', $state);
+        $st = $pdo->prepare('UPDATE dbx_oauth SET used_at = ? WHERE state_hash = ? AND used_at IS NULL AND expires_at >= ? AND sub = ?');
+        $st->execute([gmdate('c'), $h, time(), $pu['sub']]);
+        if ($st->rowCount() === 1) {
+            $q = $pdo->prepare('SELECT * FROM dbx_oauth WHERE state_hash = ?');
+            $q->execute([$h]);
+            $row = dbxRow($q) ?: null;
+        }
+    }
+    if ($row === null) dbxCallbackPage(400, 'state');
+    // ההקשר — בארגון שב-state, בלי session: resolveAccess קורא את הארגון המבוקש מ-$_SESSION (מערך רגיל כאן)
+    $_SESSION = ['fd_org' => (int)$row['org_id']];
+    resolveAccess($pu);
+    $who = dbxWho();
+    if ($who === null || $who['org_id'] !== (int)$row['org_id'] || !dbxCan($who, 'dropbox_admin')) dbxCallbackPage(400, 'state');
     if (isset($_GET['error'])) dbxCallbackPage(400, 'denied');
     $code = (string)($_GET['code'] ?? '');
     if ($code === '' || strlen($code) > 500) dbxCallbackPage(400, 'code');
+    $verifier = secretDecrypt((string)$row['verifier_enc']);
     $key = DbxClient::appKey(); $secret = DbxClient::appSecret();
-    if ($key === null || $secret === null) dbxCallbackPage(409, 'no_app_key');
+    if ($key === null || $secret === null || $verifier === null) dbxCallbackPage(409, 'no_app_key');
     [$st, $body] = dbxHttp(dbxBase('api') . '/oauth2/token', ['Content-Type: application/x-www-form-urlencoded'], http_build_query([
-        'grant_type' => 'authorization_code', 'code' => $code, 'code_verifier' => $pending['verifier'],
+        'grant_type' => 'authorization_code', 'code' => $code, 'code_verifier' => $verifier,
         'client_id' => $key, 'client_secret' => $secret, 'redirect_uri' => dbxRedirectUri()]));
     $j = json_decode($body, true);
+    $orgId = $who['org_id'];
     if ($st !== 200 || !is_string($j['refresh_token'] ?? null) || !is_string($j['account_id'] ?? null)) {
-        dbxOrgError($pdo, $who['org_id'], 'oauth_exchange_' . (is_string($j['error'] ?? null) ? $j['error'] : $st));
+        dbxOrgError($pdo, $orgId, 'oauth_exchange_' . (is_string($j['error'] ?? null) ? $j['error'] : $st));
         dbxCallbackPage(502, 'exchange');
     }
-    $orgId = $who['org_id'];
     $prev = dbxOrg($pdo, $orgId);
     dbxSecretPut('dropbox_refresh', $orgId, $j['refresh_token']);
     $sameAccount = $prev['account_id'] === $j['account_id'];
@@ -267,7 +282,7 @@ function dbxActLink(PDO $pdo, array $who, string $method): never {
     $folderId = cleanText($in['folder_id'] ?? '', 200);
     $st = $pdo->prepare('SELECT dbx_id AS id, path AS path_display, path_lower FROM dbx_folders WHERE org_id=? AND dbx_id=?');
     $st->execute([$who['org_id'], $folderId]);
-    $folder = $st->fetch();
+    $folder = dbxRow($st);
     if (!$folder || !dbxLowerInRoot($org, $folder['path_lower']) || $folder['path_lower'] === $org['root_lower']) {
         reply(400, ['error' => 'התיקייה אינה בתוך התיקייה הראשית של הארגון']);
     }
@@ -292,8 +307,8 @@ function dbxActUnlink(PDO $pdo, array $who, string $method): never {
 function dbxActFolderCreate(PDO $pdo, array $who, string $method): never {
     dbxNeed($who, 'files_upload'); dbxMethod($method, 'POST');
     $case = dbxCaseOr404($pdo, $who, body()['case_id'] ?? null);
-    [$id, $path] = dbxCreateCaseFolder($pdo, dbxReadyOrg($pdo, $who['org_id']), $case, $who['actor']);
-    reply(200, ['ok' => true, 'folder' => ['id' => $id, 'path' => $path, 'dropbox_url' => dbxWebUrl($path, true)]]);
+    $path = dbxEnsureCaseFolder($pdo, dbxReadyOrg($pdo, $who['org_id']), $case, $who['actor']);
+    reply(200, ['ok' => true, 'folder' => ['path' => $path, 'dropbox_url' => dbxWebUrl($path, true)]]);
 }
 
 /* ---------- קבצים ---------- */
@@ -361,13 +376,13 @@ function dbxActFileView(PDO $pdo, array $who, string $method): never {
             $st = $pdo->prepare('SELECT id, path_lower FROM files WHERE org_id=? AND path_lower=? AND deleted=0');
             $st->execute([$who['org_id'], mb_strtolower($path)]);
         }
-        $hit = $st->fetch();
+        $hit = dbxRow($st);
         if (!$hit || !dbxLowerInRoot($org, (string)$hit['path_lower'])) reply(400, ['error' => 'הנתיב מחוץ לתיקייה הראשית של הארגון']);
         $ref = (string)$hit['id'];
     }
     $st = $pdo->prepare('SELECT * FROM files WHERE id=? AND org_id=? AND deleted=0');
     $st->execute([(int)$ref, $who['org_id']]);
-    $f = $st->fetch();
+    $f = dbxRow($st);
     if (!$f || $f['case_id'] === null || dbxCase($pdo, $who['org_id'], (string)$f['case_id']) === null) reply(404, ['error' => 'הקובץ לא נמצא']);
     $org = dbxReadyOrg($pdo, $who['org_id']);
     if (!dbxLowerInRoot($org, (string)$f['path_lower'])) reply(400, ['error' => 'הנתיב מחוץ לתיקייה הראשית של הארגון']);
@@ -396,10 +411,11 @@ function dbxActFileView(PDO $pdo, array $who, string $method): never {
         exit;
     }
     if ($row['preview'] === 'pdf') {
+        if ((int)$f['size'] > DBX_MAX_FILE) reply(413, ['error' => 'הקובץ גדול מדי לתצוגה — לפתוח ב-Dropbox', 'dropbox_url' => $row['dropbox_url']]);
         $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
         $sink = fopen('php://temp/maxmemory:8388608', 'w+b');
         $ep = $ext === 'pdf' ? 'files/download' : 'files/get_preview';
-        $client->content($ep, ['path' => $f['dbx_id']], '', $sink);
+        $client->content($ep, ['path' => $f['dbx_id']], '', $sink, DBX_MAX_FILE);
         rewind($sink);
         header('Content-Type: application/pdf');
         header("Content-Security-Policy: frame-ancestors 'self'");   // מציג ה-PDF של הדפדפן לא עובד תחת default-src 'none'
@@ -468,21 +484,19 @@ function dbxUploadId(mixed $v): ?string {
  * @param array $actor ['id','actor'] @return array שורת files. זורק DbxError.
  */
 function dropboxUploadToCase(PDO $pdo, int $orgId, array $case, string $tmp, string $name, array $actor, string $via, ?string $uploadId = null): array {
-    $one = static function (string $sql, array $args) use ($pdo): ?array { $st = $pdo->prepare($sql); $st->execute($args); return $st->fetch() ?: null; };
+    $one = static function (string $sql, array $args) use ($pdo): ?array { $st = $pdo->prepare($sql); $st->execute($args); return dbxRow($st) ?: null; };
     if ($uploadId !== null && ($old = $one('SELECT * FROM files WHERE org_id=? AND upload_id=?', [$orgId, $uploadId]))) return $old;
     $org = dbxReadyOrg($pdo, $orgId);
-    $folder = $one('SELECT COALESCE(df.path, cf.dbx_path) AS path FROM case_folders cf
-        LEFT JOIN dbx_folders df ON df.org_id=cf.org_id AND df.dbx_id=cf.dbx_folder_id WHERE cf.org_id=? AND cf.case_id=?', [$orgId, $case['id']]);
-    $folderPath = $folder ? (string)$folder['path'] : dbxCreateCaseFolder($pdo, $org, $case, $actor)[1];
+    $folderPath = dbxEnsureCaseFolder($pdo, $org, $case, $actor);
     $meta = dbxUploadFile($pdo, $org, $folderPath, $tmp, $name);
     if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new DbxError('upload_result');
     $by = (string)$actor['actor'];
     dbxUpsertFile($pdo, $orgId, $meta, $via, $by);
-    $pdo->prepare('UPDATE files SET added_via=?, added_by=COALESCE(added_by, ?), upload_id=COALESCE(upload_id, ?) WHERE dbx_id=?')
-        ->execute([$via, $by, $uploadId, $meta['id']]);
+    $pdo->prepare('UPDATE files SET added_via=?, added_by=COALESCE(added_by, ?), upload_id=COALESCE(upload_id, ?) WHERE org_id=? AND dbx_id=?')
+        ->execute([$via, $by, $uploadId, $orgId, $meta['id']]);
     dbxEvent($orgId, (string)$case['id'], $via === 'api' ? 'api' : 'ui', 'file_uploaded',
         ['file' => [null, $meta['name']], 'via' => [null, $via], 'size' => [null, (int)$meta['size']]], $actor);
-    return $one('SELECT * FROM files WHERE dbx_id=?', [$meta['id']]);
+    return $one('SELECT * FROM files WHERE org_id=? AND dbx_id=?', [$orgId, $meta['id']]);
 }
 
 /** ארגון שמעולם לא חובר (אין תיקייה ראשית) → DbxError('not_connected'). אחרי ניתוק — הרשימות נשארות (אפיון 3.1.3). */
@@ -506,13 +520,13 @@ function dropboxFileContent(PDO $pdo, int $orgId, int $fileId, int $maxBytes = 1
     dbxNeverConnected($pdo, $orgId);
     $st = $pdo->prepare('SELECT * FROM files WHERE id=? AND org_id=? AND deleted=0 AND case_id IS NOT NULL');
     $st->execute([$fileId, $orgId]);
-    $f = $st->fetch();
+    $f = dbxRow($st);
     if (!$f) return null;
     if ((int)$f['size'] > $maxBytes) throw new DbxError('too_large');
     $org = dbxReadyOrg($pdo, $orgId);
     if (!dbxLowerInRoot($org, (string)$f['path_lower'])) return null;
     $sink = fopen('php://temp/maxmemory:' . $maxBytes, 'w+b');
-    (new DbxClient($pdo, $orgId))->content('files/download', ['path' => $f['dbx_id']], '', $sink);
+    (new DbxClient($pdo, $orgId))->content('files/download', ['path' => $f['dbx_id']], '', $sink, $maxBytes);
     rewind($sink);
     $bytes = (string)stream_get_contents($sink, $maxBytes + 1);
     fclose($sink);
