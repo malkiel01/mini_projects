@@ -97,19 +97,35 @@
     }
   }
 
-  fetch('api/progress.php', { cache: 'no-store', credentials: 'same-origin' })
-    .then((r) => {
-      if (!r.ok) throw new Error('http ' + r.status);
-      return r.json();
-    })
-    .then((data) => {
-      if (data.status === 'ok') {
-        render(Array.isArray(data.items) ? data.items : []);
-        renderSummary(data.summary);
-        return;
-      }
-      show('state', MESSAGES[data.status] || MESSAGES.unavailable);
-      if (data.status === 'no_token') $('admin-link').hidden = false;
-    })
-    .catch(() => show('error', 'לא הצלחתי לטעון את הדף.'));
+  const REFRESH_MS = 5 * 60 * 1000;
+  let timer = null;
+
+  function load() {
+    fetch('api/progress.php', { cache: 'no-store', credentials: 'same-origin' })
+      .then((r) => {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.json();
+      })
+      .then((data) => {
+        ['state', 'error'].forEach((id) => { $(id).hidden = true; });
+        $('admin-link').hidden = true;
+        if (data.status === 'ok') {
+          render(Array.isArray(data.items) ? data.items : []);
+          renderSummary(data.summary);
+          return;
+        }
+        show('state', MESSAGES[data.status] || MESSAGES.unavailable);
+        if (data.status === 'no_token') $('admin-link').hidden = false;
+      })
+      .catch(() => show('error', 'לא הצלחתי לטעון את הדף.'));
+  }
+
+  // רענון אוטומטי: כל 5 דקות, וגם כשחוזרים לדף. כך עדכון מ-ChatGPT מופיע בלי ייבוא ידני.
+  function start() {
+    load();
+    clearInterval(timer);
+    timer = setInterval(load, REFRESH_MS);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) start(); });
+  start();
 })();
