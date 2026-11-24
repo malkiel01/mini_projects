@@ -131,5 +131,12 @@ $sumTen = lp_summary($curTen, [], $t0);
 ok('מסלולים 10 ו-11 מופיעים בסיכום', count($sumTen['tracks']) === 3 && $sumTen['tracks'][1]['id'] === '10' && $sumTen['tracks'][2]['id'] === '11');
 ok('סה"כ מודולים כולל מסלולים 10 ו-11', $sumTen['overall']['total'] === 3);
 
+
+// רגרסיה: אזור זמן ישראלי — תאריכי רשומות חייבים להתפרש באותו אזור כמו "היום" (לא סטייה של יום)
+$tIL = new DateTimeImmutable('2026-11-24', new DateTimeZone('Asia/Jerusalem'));
+$ilItems = [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'note' => ''], ['date' => '2026-11-22', 'topic' => 'b', 'status' => 'done', 'note' => '']];
+ok('אזור ישראל: התרגול האחרון לפני 2 ימים (לא 1)', lp_pace($ilItems, $tIL)['daysSinceLast'] === 2);
+ok('אזור ישראל: ימים פעילים = 1', lp_pace($ilItems, $tIL)['activeDays'] === 1);
+
 echo ($fails === 0 ? "✓ " : "✗ ") . ($n - $fails) . " עברו, $fails נכשלו (מתוך $n)\n";
 exit($fails === 0 ? 0 : 1);

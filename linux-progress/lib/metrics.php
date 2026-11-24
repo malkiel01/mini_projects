@@ -23,7 +23,7 @@ const LP_DAYS_PER_WEEK_ASSUMPTION = 6;
 function lp_pace(array $items, DateTimeImmutable $today): array {
     $dates = [];
     foreach ($items as $it) {
-        $d = DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($it['date'] ?? ''));
+        $d = DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($it['date'] ?? ''), $today->getTimezone());
         if ($d !== false) $dates[] = $d;
     }
     $activeDays = [];
@@ -56,7 +56,7 @@ function lp_weekly(array $items, DateTimeImmutable $today, int $weeks = 8): arra
         $start = $end->modify('-7 days');
         $count = 0;
         foreach ($items as $it) {
-            $d = DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($it['date'] ?? ''));
+            $d = DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($it['date'] ?? ''), $today->getTimezone());
             if ($d !== false && $d > $start && $d <= $end) $count++;
         }
         $out[] = ['weekEnding' => $end->format('Y-m-d'), 'items' => $count];

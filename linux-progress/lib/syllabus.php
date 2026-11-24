@@ -96,7 +96,7 @@ function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): 
 
     $pace = null;
     if ($first !== null && $first !== '') {
-        $start = DateTimeImmutable::createFromFormat('Y-m-d', $first);
+        $start = DateTimeImmutable::createFromFormat('!Y-m-d', $first, $today->getTimezone());
         if ($start !== false) {
             $days = max(0, (int) $start->diff($today)->format('%a'));
             $weeks = max(1, (int) ceil(($days + 1) / 7));
