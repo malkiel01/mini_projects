@@ -32,8 +32,8 @@
   `session_018g4NYFi7CQiJ79smzSeDjd`.
 - **רדומים:** אפיון `session_018g4NYGZwaqPT5QwjkAVwnQ`; קוד 00 `…FGKA7qcwhkzsMNRXu`, 01 `…GdJzhAAfEVxcVrjGM`, 02
   `…E4eQofqbBdfWGEthU`, 03 `…D6tKx36K2GtksWvXW`, 05 `…EkZkJeu8Y7WL7JS7a` — לארכב.
-- **שעון הבקרה:** הישן `trig_01VUaKANMqdEscU5LSbHmFmn` — **כבוי**. `create_trigger` נחסם בבקרה 2 (מסווג ההרשאות) —
-  במקומו `send_later` כל 60 דקות, שמתחדש בכל סבב. אם הבעלים יתיר `create_trigger` — ליצור שעון קבוע.
+- **שעון הבקרה:** `trig_01PYjng67oPYVSwpwmksWifo` (דקה 22, לתוך בקרה 2) — נוצר בידי מנהל הצוותים, כי `create_trigger`
+  נחסם בבקרה 2. הישן `trig_01VUaKANMqdEscU5LSbHmFmn` — כבוי.
 
 ## פתוח אצל הבקרה
 

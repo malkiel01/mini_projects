@@ -19,7 +19,7 @@
   "control": {
     "session": "session_018g4NYES4G3kVk57413GPnM",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "send_later כל 60 דקות (create_trigger נחסם)"
+    "clock": "trig_01PYjng67oPYVSwpwmksWifo"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
