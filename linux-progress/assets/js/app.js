@@ -1,19 +1,29 @@
-/* ההתקדמות שלי בלינוקס — טוען את data/progress.json ומציג. בלי שרת, בלי זיהוי, בלי אחסון דפדפן. */
+/* ההתקדמות שלי בלינוקס — מושך מ-api/progress.php (שקורא מהריפו בצד השרת). בלי סודות בדפדפן. */
 (function () {
   'use strict';
 
-  const STATUS = {
-    done: 'בוצע',
-    verified: 'אומת',
+  const STATUS = { done: 'בוצע', verified: 'אומת' };
+  const MESSAGES = {
+    no_token: 'עדיין לא הוגדר סוד לקריאה. הגדר אותו במסך ההגדרות.',
+    no_file: 'ChatGPT עדיין לא יצר את קובץ ההתקדמות בריפו.',
+    unauthorized: 'הסוד לא מתאים לריפו או שאין לו הרשאת קריאה.',
+    invalid: 'קובץ ההתקדמות בריפו בפורמט שגוי, ולכן לא מוצג.',
+    unavailable: 'לא הצלחתי לטעון כרגע. נסה שוב מאוחר יותר.',
   };
 
   const $ = (id) => document.getElementById(id);
+
+  function show(id, text) {
+    const el = $(id);
+    el.textContent = text;
+    el.hidden = false;
+  }
 
   function render(items) {
     const list = $('items');
     list.textContent = '';
     if (!items.length) {
-      $('empty').hidden = false;
+      show('empty', 'עדיין אין תרגולים מתועדים.');
       $('summary').textContent = '';
       return;
     }
@@ -48,13 +58,18 @@
     }
   }
 
-  fetch('data/progress.json', { cache: 'no-store' })
+  fetch('api/progress.php', { cache: 'no-store', credentials: 'same-origin' })
     .then((r) => {
       if (!r.ok) throw new Error('http ' + r.status);
       return r.json();
     })
-    .then((data) => render(Array.isArray(data.items) ? data.items : []))
-    .catch(() => {
-      $('error').hidden = false;
-    });
+    .then((data) => {
+      if (data.status === 'ok') {
+        render(Array.isArray(data.items) ? data.items : []);
+        return;
+      }
+      show('state', MESSAGES[data.status] || MESSAGES.unavailable);
+      if (data.status === 'no_token') $('admin-link').hidden = false;
+    })
+    .catch(() => show('error', 'לא הצלחתי לטעון את הדף.'));
 })();
