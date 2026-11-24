@@ -23,11 +23,24 @@
 
 ## API
 
+שתי נקודות קצה, עם אותם נתונים ואותם כללי ייבוא:
+
+**`api.php` — לדפדפן בלבד.** מאחורי השער של הפלטפורמה (`"gate": true`), ובנוסף דורש את הכניסה של האפליקציה עצמה (הסיסמה מ-`setup.php`). הרשאה: session cookie, ו-X-CSRF-Token לכל כתיבה. Bearer **אינו** מתקבל כאן.
+
+- POST api.php?action=login / logout, GET api.php?action=me
 - GET api.php?action=list&month=2026-10 — רשומות לפי חודש
 - GET api.php?action=export&month=2026-10 — יצוא JSON
-- POST api.php?action=import — JSON בצורה: {"records":[...]}
 - POST api.php?action=save — שמירה ידנית דרך ממשק המנהל
-- הרשאה: session cookie ו-X-CSRF-Token לכתיבה דרך הדפדפן; Authorization: Bearer TOKEN לקריאה ולייבוא מערכות.
+- POST api.php?action=import — ייבוא קובץ מתוך הדשבורד
+
+**`ingest.php` — למערכות חיצוניות.** הכתובת היחידה ב-`"public"` של `app.json`, כי מכונה ניגשת אליה בלי כניסה לפלטפורמה. הרשאה: `Authorization: Bearer TOKEN` בלבד (האסימון מ-`setup.php`), בלי session ובלי עוגייה. בלי אסימון תקין — 401.
+
+- GET ingest.php?action=list&month=2026-10
+- GET ingest.php?action=export&month=2026-10
+- POST ingest.php?action=import — JSON בצורה: {"records":[...]}
+
+הקוד המשותף ב-`lib.php`; גישה ישירה אליו מחזירה 404.
+
 - מזהה תיק: שדה id יציב. כשהוא חסר, המערכת גוזרת מזהה משם, חודש ותאריך. מומלץ להשתמש באותו id בכל עדכון חוזר, כדי למנוע כפילויות או שינויים בשם.
 - שדות תיק: id, month, name, date, time, origin, team, grave, notes, folder_url, checks, documents, payments.
 - כל check כולל status, value, source, note. סטטוסים: verified, document_present, unreadable, missing, unknown, reported, not_applicable.

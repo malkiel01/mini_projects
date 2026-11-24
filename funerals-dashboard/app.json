@@ -5,5 +5,7 @@
   "description": "ניהול ממצאי לוויות, מסמכי זיהוי ותשלומים; קישורים מוגבלים ל-Dropbox וייצוא JSON",
   "category": "daily",
   "entry": "index.html",
-  "restricted": true
+  "restricted": true,
+  "gate": true,
+  "public": ["ingest.php"]
 }

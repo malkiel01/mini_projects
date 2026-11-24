@@ -153,6 +153,15 @@ jobs:
       - name: cyber-academy tests
         run: php cyber-academy/tests/run.php
 
+      # דשבורד לוויות — php -l, רישום ה-app.json (שער), ממשק ה-JS, והרשאות api.php (session) ו-ingest.php (Bearer בלבד)
+      # מול php -S מקומי ומסד זמני; לא נוגע ב-data/ שבשרת. בדיקה שנכשלת עוצרת את הפריסה.
+      - name: funerals-dashboard tests
+        run: |
+          set -euo pipefail
+          php -m | grep -qix pdo_sqlite || { echo "::error::חסרה הרחבת pdo_sqlite"; exit 1; }
+          command -v node >/dev/null && command -v curl >/dev/null
+          bash funerals-dashboard/tests/run.sh
+
       # קול מרוקו — הבדיקות של האפליקציה (מסד זמני, בלי Composer, לא נוגע ב-data/): הרשאות לכל פעולה, חתימת הפרסום,
       # מיגרציות, יומן המפתח והספרייה. בדיקה שנכשלת עוצרת את הפריסה. ו-dev/build.json — הקומיט והשעה, למסך המפתח
       # ("גרסה וקומיט"); הקובץ נוצר כאן בלבד, אינו בגיט, ו-dev/.htaccess חוסם אותו מהדפדפן.
