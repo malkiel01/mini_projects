@@ -96,14 +96,14 @@ ok "A2 — גיבוי נכשל → 503, גרסה 0"
 
 # ===== A1, A2, A8: בקשה ראשונה של המפתח =====
 login dev; test "$code" = 200 || fail "A1: me של המפתח ($code)"
-test "$(sql 'PRAGMA user_version')" = 3 || fail "A1: user_version (01 → 1, 03 → 2, 04 → 3)"
+test "$(sql 'PRAGMA user_version')" = 4 || fail "A1: user_version (01 → 1, 03 → 2, 04 → 3, 06 → 4)"
 test "$(sql "SELECT COUNT(*) FROM sqlite_master WHERE name='field_uploads'")" = 1 || fail "A1: field_uploads (v3)"
 sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases1"
 cmp -s "$tmp/cases0" "$tmp/cases1" || fail "A1: התיקים השתנו (id/body)"
 test "$(sql 'SELECT COUNT(*) FROM funerals WHERE org_id = 1')" = 22 || fail "A1: org_id=1 לכל 22"
 sql "SELECT * FROM audit ORDER BY id" > "$tmp/audit1"
 cmp -s "$tmp/audit0" "$tmp/audit1" || fail "A1: audit השתנה"
-ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=3 (סכמה עדכנית)"
+ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=4 (סכמה עדכנית)"
 bk=( "$D"/backup/funerals-*-v0.sqlite )
 test "${#bk[@]}" = 1 && test -f "${bk[0]}" || fail "A2: אין גיבוי"
 test "$(stat -c %a "${bk[0]}")" = 600 || fail "A2: הגיבוי לא 0600"

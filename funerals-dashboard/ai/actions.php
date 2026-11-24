@@ -14,7 +14,6 @@ const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test
 function aiHandles(string $action): bool { return in_array($action, AI_ACTIONS, true); }
 
 function aiAction(PDO $pdo, string $action, string $method): never {
-    aiSchema($pdo);
     $org = scope();
     $c = ctx();
     // ה-session (CSRF, ארגון פעיל) כבר נקרא ב-api.php. משחררים את הנעילה שלו לפני קריאה לספק, שעשויה לקחת דקות —
