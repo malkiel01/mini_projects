@@ -3,7 +3,7 @@
 של הסוכן המנהל (הסקיל `app-team`, `references/manager.md`). המצב של כל צוות — ב-`<app>/team/STATE.md`.
 מעדכן את הרשימה מי שפותח צוות, סוגר אותו או מחליף בקרה — באותו PR.
 
-**מנהל הצוותים:** `session_018g4NYCk7ewEb3ryfYPAaoA` (מנהל (6), מ-2026-11-24 ~18:45 UTC) — שעון `trig_01UiWD41TAbAXkitcgLTeANf`, כל שעתיים בדקה 13. (הקודמים: `session_018g4NYCbBPFt8wcKkYCTSP9` (5), שעון `trig_016wU15GJpyQAkCeTbJ6QkU5` — כבוי; `session_018g4NYFBib6zieTUP467tex` (4), שעון `trig_016SiPhMTUW2wVw2Q73PHzRg` — כבוי; `session_018g4NYGVHYR6Kruh7ktecg3` (3), שעון `trig_01BNGJ8SmxZdndUqBsepanVL` — כבוי; `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
+**מנהל הצוותים:** `session_018g4NYDVnE3HNq6fpyVr1b8` (מנהל (7), מ-2026-11-24 ~22:35 UTC) — שעון `trig_01L7PcVY4iyTRPcpD74RmY6f`, כל שעתיים בדקה 13. (הקודמים: `session_018g4NYCk7ewEb3ryfYPAaoA` (6), שעון `trig_01UiWD41TAbAXkitcgLTeANf` — כבוי; `session_018g4NYCbBPFt8wcKkYCTSP9` (5), שעון `trig_016wU15GJpyQAkCeTbJ6QkU5` — כבוי; `session_018g4NYFBib6zieTUP467tex` (4), שעון `trig_016SiPhMTUW2wVw2Q73PHzRg` — כבוי; `session_018g4NYGVHYR6Kruh7ktecg3` (3), שעון `trig_01BNGJ8SmxZdndUqBsepanVL` — כבוי; `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
 
 **דף ההתקדמות של כל הצוותים:** https://claude.ai/artifact/5p12Fsrc2EeQtkWrNaAWRu (Artifact פרטי). המקור: `.claude/teams/progress.html`, נבנה ב-`python3 .claude/teams/progress-build.py` מהקבצים של כל צוות; מה שאי אפשר לקרוא מגיט (שעון דולק, בבנייה עכשיו) — ב-`progress-overrides.json`. מנהל הצוותים בונה ומפרסם מחדש לאותה כתובת בכל סבב שיש בו שינוי.
 
