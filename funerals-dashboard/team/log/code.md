@@ -130,3 +130,16 @@
   הצוותים (טבלה לפני ה-JSON, `source` = שם הקובץ, JSON רק לפי בקשה, `unreadable` + מה נראה) וכלל מפורש: `notes` ו-`payments` מלאים
   (הקיים + החדש) או בכלל לא — הייבוא מחליף אותם. ⚪1 — ה-docblock של `importRecords` במקום. ⚪2 — שתי רשומות חדשות דומות באותו קובץ → 400
   `duplicate`. ⚪3 (צילומים בשרת) — לא נגעתי; `deploy.yml` של הבקרה.
+- 2026-11-24 — **פרוסה 09 (MCP + OAuth), ענף `claude/funerals-dashboard-09-mcp`.** `mcp.php` + `mcp-lib.php` + `oauth/` (metadata, register,
+  authorize מאחורי השער, token, revoke) + `.htaccess` (`/mcp`, `.well-known/*`) + `assets/css/oauth.css`. הכלים = `extActions()`/`extDo()`;
+  שינוי יחיד ב-`ext-lib.php`: שם הלקוח בשם ביומן (`ctx()['client']`). `tokens.php`: `mcp_url`, `connections`, `disconnect`. `connect.html`
+  (אחרי מיזוג 08): 🔌 פעיל וראשון, הפרויקט שני. בדיקות K1–K15 ב-`tests/mcp.sh` (דרך `tests/mcp-router.php`, שמריץ את כללי `.htaccess`),
+  CIMD ו-DNS מדומים רק תחת `cli-server`. **סטייה מהאפיון:** כתובת חזרה loopback ב-http מותרת (RFC 8252) — בלעדיה Inspector (K16) לא נרשם.
+  **לא נבנה / פתוח:** K16–K18 ידניים; מטא-נתונים בשורש הדומיין — לא נדרשו עד כה (הכותרת 401 מפנה אלינו, ו-openid-configuration בתוך התיקייה),
+  יתברר ב-K16.
+- 2026-11-24 — **ביקורת 09 סבב 1 (#1867):** 🟡1 `oauthPublicIp` דוחה גם ::ffff:0:0/96, ::/96, 64:ff9b::/96, 2002::/16 ו-100.64/10;
+  🟡2 DCR — ספירה לפי /64 ב-IPv6, תקרה כוללת 200 לשעה, ניקוי לקוחות dcr בלי grant אחרי 24 שעות; 🟡3 `oauthName()` מסיר \p{Cc}\p{Cf}
+  (bidi, zero-width), ו-`<bdi>` במסך ההסכמה; 🟡4 בדיקות חדשות ב-`mcp.sh`: XSS בשם, 429 ב-DCR, עקיפות loopback, IPv4-mapped / CGNAT /
+  NAT64 / DNS מעורב ב-CIMD, אסימון שפג, רענון אחרי השבתה. ⚪5 `BEGIN IMMEDIATE` בהחלפת קוד/רענון; ⚪6 `revokeOauthGrantsOf()`
+  (lib/access.php) ב-member_active / user_active של api.php, וגם grant של חבר לא פעיל מתבטל בגילוי (MCP / רענון); ⚪7 CSP עם [::1];
+  ⚪8 עד 20 בקשות ב-batch.

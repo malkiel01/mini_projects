@@ -38,8 +38,9 @@ node "$APP/tests/field.test.js" || fail "field.test.js"
 grep -q 'src="assets/js/field.js"' "$APP/index.html" || fail "index.html לא טוען את field.js"
 grep -q 'src="assets/js/form.js"' "$APP/index.html" || fail "index.html לא טוען את form.js"
 test ! -e "$APP/setup.php" || fail "setup.php עדיין קיים"
-php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","dropbox-webhook.php","ext.php","openapi.json","sw.js","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
-  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, dropbox-webhook.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
+php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","dropbox-webhook.php","ext.php","openapi.json","sw.js","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach",
+    "mcp","mcp.php",".well-known/oauth-protected-resource",".well-known/oauth-authorization-server",".well-known/openid-configuration","oauth/metadata.php","oauth/register.php","oauth/token.php","oauth/revoke.php"];
+  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, dropbox-webhook.php, ext.php, openapi.json, פעולות devapi, ו-MCP / OAuth של 09 (בלי authorize)\n"); exit(1); }' "$APP/app.json" || fail "app.json"
 php platform/check-apps.php >/dev/null || fail "check-apps.php"
 php -r 'json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);' "$APP/dev/open-items.json" || fail "dev/open-items.json אינו JSON תקין"
 ! grep -qE 'type="password"|id="username"' "$APP/index.html" || fail "index.html: נשארו שדות כניסה בסיסמה"
@@ -472,6 +473,8 @@ echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער
 # ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
 if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; pid=0; fi
 bash "$APP/tests/ext.sh"
+echo "פרוסה 09 — MCP + OAuth"
+bash "$APP/tests/mcp.sh"
 
 # ===== פרוסה 03 — Dropbox מול Dropbox מדומה (שרתים משלה, מסד ריק) =====
 wipe

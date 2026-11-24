@@ -452,7 +452,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
     if (!extCan($actions[$action]['perm'])) extFail(403, 'אין לך הרשאה לפעולה הזו (התפקיד שלך: ' . $roleName . ')');
     $u = $c0['user'];
     $actor = ['id' => (int)$u['id'], 'actor' => ((string)$u['name'] !== '' ? $u['name'] : ((string)$u['email'] !== '' ? $u['email'] : 'משתמש ' . $u['id']))
-        . ($via === 'ai' ? ' (AI)' : " (צ'אט)")];
+        . ($via === 'ai' ? ' (AI)' : ' (' . ($c0['client'] ?? "צ'אט") . ')')];   // 09: חיבור OAuth — שם הלקוח ("(ChatGPT)")
     switch ($action) {
         case 'whoami':
             $allowed = array_keys(array_filter(extActions(), static fn($a) => extCan($a['perm'])));

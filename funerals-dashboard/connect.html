@@ -19,8 +19,24 @@
   <div id="app" hidden>
     <h2 class="sec-title">שלוש דרכים לעבוד עם צ'אט</h2>
 
-    <section class="summary route main-route" aria-labelledby="projTitle">
-      <h3 id="projTitle"><span aria-hidden="true">🗂️</span> פרויקט ChatGPT <span class="chip ok">עכשיו</span></h3>
+    <section class="summary route main-route" aria-labelledby="plugTitle">
+      <h3 id="plugTitle"><span aria-hidden="true">🔌</span> חיבור ישיר מ-ChatGPT (Plugin) <span class="chip ok">עכשיו</span></h3>
+      <p class="hint">ChatGPT קורא ומעדכן את התיקים בעצמו, בלי העתקות. מתחברים פעם אחת עם החשבון שלך; עדכון נשמר "לאימות", ואין מחיקה.</p>
+      <div class="row-btns mcp-url"><code id="mcpUrl" dir="ltr"></code><button type="button" class="btn primary" id="copyMcp">📋 העתקת הכתובת</button></div>
+      <ol class="route-steps">
+        <li><span>לפתוח את <b>ChatGPT בדפדפן</b> (לא באפליקציה בטלפון).</span></li>
+        <li><span>להיכנס ל-<b dir="ltr">chatgpt.com/plugins</b>.</span></li>
+        <li><span>ללחוץ <b>➕ ← Add custom MCP server</b>.</span></li>
+        <li><span>להדביק את <b>הכתובת</b> (📋), וב-<b>Authentication</b> לבחור <b>OAuth</b>.</span></li>
+        <li><span>ללחוץ <b>Connect</b>, ובמסך ההסכמה שלנו — <b>אישור</b>. ואז לנסות: "תמצא את התיק של כהן".</span></li>
+      </ol>
+      <p class="hint">ב-Claude: <b>Settings ← Connectors ← Add custom connector</b>, ואותה כתובת.</p>
+      <h4 class="sec-title" id="connTitle">חיבורים פעילים</h4>
+      <ul class="list" id="connections" aria-labelledby="connTitle"></ul>
+    </section>
+
+    <section class="summary route" aria-labelledby="projTitle">
+      <h3 id="projTitle"><span aria-hidden="true">🗂️</span> פרויקט ChatGPT </h3>
       <p class="hint">ה-GPT קורא את ייצוא החודש ומחזיר JSON, ואותו מדביקים כאן ב-📥. שום דבר לא נכתב לתיקים בלי ההדבקה שלך.</p>
       <ol class="route-steps">
         <li><span>ב-ChatGPT: <b>Projects ← New project</b>, בשם <b>ניהול לוויות</b>.</span></li>
@@ -37,11 +53,6 @@
       <h3 id="aiTitle"><span aria-hidden="true">💬</span> העוזר בתוך האפליקציה</h3>
       <p class="hint">קורא את התיקים והמסמכים ישירות ומציע שינויים — כל שינוי נשמר רק אחרי ✓ שלך.</p>
       <a class="btn ghost" href="index.html#ai">💬 לפתוח את העוזר</a>
-    </section>
-
-    <section class="summary route soon" aria-labelledby="plugTitle">
-      <h3 id="plugTitle"><span aria-hidden="true">🔌</span> חיבור ישיר מ-ChatGPT (Plugin) <span class="chip">בקרוב</span></h3>
-      <p class="hint">ChatGPT יקרא ויעדכן את התיקים בעצמו, בלי העתקות — בפיתוח.</p>
     </section>
 
     <p class="hint gone">⛔ <b>GPT מותאם (Create GPT)</b> — OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, והשירות נסגר ב-11.12.2026.</p>

@@ -1,4 +1,5 @@
-// מסך "חיבור ל-ChatGPT" — פרוסה 08: שלושה מסלולים. ראשון — פרויקט ChatGPT (📋 ההנחיות לפרויקט, 📤 ייצוא, ואז 📥 במסך התיקים).
+// מסך "חיבור ל-ChatGPT" — פרוסה 08: שלושה מסלולים. ראשון (09) — חיבור ישיר (MCP + OAuth): הכתובת, הצעדים והחיבורים הפעילים.
+// שני — פרויקט ChatGPT (📋 ההנחיות לפרויקט, 📤 ייצוא, ואז 📥 במסך התיקים).
 // בקפל "מתקדם": אסימונים אישיים (tokens.php) וההעתקות של GPT עם Actions — ההנחיות, קובץ ה-API והאסימון.
 (function () {
   'use strict';
@@ -61,6 +62,23 @@
       }
       list.append(li);
     }
+    $('mcpUrl').textContent = data.mcp_url;
+    const conns = $('connections'); conns.replaceChildren();
+    if (!data.connections.length) conns.append(node('li', 'empty', 'אין חיבורים פעילים'));
+    for (const g of data.connections) {
+      const li = node('li', 'card tok');
+      const body = node('div', 'body');
+      const l1 = node('div', 'l1'); l1.append(node('span', '', g.client_name));
+      const parts = [data.org.name];
+      if (!g.mine) parts.push(g.owner || '');
+      parts.push('שימוש אחרון ' + fmt(g.last_used_at), 'מ-' + fmt(g.created_at));
+      body.append(l1, node('div', 'l2', parts.filter(Boolean).join(' · ')));
+      const b = node('button', 'btn sm ghost danger', 'ניתוק'); b.type = 'button';
+      b.setAttribute('aria-label', 'ניתוק ' + g.client_name);
+      b.addEventListener('click', () => disconnect(g));
+      li.append(body, b);
+      conns.append(li);
+    }
     const ing = $('ingest');
     ing.hidden = !data.ingest;
     if (data.ingest) ing.textContent = data.ingest.exists
@@ -79,6 +97,10 @@
     if (!confirm('לבטל את "' + t.name + '"? צ\'אט שמשתמש בו יפסיק לעבוד מיד.')) return;
     try { await request('revoke', {id: t.id}); toast('האסימון בוטל'); await load(); } catch (e) { toast(e.message, true); }
   }
+  async function disconnect(g) {
+    if (!confirm('לנתק את "' + g.client_name + '"? הצ\'אט יפסיק לגשת לתיקים מיד, ואפשר להתחבר מחדש.')) return;
+    try { await request('disconnect', {id: g.id}); toast('החיבור נותק'); await load(); } catch (e) { toast(e.message, true); }
+  }
   $('newForm').addEventListener('submit', async ev => {
     ev.preventDefault();
     const name = $('tName').value.trim();
@@ -95,6 +117,7 @@
     } catch (e) { toast(e.message, true); }
     finally { $('createBtn').disabled = false; }
   });
+  $('copyMcp').addEventListener('click', () => data && copy(data.mcp_url, 'הכתובת'));
   $('copyProject').addEventListener('click', () => data && copy(data.project_prompt, 'ההנחיות לפרויקט'));
   const now = new Date();
   $('expMonth').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');

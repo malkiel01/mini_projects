@@ -28,3 +28,6 @@ a.btn { text-decoration: none; }
 .route.soon { opacity: .75; }
 .gone { padding: 0 var(--s1); }
 #advanced[open] { gap: var(--s2); }
+/* 09 — הכתובת של שרת ה-MCP */
+.mcp-url { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+.mcp-url code { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; padding: var(--s2); background: var(--brand-soft); border-radius: var(--r); font-size: .85rem; }
