@@ -58,29 +58,9 @@ $pdo = db();
 if ($action === 'list' || $action === 'export') listMonth($pdo, $action, $method);
 if ($action === 'save') {
     if ($method !== 'POST') reply(405, ['error'=>'שיטה לא מורשית']);
-    $payload = body();
-    $item = normalize($payload);
-    $old = existing($pdo, $item['id']);
-    if ($old !== null) {
-        foreach (['name','date','time','origin','team','grave','notes','folder_url','payments'] as $field) {
-            if (($item[$field] ?? null) !== ($old[$field] ?? null)) $item['manual_fields'][] = $field;
-        }
-        $item['manual_fields'] = array_values(array_unique(array_merge($old['manual_fields'] ?? [], $item['manual_fields'])));
-    } else {
-        $item['manual_fields'] = ['name','date','time','origin','team','grave','notes','folder_url','payments'];
-    }
-    foreach ($item['checks'] as $key => &$check) {
-        $previous = $old['checks'][$key] ?? null;
-        if (is_array($previous) && $previous['status'] === $check['status']
-            && $previous['value'] === $check['value'] && $previous['note'] === $check['note']) {
-            $check = $previous;
-        } elseif ($check['status'] !== 'unknown' || $check['value'] !== '' || $check['note'] !== '') {
-            $check['source'] = 'עדכון ידני';
-        }
-    }
-    unset($check);
-    store($pdo,$item,$user['actor'],'save');
+    $item = formSaveCase($pdo, body(), 'ui', $user['actor']);   // lib/form.php — manual_fields ומקור לבדיקה
     reply(200, ['ok'=>true,'record'=>$item]);
 }
+if ($action === 'history') formHistoryAction($pdo, $method, null);   // TODO(01): הארגון הפעיל במקום null
 if ($action === 'import') importRecords($pdo, $method, $user['actor']);
 reply(404, ['error' => 'פעולה לא מוכרת']);

@@ -230,6 +230,7 @@ function importRecords(PDO $pdo, string $method, string $actor): never {
                     if (($c['source'] ?? '') === 'עדכון ידני' || ($c['status'] ?? '') === 'reported') $item['checks'][$key]=$c;
                 }
             }
+            $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, 'import', $actor);   // פרוסה 02: מקור לבדיקה
             store($pdo,$item,$actor,'import');
             $count++;
         }
@@ -240,3 +241,5 @@ function importRecords(PDO $pdo, string $method, string $actor): never {
         reply(500, ['error'=>'שמירת הנתונים נכשלה']);
     }
 }
+
+require __DIR__ . '/lib/form.php';   // פרוסה 02 — הטופס החכם (מקור לבדיקה, finalAllowed, יומן התיק)

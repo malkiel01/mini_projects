@@ -41,9 +41,12 @@
       <div class="chips" id="sumChips"></div>
     </div>
 
-    <div class="seg-tabs" role="tablist" aria-label="סינון תיקים">
+    <div class="seg-tabs six" role="tablist" aria-label="סינון תיקים">
       <button role="tab" type="button" data-filter="todo" aria-selected="true">להשלמה <small id="nTodo"></small></button>
-      <button role="tab" type="button" data-filter="done" aria-selected="false">הושלמו <small id="nDone"></small></button>
+      <button role="tab" type="button" data-filter="bad" aria-selected="false">חסר <small id="nBad"></small></button>
+      <button role="tab" type="button" data-filter="verify" aria-selected="false">לאימות <small id="nVerify"></small></button>
+      <button role="tab" type="button" data-filter="unchecked" aria-selected="false">טרם נבדק <small id="nUnchecked"></small></button>
+      <button role="tab" type="button" data-filter="done" aria-selected="false">הושלם <small id="nDone"></small></button>
       <button role="tab" type="button" data-filter="all" aria-selected="false">הכול <small id="nAll"></small></button>
     </div>
     <div class="toolbar">
@@ -63,6 +66,13 @@
     <div class="sheet-body">
       <div class="summary" id="caseSummary" style="margin:0"></div>
 
+      <div class="seg-tabs" role="tablist" aria-label="תצוגת התיק" id="caseTabs">
+        <button role="tab" type="button" data-pane="case" aria-selected="true">התיק</button>
+        <button role="tab" type="button" data-pane="history" aria-selected="false">🕓 היסטוריה</button>
+      </div>
+      <section id="historyPane" aria-label="היסטוריית התיק" hidden><div id="history" class="list"></div></section>
+
+      <div id="casePane">
       <section aria-labelledby="gChecks">
         <h3 class="sec-title" id="gChecks">מה צריך להשלים</h3>
         <p class="hint">✅ הושלם = מאומת או לא רלוונטי. "מסמך קיים" עדיין דורש אימות של מה שכתוב בו. לחיצה על שורה פותחת עדכון.</p>
@@ -98,6 +108,7 @@
           <label class="f wide"><span>קישור לתיקיית Dropbox</span><input id="fFolder" dir="ltr" inputmode="url" placeholder="https://www.dropbox.com/..."></label>
         </div>
       </section>
+      </div>
     </div>
   </form>
 </dialog>
@@ -130,21 +141,18 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<script src="assets/js/form.js"></script>
 <script>
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
   const fields = {name:'fName',month:'fMonth',date:'fDate',time:'fTime',origin:'fOrigin',team:'fTeam',grave:'fGrave',notes:'fNotes',folder_url:'fFolder'};
-  const labels = {license_document:'רישיון קבורה',license_number:'מספר רישיון קבורה',identity_document:'מסמך זיהוי נפטר',identity_source:'מקור הזיהוי',payment_evidence:'אסמכתת תשלום',hall_service:'שירות בית ההספדים',grave_purchase:'רכישת קבר נוסף',partner_identity:'זיהוי בן/בת זוג',national_insurance:'דיווח לביטוח לאומי'};
-  const statusLabels = {unknown:'טרם נבדק',document_present:'מסמך קיים',verified:'מאומת',unreadable:'לא קריא',missing:'חסר',reported:'עודכן ידנית',not_applicable:'לא רלוונטי'};
-  // תצוגה בלבד: איך כל סטטוס נספר במסלול. "הושלם" — רק מאומת או לא רלוונטי.
-  const groupOf = s => (s === 'missing' || s === 'unreadable') ? 'bad'
-    : (s === 'document_present' || s === 'reported') ? 'verify'
-    : (s === 'verified' || s === 'not_applicable') ? 'done' : 'open';
+  // הבדיקות, הסטטוסים, המסלול ו"הבא בתור" — assets/js/form.js (נבדק ב-tests/form.test.js)
+  const F = window.FDForm, labels = F.labels, statusLabels = F.statusLabels, groupOf = F.groupOf;
   const groups = {bad:{icon:'⛔', chip:'bad'}, open:{icon:'❔', chip:''}, verify:{icon:'🔎', chip:'warn'}, done:{icon:'✅', chip:'ok'}};
   const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-  const TOTAL = Object.keys(labels).length;
-  let items = [], current = null, csrf = '', embedKey = '', filter = 'todo';
+  const TOTAL = F.TOTAL;
+  let items = [], current = null, csrf = '', embedKey = '', filter = 'todo', rows = {};
   try { filter = sessionStorage.getItem('fd_filter') || 'todo'; } catch (e) {}
 
   (() => { const vv = window.visualViewport; if (!vv) return;
@@ -206,19 +214,16 @@
       renderList();
     } catch(e) { toast(e.message, true); }
   }
-  /** מצב התיק: כמה בדיקות בכל קבוצה, וכמה קישורים חסרים (מסמכים + תיקייה). */
-  function state(x) {
-    const n = {bad:0, open:0, verify:0, done:0};
-    for (const k of Object.keys(labels)) n[groupOf(((x.checks || {})[k] || {}).status || 'unknown')]++;
-    const noLinks = (x.documents || []).filter(d => !d.url).length + (x.folder_url ? 0 : 1);
-    return {n, noLinks, complete: n.done === TOTAL};
-  }
-  function chipsFor(n) {
-    const out = [];
+  /** מצב התיק — F.caseState: "הושלם" רק כשהכול סגור ויש לפחות בדיקה מאומתת אחת. */
+  const state = F.caseState;
+  function chipsFor(s) {
+    const n = s.n, out = [];
+    if (s.state === 'unchecked') out.push(node('span', 'chip', 'טרם נבדק · ' + s.pending + ' פתוחות'));
     if (n.bad) out.push(node('span', 'chip bad', n.bad + ' חסר / לא קריא'));
     if (n.verify) out.push(node('span', 'chip warn', n.verify + ' לאימות'));
-    if (n.open) out.push(node('span', 'chip', n.open + ' טרם נבדקו'));
-    if (!out.length) out.push(node('span', 'chip ok', 'הושלם'));
+    if (n.open && s.state !== 'unchecked') out.push(node('span', 'chip', n.open + ' טרם נבדקו'));
+    if (s.complete) out.push(node('span', 'chip ok', 'הושלם ✓'));
+    else if (!out.length) out.push(node('span', 'chip', 'אין בדיקה מאומתת'));
     return out;
   }
   function renderList() {
@@ -240,23 +245,26 @@
       if (tot.open) sc.append(node('span', 'chip', tot.open + ' טרם נבדקו'));
       if (noLinks) sc.append(node('span', 'chip warn', '🔗 ' + noLinks + ' בלי קישור'));
     }
-    $('nTodo').textContent = items.length - doneCases; $('nDone').textContent = doneCases; $('nAll').textContent = items.length;
+    const count = f => all.filter(a => F.matches(f, a.s)).length;
+    $('nTodo').textContent = count('todo'); $('nBad').textContent = count('bad') || ''; $('nVerify').textContent = count('verify') || '';
+    $('nUnchecked').textContent = count('unchecked') || ''; $('nDone').textContent = doneCases; $('nAll').textContent = items.length;
     document.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.filter === filter)));
-    const shown = all.filter(({x, s}) => (filter === 'all' || (filter === 'done') === s.complete)
+    const shown = all.filter(({x, s}) => F.matches(filter, s)
       && [x.name, x.date, x.team, x.origin].join(' ').includes(q));
     if (!shown.length) {
       target.append(node('li', 'empty', !items.length ? 'אין תיקים ב' + monthLabel($('month').value) + '. 📥 לייבוא ממצאים, או "+ תיק".'
-        : q ? 'אין תוצאות לחיפוש.' : filter === 'done' ? 'עוד אין תיקים שהושלמו.' : 'כל התיקים הושלמו 🎉'));
+        : q ? 'אין תוצאות לחיפוש.' : filter === 'done' ? 'עוד אין תיקים שהושלמו.' : filter === 'todo' ? 'כל התיקים הושלמו 🎉' : 'אין תיקים בסינון הזה.'));
       return;
     }
     shown.forEach(({x, s}) => {
       const li = node('li', 'card case'); li.tabIndex = 0; li.setAttribute('role', 'button');
       li.dataset.g = s.n.bad ? 'bad' : s.complete ? 'done' : 'open';
+      li.dataset.state = s.state;
       const ring = node('span', 'ring', s.n.done + '/' + TOTAL); ring.style.setProperty('--p', Math.round(s.n.done * 100 / TOTAL));
       ring.setAttribute('aria-label', s.n.done + ' מתוך ' + TOTAL + ' בדיקות הושלמו');
       const body = node('div', 'body');
       const l1 = node('div', 'l1'); l1.append(node('span', '', x.name), node('span', 't', [x.date ? x.date.slice(8) + '/' + x.date.slice(5, 7) : '', x.time].filter(Boolean).join(' ')));
-      const l3 = node('div', 'chips'); chipsFor(s.n).forEach(c => l3.append(c));
+      const l3 = node('div', 'chips'); chipsFor(s).forEach(c => l3.append(c));
       body.append(l1, node('div', 'l2', [x.origin, x.team, x.grave].filter(Boolean).join(' · ') || 'אין פרטי לוויה'), l3);
       li.append(ring, body, node('span', 'use-go', '‹'));
       const open = () => edit(x);
@@ -270,7 +278,8 @@
     current.checks = current.checks || {}; current.payments = current.payments || []; current.documents = current.documents || [];
     $('editorTitle').textContent = current.name || 'תיק חדש';
     for (const [field, id] of Object.entries(fields)) $(id).value = current[field] || '';
-    renderSummary(); renderChecks(); renderPayments(); renderDocuments();
+    renderChecks(); renderSummary(); renderPayments(); renderDocuments();
+    showPane('case'); $('caseTabs').hidden = !current.id;
     if (!$('editDialog').open) $('editDialog').showModal();
     grow($('fNotes'));
     $('editDialog').querySelector('.sheet-body').scrollTop = 0;
@@ -282,12 +291,53 @@
     const line = node('div', 'line'); line.append(node('b', '', s.n.done + ' מתוך ' + TOTAL), node('span', 'muted', 'בדיקות הושלמו'));
     if (current.date) line.append(node('span', 'pct', [current.date.slice(8) + '/' + current.date.slice(5, 7), current.time].filter(Boolean).join(' ')));
     const track = node('span', 'track'); const bar = node('span'); bar.style.inlineSize = Math.round(s.n.done * 100 / TOTAL) + '%'; track.append(bar);
-    const chips = node('div', 'chips'); chipsFor(s.n).forEach(c => chips.append(c));
+    const chips = node('div', 'chips'); chipsFor(s).forEach(c => chips.append(c));
     if (s.noLinks) chips.append(node('span', 'chip warn', '🔗 ' + s.noLinks + ' בלי קישור'));
-    box.append(line, track, chips);
-    const keys = Object.keys(labels), g = k => groupOf((current.checks[k] || {}).status);
-    const next = keys.find(k => g(k) === 'bad') || keys.find(k => g(k) === 'verify') || keys.find(k => g(k) === 'open');
-    if (next) box.append(node('div', 'hint', '👉 הבא בתור: ' + labels[next]));
+    // "הבא בתור" ראשון — לפני המונה, כדי שייראה בטלפון בלי גלילה
+    const next = F.nextUp(current), nx = node('div', 'next-up');
+    if (next) {
+      const b = node('button', 'btn primary next-btn'); b.type = 'button';
+      b.append(node('span', 'next-k', 'הבא בתור'), node('b', '', labels[next]), node('span', 'chip', statusLabels[(current.checks[next] || {}).status || 'unknown']));
+      b.addEventListener('click', () => { showPane('case'); if (rows[next]) rows[next].open(); });
+      nx.append(b);
+    } else {
+      nx.append(node('p', s.complete ? 'done-msg' : 'warn-box', s.complete ? 'התיק הושלם ✓' : 'אין בדיקה פתוחה, אבל גם אף בדיקה לא מאומתת — לאמת לפחות אחת.'));
+    }
+    box.append(nx, line, track, chips);
+  }
+  /** לשוניות התיק: "התיק" ו"היסטוריה" (נטענת מהשרת בכל פתיחה). */
+  function showPane(p) {
+    document.querySelectorAll('[data-pane]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.pane === p)));
+    $('casePane').hidden = p !== 'case'; $('historyPane').hidden = p !== 'history';
+    if (p === 'history') loadHistory();
+  }
+  function when(at) {
+    const d = new Date(at); if (isNaN(d)) return at || '';
+    return d.toLocaleString('he-IL', {day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit'});
+  }
+  async function loadHistory() {
+    const box = $('history'); box.replaceChildren(node('p', 'empty', 'טוען…'));
+    if (!current || !current.id) { box.replaceChildren(node('p', 'empty', 'תיק חדש — עוד אין היסטוריה.')); return; }
+    const id = current.id;
+    try {
+      const data = await request('history', 'GET', null, {id});
+      if (!current || current.id !== id) return;
+      box.replaceChildren();
+      (data.events || []).forEach(ev => {
+        const it = node('div', 'ck hist'), head = node('div', 'hist-head');
+        head.append(node('b', '', when(ev.at)), node('span', 'chip', F.viaLabels[ev.source] || ev.source || 'יומן ישן'));
+        const who = node('small', 'src'), w = node('bdi', '', ev.actor || '—'); who.append(w, ' · ' + (F.actionLabels[ev.action] || ev.action || ''));
+        it.append(head, who);
+        if ((ev.changes || []).length) {
+          const ul = node('ul', 'hist-ch');
+          ev.changes.forEach(c => { const li = node('li'); li.append(node('span', 'muted', F.fieldLabel(c.field) + ': '),
+            node('bdi', '', F.valueText(c.before)), ' ← ', node('bdi', '', F.valueText(c.after))); ul.append(li); });
+          it.append(ul);
+        }
+        box.append(it);
+      });
+      if (!box.childNodes.length) box.append(node('p', 'empty', 'עוד אין שינויים רשומים לתיק.'));
+    } catch (e) { box.replaceChildren(node('p', 'error', e.message)); }
   }
   function field(labelText, value, change, opts={}) {
     const wrap = node('label', 'f' + (opts.wide ? ' wide' : '')); wrap.append(node('span', '', labelText));
@@ -304,15 +354,15 @@
   }
   /** הבדיקות כמסלול: בעיות, לאימות, טרם נבדק, הושלם. ההערה גלויה במלואה; לחיצה על השורה פותחת עדכון. */
   function renderChecks() {
-    const box = $('checks'); box.replaceChildren();
-    const keys = Object.keys(labels);
+    const box = $('checks'); box.replaceChildren(); rows = {};
+    const keys = F.KEYS;
     keys.forEach(k => { current.checks[k] = current.checks[k] || {status:'unknown', value:'', source:'', note:''}; });
     const order = ['bad', 'verify', 'open', 'done'];
     keys.slice().sort((a, b) => order.indexOf(groupOf(current.checks[a].status)) - order.indexOf(groupOf(current.checks[b].status)))
       .forEach(key => box.append(checkRow(key)));
   }
   function checkRow(key) {
-    const check = current.checks[key], wrap = node('div', 'ck');
+    const check = current.checks[key], wrap = node('div', 'ck'), saved = JSON.stringify([check.status, check.value, check.note]);
     const head = node('button', 'use-row'); head.type = 'button'; head.setAttribute('aria-expanded', 'false');
     const ic = node('span', 'use-ic'), tx = node('span', 'use-tx'), sub = node('small'), st = node('span', 'chip');
     tx.append(node('b', '', labels[key]), sub); head.append(ic, tx, st);
@@ -324,7 +374,16 @@
       sub.textContent = check.value || (g === 'open' ? 'לא נבדק עדיין' : ''); sub.hidden = !sub.textContent;
       info.replaceChildren();
       if (check.note) info.append(node('p', 'ck-note', check.note));
-      if (check.source) { const src = node('small', 'src', 'מקור: '), b = node('bdi', '', check.source); b.dir = 'ltr'; src.append(b); info.append(src); }
+      if (check.source && check.source !== 'עדכון ידני') { const src = node('small', 'src', 'מסמך: '), b = node('bdi', '', check.source); b.dir = 'ltr'; src.append(b); info.append(src); }
+      // מי אמר שזה בסדר — מהשרת בלבד (by/via/at). שינוי שעוד לא נשמר — "לא נשמר עדיין"
+      const pv = F.provenance(check), dirty = JSON.stringify([check.status, check.value, check.note]) !== saved;
+      if (dirty) info.append(node('small', 'src prov', '✎ לא נשמר עדיין'));
+      else if (pv) {
+        const src = node('small', 'src prov' + (pv.legacy ? ' legacy' : ''));
+        if (pv.legacy) src.textContent = 'מייבוא ישן';
+        else { const b = node('bdi', '', pv.by || '—'); src.append('👤 ', b, ' · ' + pv.via + (pv.at ? ' · ' + when(pv.at) : '')); }
+        info.append(src);
+      }
       info.hidden = !info.childNodes.length;
     };
     const seg = node('fieldset', 'seg grid'); seg.style.setProperty('--cols', 4); seg.setAttribute('aria-label', 'סטטוס ' + labels[key]);
@@ -337,10 +396,12 @@
     f.append(field('ערך / מספר', check.value || '', v => { check.value = v; paint(); }, {wide:true}),
       field('הערה', check.note || '', v => { check.note = v; paint(); }, {wide:true, area:true}));
     editBox.append(seg, f);
-    head.addEventListener('click', () => {
-      editBox.hidden = !editBox.hidden; head.setAttribute('aria-expanded', String(!editBox.hidden));
+    const toggle = force => {
+      editBox.hidden = force === undefined ? !editBox.hidden : !force; head.setAttribute('aria-expanded', String(!editBox.hidden));
       if (!editBox.hidden) editBox.querySelectorAll('textarea.grow').forEach(grow);
-    });
+    };
+    head.addEventListener('click', () => toggle());
+    rows[key] = {open: () => { toggle(true); wrap.scrollIntoView({block:'start', behavior:'smooth'}); const r = seg.querySelector('input:checked') || seg.querySelector('input'); if (r) r.focus({preventScroll:true}); }};
     paint(); wrap.append(head, info, editBox); return wrap;
   }
   function renderPayments() {
@@ -419,7 +480,8 @@
   document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
   document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
     filter = b.dataset.filter; try { sessionStorage.setItem('fd_filter', filter); } catch (e) {} renderList(); }));
-  $('editDialog').addEventListener('close', () => { current = null; });
+  $('editDialog').addEventListener('close', () => { current = null; rows = {}; });
+  document.querySelectorAll('[data-pane]').forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
   $('retryBtn').addEventListener('click', () => begin());
   $('tokenBtn').addEventListener('click', async () => {
     if (!confirm('ליצור אסימון API חדש? האסימון הקיים יבוטל, ומערכות שמשתמשות בו יפסיקו לעבוד.')) return;

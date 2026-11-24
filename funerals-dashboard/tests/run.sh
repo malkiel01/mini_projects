@@ -6,7 +6,11 @@ pid=0
 cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; rm -f funerals-dashboard/data/config.php funerals-dashboard/data/.config-* funerals-dashboard/data/funerals.sqlite*; rm -rf "$tmp"; }
 trap cleanup EXIT
 fail(){ echo "FAIL: $*"; exit 1; }
-for f in api.php lib.php ingest.php tests/gate-prepend.php; do php -l "funerals-dashboard/$f"; done
+for f in api.php lib.php ingest.php lib/form.php tests/gate-prepend.php tests/form.test.php; do php -l "funerals-dashboard/$f"; done
+node --check funerals-dashboard/assets/js/form.js
+# פרוסה 02 — בדיקות יחידה (מסד בזיכרון / בלי שרת)
+php funerals-dashboard/tests/form.test.php
+node funerals-dashboard/tests/form.test.js
 test ! -e funerals-dashboard/setup.php || fail "setup.php עדיין קיים"
 php -r '$a=json_decode(file_get_contents("funerals-dashboard/app.json"),true); if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==["ingest.php"]) { fwrite(STDERR,"app.json: נדרשים gate:true, restricted:true ו-public רק ingest.php\n"); exit(1); }'
 php platform/check-apps.php
@@ -99,6 +103,43 @@ php -r '$v=json_decode(file_get_contents($argv[1]),true); if(($v["records"][0]["
 
 # ה-actor ביומן הוא המייל מהשער
 php -r '$p=new PDO("sqlite:".$argv[1]); $a=$p->query("SELECT actor FROM audit WHERE action IN (\x27save\x27,\x27api_token\x27)")->fetchAll(PDO::FETCH_COLUMN); if(!$a || array_unique($a)!==["tester@example.com"]) { fwrite(STDERR, json_encode($a)."\n"); exit(1);}' funerals-dashboard/data/funerals.sqlite || fail "actor ביומן"
+
+# ===== פרוסה 02 — טופס חכם, מול השרת =====
+# B1: שמירה מהממשק — by/via:ui/at רק לבדיקה ששונתה; by/via/at מהקלט מתעלמים
+php -r '$v=json_decode(file_get_contents($argv[1]),true); $r=$v["records"][0]; $r["checks"]["hall_service"]=["status"=>"verified","value"=>"כן","note"=>"","by"=>"hacker","via"=>"import","at"=>"1999-01-01"]; file_put_contents($argv[2],json_encode($r,JSON_UNESCAPED_UNICODE));' "$tmp/export.json" "$tmp/b1.json"
+code="$(st -b "$tmp/cookies" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' --data-binary @"$tmp/b1.json" "$base?action=save")"
+test "$code" = 200 || { cat "$tmp/out"; fail "B1 שמירה ($code)"; }
+php -r '$v=json_decode(file_get_contents($argv[1]),true); $c=$v["record"]["checks"]; $h=$c["hall_service"]; $l=$c["license_number"];
+  if ($h["via"]!=="ui" || $h["by"]!=="tester@example.com" || $h["at"]==="1999-01-01" || $h["status"]!=="verified") { fwrite(STDERR,json_encode($h,JSON_UNESCAPED_UNICODE)."\n"); exit(1); }
+  $prev=json_decode(file_get_contents($argv[2]),true)["records"][0]["checks"]["license_number"];
+  if ($l!==$prev) { fwrite(STDERR,"license_number השתנה בלי שינוי\n"); exit(1); }' "$tmp/out" "$tmp/export.json" || fail "B1: מקור לבדיקה ששונתה בלבד, וקלט by/via/at מתעלם"
+# B3: ingest.php (via: import) שמסמן verified → נשמר verified, via=import
+curl -sS -H 'Content-Type: application/json' -H "Authorization: Bearer $tok2" \
+ --data '{"records":[{"month":"2026-10","name":"שם בדיקה בלבד","date":"2026-10-01","checks":{"identity_document":{"status":"verified","value":"ת\"ז"}}}]}' \
+ "$ingest?action=import" > /dev/null
+curl -sS -b "$tmp/cookies" "$base?action=list&month=2026-10" > "$tmp/b3.json"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); $c=$v["records"][0]["checks"]["identity_document"]; if ($c["status"]!=="verified" || $c["via"]!=="import" || $c["by"]!=="api") { fwrite(STDERR,json_encode($c,JSON_UNESCAPED_UNICODE)."\n"); exit(1);}
+  if ($v["records"][0]["checks"]["hall_service"]["via"]!=="ui") exit(1);' "$tmp/b3.json" || fail "B3: ingest → verified עם via=import, והבדיקה הידנית נשארה"
+# B6 (שרת): history — 200 לתיק קיים, החדש קודם; 404 לתיק שאינו קיים; 400 למזהה לא תקין; בלי זהות → 401
+cid="$(php -r '$v=json_decode(file_get_contents($argv[1]),true); echo $v["records"][0]["id"];' "$tmp/b3.json")"
+code="$(st -b "$tmp/cookies" "$base?action=history&id=$cid")"; test "$code" = 200 || fail "B6: history ($code)"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); $e=$v["events"]??[]; if (count($e)<3) exit(1); $at=array_column($e,"at"); $s=$at; rsort($s); if ($at!==$s) exit(1);' "$tmp/out" || fail "B6: history בסדר הפוך"
+code="$(st -b "$tmp/cookies" "$base?action=history&id=fd_no_such_case_000")"; test "$code" = 404 || fail "B6: תיק שלא קיים → 404 ($code)"
+code="$(st -b "$tmp/cookies" "$base?action=history&id=../x")"; test "$code" = 400 || fail "B6: מזהה לא תקין ($code)"
+code="$(st -b "$tmp/cookies" -X POST -H "X-CSRF-Token: $csrf" "$base?action=history&id=$cid")"; test "$code" = 405 || fail "B6: history ב-POST ($code)"
+code="$(st "http://127.0.0.1:18964/lib/form.php")"; test "$code" = 404 || fail "lib/form.php נגיש ישירות ($code)"
+# B7: 22 תיקים בצורה הישנה (בלי by/via/at) — list מחזיר את כולם, נפתחים בממשק (form.js) ו"מייבוא ישן"; history לכל אחד 200
+php -r '$p=new PDO("sqlite:".$argv[1]); $a=json_decode(file_get_contents($argv[2]),true); $st=$p->prepare("INSERT INTO funerals(id,month,name,body,updated_at) VALUES(?,?,?,?,?)");
+  foreach($a as $r){ $r["month"]="2026-09"; $st->execute([$r["id"],$r["month"],$r["name"],json_encode($r,JSON_UNESCAPED_UNICODE),"2026-10-01T00:00:00Z"]); }' \
+  funerals-dashboard/data/funerals.sqlite funerals-dashboard/tests/fixtures/legacy-cases.json
+code="$(st -b "$tmp/cookies" "$base?action=list&month=2026-09")"; test "$code" = 200 || fail "B7: list ($code)"
+cp "$tmp/out" "$tmp/legacy-list.json"
+node funerals-dashboard/tests/form.test.js "$tmp/legacy-list.json" >/dev/null || fail "B7: התיקים הישנים מהשרת"
+for lid in $(php -r '$v=json_decode(file_get_contents($argv[1]),true); echo implode(" ", array_column($v["records"],"id"));' "$tmp/legacy-list.json"); do
+  code="$(st -b "$tmp/cookies" "$base?action=history&id=$lid")"; test "$code" = 200 || fail "B7: history $lid ($code)"
+done
+grep -q 'src="assets/js/form.js"' funerals-dashboard/index.html || fail "index.html לא טוען את form.js"
+echo "PASS: פרוסה 02 מול השרת — B1, B3, B6 (history: סדר, 404, 400, 405), B7 (22 תיקים ישנים)"
 
 # יציאה: עם CSRF בלבד
 code="$(st -b "$tmp/cookies" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
