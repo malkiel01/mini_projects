@@ -4,7 +4,13 @@
     "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
     "branch": "claude/funerals-dashboard-spec"
   },
-  "code": [],
+  "code": [
+    {
+      "session": "session_018g4NYFCroPuhEYVJhHMcqh",
+      "branch": "claude/funerals-dashboard-08-fixes",
+      "slice": "08"
+    }
+  ],
   "control": {
     "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
     "branch": "claude/funerals-dashboard-control",
