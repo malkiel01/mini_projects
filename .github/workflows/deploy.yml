@@ -347,6 +347,8 @@ jobs:
             --include='/cyber-academy/data/.htaccess' --exclude='/cyber-academy/data/*' \
             --exclude='/sforno/team/' \
             --include='/sforno/data/.htaccess' --exclude='/sforno/data/*' \
+            --exclude='/funerals-dashboard/tests/' \
+            --include='/funerals-dashboard/data/.htaccess' --exclude='/funerals-dashboard/data/*' \
             --exclude='/grave-prices/team/' \
             --include='/grave-prices/data/.htaccess' --exclude='/grave-prices/data/*' \
             --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' --exclude='/org-budget-proposals/tests/' \
