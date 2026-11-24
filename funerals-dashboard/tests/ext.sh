@@ -5,7 +5,7 @@ cd "$(dirname "$0")/../.."
 D=funerals-dashboard
 tmp="$(mktemp -d)"
 pid=0
-wipe(){ find "$D/data" -mindepth 1 ! -name .htaccess -exec rm -rf {} + 2>/dev/null || true; }
+wipe(){ find "$D/data" -mindepth 1 ! -name .htaccess ! -name .gitignore -exec rm -rf {} + 2>/dev/null || true; }
 cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; wipe; rm -rf "$tmp"; }
 trap cleanup EXIT
 fail(){ echo "FAIL (05): $*"; [ -f "$tmp/out" ] && head -c 600 "$tmp/out" && echo; exit 1; }
