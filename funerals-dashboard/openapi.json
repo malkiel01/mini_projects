@@ -1,0 +1,776 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "ניהול לוויות חברה קדישא — API",
+        "version": "1.0.0",
+        "description": "פעולות קריאה ועדכון לתיקי לוויות, לצ'אט חיצוני. אין מחיקה. / Read and update funeral cases for an external chat. No delete."
+    },
+    "servers": [
+        {
+            "url": "https://mbe-plus.com/mini_projects/funerals-dashboard"
+        }
+    ],
+    "paths": {
+        "/ext.php/whoami": {
+            "get": {
+                "operationId": "whoami",
+                "summary": "Who am I: user, organization, role and allowed actions",
+                "description": "מי אני: המשתמש, הארגון, התפקיד והפעולות המותרות / Who am I: user, organization, role and allowed actions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ext.php/schema": {
+            "get": {
+                "operationId": "schema",
+                "summary": "List of checks (key → Hebrew name), statuses and fields — read before writing",
+                "description": "רשימת הבדיקות (מפתח ← שם), הסטטוסים והשדות — לפני כתיבה / List of checks (key → Hebrew name), statuses and fields — read before writing",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ext.php/find": {
+            "get": {
+                "operationId": "find",
+                "summary": "Find a case by name — always before updating",
+                "description": "חיפוש תיק לפי שם — תמיד לפני עדכון / Find a case by name — always before updating",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "description": "שם או חלק משם (2 תווים לפחות) / Name or part of it",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/ext.php/cases": {
+            "get": {
+                "operationId": "cases",
+                "summary": "Short case list: id, name, date, next step and counters",
+                "description": "רשימת תיקים מקוצרת: מזהה, שם, תאריך, הבא בתור ומונים / Short case list: id, name, date, next step and counters",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "month",
+                        "in": "query",
+                        "required": false,
+                        "description": "YYYY-MM",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": false,
+                        "description": "סינון לפי שם / Filter by name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "description": "missing | verify | unchecked | done",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "missing",
+                                "verify",
+                                "unchecked",
+                                "done"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "/ext.php/case": {
+            "get": {
+                "operationId": "case",
+                "summary": "Full case: fields, checks, files and last 10 events",
+                "description": "התיק המלא: שדות, בדיקות, קבצים ו-10 אירועים אחרונים / Full case: fields, checks, files and last 10 events",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "query",
+                        "required": true,
+                        "description": "מזהה התיק (מ-find או cases) / Case id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/ext.php/case_update": {
+            "post": {
+                "operationId": "case_update",
+                "summary": "Partial case update. Returns what was actually saved — \"verified\" is saved as \"to verify\"",
+                "description": "עדכון חלקי של תיק. מחזיר מה נשמר בפועל — \"מאומת\" נשמר \"לאימות\" / Partial case update. Returns what was actually saved — \"verified\" is saved as \"to verify\"",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "id"
+                                ],
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "fields": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string",
+                                                "description": "שם הנפטר / Deceased name"
+                                            },
+                                            "date": {
+                                                "type": "string",
+                                                "description": "YYYY-MM-DD"
+                                            },
+                                            "time": {
+                                                "type": "string",
+                                                "description": "HH:MM"
+                                            },
+                                            "origin": {
+                                                "type": "string"
+                                            },
+                                            "team": {
+                                                "type": "string"
+                                            },
+                                            "grave": {
+                                                "type": "string",
+                                                "description": "מיקום קבר / Grave location"
+                                            },
+                                            "notes": {
+                                                "type": "string",
+                                                "description": "מחליף את כל ההערות. להוספת הערה — note / Replaces all notes; use note to append"
+                                            },
+                                            "folder_url": {
+                                                "type": "string",
+                                                "description": "Dropbox https link"
+                                            },
+                                            "payments": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "amount": {
+                                                            "type": "number"
+                                                        },
+                                                        "purpose": {
+                                                            "type": "string"
+                                                        },
+                                                        "reference": {
+                                                            "type": "string"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "description": "שדות לשינוי (משרד ומעלה, חוץ מ-grave) / Fields to change"
+                                    },
+                                    "checks": {
+                                        "type": "object",
+                                        "properties": {
+                                            "license_document": {
+                                                "type": "object",
+                                                "description": "רישיון קבורה",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "license_number": {
+                                                "type": "object",
+                                                "description": "מספר רישיון קבורה",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "identity_document": {
+                                                "type": "object",
+                                                "description": "מסמך זיהוי נפטר",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "identity_source": {
+                                                "type": "object",
+                                                "description": "מקור הזיהוי",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "payment_evidence": {
+                                                "type": "object",
+                                                "description": "אסמכתת תשלום",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "hall_service": {
+                                                "type": "object",
+                                                "description": "שירות בית ההספדים",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "grave_purchase": {
+                                                "type": "object",
+                                                "description": "רכישת קבר נוסף",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "partner_identity": {
+                                                "type": "object",
+                                                "description": "זיהוי בן/בת זוג",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            },
+                                            "national_insurance": {
+                                                "type": "object",
+                                                "description": "דיווח לביטוח לאומי",
+                                                "properties": {
+                                                    "status": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "unknown",
+                                                            "document_present",
+                                                            "verified",
+                                                            "unreadable",
+                                                            "missing",
+                                                            "reported",
+                                                            "not_applicable"
+                                                        ]
+                                                    },
+                                                    "value": {
+                                                        "type": "string",
+                                                        "maxLength": 500
+                                                    },
+                                                    "note": {
+                                                        "type": "string",
+                                                        "maxLength": 800
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "description": "בדיקות לשינוי לפי מפתח / Checks to change by key"
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "maxLength": 800,
+                                        "description": "הערה שתתווסף לתיק / Note appended to the case"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ext.php/case_create": {
+            "post": {
+                "operationId": "case_create",
+                "summary": "Create a new case (office and above)",
+                "description": "פתיחת תיק חדש (משרד ומעלה) / Create a new case (office and above)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "description": "שם הנפטר / Deceased name"
+                                    },
+                                    "date": {
+                                        "type": "string",
+                                        "description": "YYYY-MM-DD"
+                                    },
+                                    "time": {
+                                        "type": "string",
+                                        "description": "HH:MM"
+                                    },
+                                    "month": {
+                                        "type": "string",
+                                        "description": "YYYY-MM (ברירת מחדל: מהתאריך / default: from date)"
+                                    },
+                                    "origin": {
+                                        "type": "string"
+                                    },
+                                    "team": {
+                                        "type": "string"
+                                    },
+                                    "grave": {
+                                        "type": "string",
+                                        "description": "מיקום קבר / Grave location"
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "maxLength": 800
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ext.php/files": {
+            "get": {
+                "operationId": "files",
+                "summary": "Case files from Dropbox",
+                "description": "קבצי התיק מ-Dropbox / Case files from Dropbox",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "query",
+                        "required": true,
+                        "description": "מזהה התיק (מ-find או cases) / Case id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/ext.php/file_text": {
+            "get": {
+                "operationId": "file_text",
+                "summary": "Text of a file (PDF with a text layer), up to 200KB",
+                "description": "הטקסט של קובץ (PDF עם שכבת טקסט), עד 200KB / Text of a file (PDF with a text layer), up to 200KB",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "name": "file",
+                        "in": "query",
+                        "required": true,
+                        "description": "מזהה הקובץ (מ-files) / File id",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ]
+            }
+        },
+        "/ext.php/prompt": {
+            "get": {
+                "operationId": "prompt",
+                "summary": "Instructions for the chat (text)",
+                "description": "ההנחיות לצ'אט (טקסט) / Instructions for the chat (text)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Result"
+                                }
+                            }
+                        }
+                    },
+                    "4XX": {
+                        "description": "שגיאה / Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearer": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "אסימון אישי fdx_… / Personal token fdx_…"
+            }
+        },
+        "schemas": {
+            "Result": {
+                "type": "object",
+                "additionalProperties": true
+            },
+            "Error": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "error"
+                ]
+            }
+        }
+    },
+    "security": [
+        {
+            "bearer": []
+        }
+    ]
+}

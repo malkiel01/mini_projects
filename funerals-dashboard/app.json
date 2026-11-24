@@ -8,6 +8,8 @@
   "restricted": true,
   "gate": true,
   "public": [
-    "ingest.php"
+    "ingest.php",
+    "ext.php",
+    "openapi.json"
   ]
 }

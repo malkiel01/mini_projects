@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
+<meta name="referrer" content="no-referrer">
+<title>חיבור ל-ChatGPT — ניהול לוויות חברה קדישא</title>
+<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/connect.css">
+</head>
+<body>
+<header class="top">
+  <a class="icon-btn" href="index.html" aria-label="חזרה לתיקים" title="חזרה לתיקים">›</a>
+  <div class="titles"><h1>🤖 חיבור ל-ChatGPT</h1><div class="sub" id="topSub">צ'אט חיצוני</div></div>
+</header>
+<main id="main" tabindex="-1">
+  <p class="error" id="fatal" role="alert" hidden></p>
+  <div id="app" hidden>
+    <div class="toolbar" id="orgBar" hidden>
+      <select id="org" aria-label="ארגון"></select>
+    </div>
+
+    <h2 class="sec-title">שלושה דברים להעתיק</h2>
+    <div class="tiles copy-tiles">
+      <button type="button" class="tile" id="copyPrompt"><span class="tile-ic" aria-hidden="true">📋</span><span class="one">ההנחיות</span></button>
+      <button type="button" class="tile" id="copyApi"><span class="tile-ic" aria-hidden="true">🔗</span><span class="one">קובץ ה-API</span></button>
+      <button type="button" class="tile" id="copyToken" disabled><span class="tile-ic" aria-hidden="true">🔑</span><span class="one">האסימון</span></button>
+    </div>
+
+    <section class="summary" aria-labelledby="newTitle">
+      <h2 class="sec-title" id="newTitle">אסימון חדש</h2>
+      <form id="newForm" class="fields" novalidate>
+        <label class="f wide"><span>שם (כדי לזהות אותו ברשימה)</span><input id="tName" maxlength="60" placeholder="GPT של משה" autocomplete="off"></label>
+        <div class="f wide"><span>תוקף</span>
+          <div class="seg" role="radiogroup" aria-label="תוקף">
+            <label><input type="radio" name="days" value="30"><span>30 יום</span></label>
+            <label><input type="radio" name="days" value="90" checked><span>90 יום</span></label>
+            <label><input type="radio" name="days" value="365"><span>שנה</span></label>
+          </div>
+        </div>
+        <button class="btn primary wide" id="createBtn">יצירת אסימון</button>
+      </form>
+      <div id="fresh" class="fresh" hidden>
+        <p><b>האסימון מוצג עכשיו בלבד.</b> להעתיק ולהדביק ב-GPT. אחרי שיוצאים מהמסך אי אפשר לראות אותו שוב — רק ליצור חדש.</p>
+        <code id="freshToken" dir="ltr"></code>
+        <button type="button" class="btn primary" id="copyFresh">🔑 העתקת האסימון</button>
+      </div>
+    </section>
+
+    <details class="summary steps" open>
+      <summary class="sec-title">איך מחברים GPT מותאם (5 צעדים)</summary>
+      <ol>
+        <li>ב-ChatGPT: <b>Explore GPTs ← Create ← Configure</b>.</li>
+        <li><b>Instructions</b> — להדביק את <b>ההנחיות</b> (📋).</li>
+        <li><b>Actions ← Create new action ← Import from URL</b> — להדביק את <b>קובץ ה-API</b> (🔗).</li>
+        <li><b>Authentication ← API Key ← Bearer</b> — להדביק את <b>האסימון</b> (🔑).</li>
+        <li>לשמור (Only me), ולנסות: "תמצא את התיק של כהן".</li>
+      </ol>
+      <p class="hint">בלי GPT מותאם: להדביק את ההנחיות בתחילת שיחה או בפרויקט — אבל אז הצ'אט לא יכול לכתוב לתיקים.</p>
+    </details>
+
+    <h2 class="sec-title" id="listTitle">האסימונים שלי</h2>
+    <ul class="list" id="tokens" aria-labelledby="listTitle"></ul>
+    <p class="hint" id="ingest" hidden></p>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="assets/js/connect.js"></script>
+</body>
+</html>
