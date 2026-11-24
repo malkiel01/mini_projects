@@ -15,7 +15,7 @@ fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונ�
 ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
-for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php \
+for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php lib/field.php tests/field.test.php tests/field-dropbox.test.php \
     dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
@@ -25,9 +25,17 @@ node --check "$APP/assets/js/dropbox.js" || fail "node --check dropbox.js"
 # פרוסה 02 — בדיקות יחידה (בלי שרת ובלי data/)
 php "$APP/tests/form.test.php" || fail "form.test.php"
 node "$APP/tests/form.test.js" || fail "form.test.js"
+# פרוסה 04 — עובד שטח: הליבה בדפדפן (הקטנה, GPS, תור) — בלי שרת
+node --check "$APP/assets/js/field-core.js" || fail "node --check field-core.js"
+node --check "$APP/assets/js/field.js" || fail "node --check field.js"
+node --check "$APP/sw.js" || fail "node --check sw.js"
+# sw.js: רק Background Sync — בלי fetch handler ובלי מטמון (ביקורת 04 #2)
+grep -q "addEventListener('sync'" "$APP/sw.js" && ! grep -qE "addEventListener\('fetch'|caches\." "$APP/sw.js" || fail "sw.js: רק sync, בלי fetch/מטמון"
+node "$APP/tests/field.test.js" || fail "field.test.js"
+grep -q 'src="assets/js/field.js"' "$APP/index.html" || fail "index.html לא טוען את field.js"
 grep -q 'src="assets/js/form.js"' "$APP/index.html" || fail "index.html לא טוען את form.js"
 test ! -e "$APP/setup.php" || fail "setup.php עדיין קיים"
-php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","dropbox-webhook.php","ext.php","openapi.json","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
+php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","dropbox-webhook.php","ext.php","openapi.json","sw.js","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
   if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, dropbox-webhook.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
 php platform/check-apps.php >/dev/null || fail "check-apps.php"
 php -r 'json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);' "$APP/dev/open-items.json" || fail "dev/open-items.json אינו JSON תקין"
@@ -88,13 +96,14 @@ ok "A2 — גיבוי נכשל → 503, גרסה 0"
 
 # ===== A1, A2, A8: בקשה ראשונה של המפתח =====
 login dev; test "$code" = 200 || fail "A1: me של המפתח ($code)"
-test "$(sql 'PRAGMA user_version')" = 2 || fail "A1: user_version (01 → 1, 03 → 2)"
+test "$(sql 'PRAGMA user_version')" = 3 || fail "A1: user_version (01 → 1, 03 → 2, 04 → 3)"
+test "$(sql "SELECT COUNT(*) FROM sqlite_master WHERE name='field_uploads'")" = 1 || fail "A1: field_uploads (v3)"
 sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases1"
 cmp -s "$tmp/cases0" "$tmp/cases1" || fail "A1: התיקים השתנו (id/body)"
 test "$(sql 'SELECT COUNT(*) FROM funerals WHERE org_id = 1')" = 22 || fail "A1: org_id=1 לכל 22"
 sql "SELECT * FROM audit ORDER BY id" > "$tmp/audit1"
 cmp -s "$tmp/audit0" "$tmp/audit1" || fail "A1: audit השתנה"
-ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=2 (סכמה עדכנית)"
+ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=3 (סכמה עדכנית)"
 bk=( "$D"/backup/funerals-*-v0.sqlite )
 test "${#bk[@]}" = 1 && test -f "${bk[0]}" || fail "A2: אין גיבוי"
 test "$(stat -c %a "${bk[0]}")" = 600 || fail "A2: הגיבוי לא 0600"
@@ -363,16 +372,70 @@ for m in 2026-10 2026-09; do
 done
 ok "B7 — 22 התיקים הקיימים (ועוד 22 ישנים) נפתחים; בדיקות בלי מקור = מייבוא ישן"
 
+# ===== פרוסה 04 — עובד שטח (HTTP) =====
+TODAY="$(php -r 'echo (new DateTime("now", new DateTimeZone("Asia/Jerusalem")))->format("Y-m-d");')"
+TOMOR="$(php -r 'echo (new DateTime("tomorrow", new DateTimeZone("Asia/Jerusalem")))->format("Y-m-d");')"
+LATER="$(php -r 'echo (new DateTime("+3 days", new DateTimeZone("Asia/Jerusalem")))->format("Y-m-d");')"
+for x in "שטח היום|$TODAY|15:00" "שטח בוקר|$TODAY|08:00" "שטח מחר|$TOMOR|" "שטח בעוד שלושה|$LATER|10:00"; do
+  IFS='|' read -r n d tm <<< "$x"
+  code="$(post boss save "{\"month\":\"${d:0:7}\",\"name\":\"$n\",\"date\":\"$d\",\"time\":\"$tm\"}")"; test "$code" = 200 || fail "04: תיק $n ($code)"
+done
+code="$(get field field_today)"; test "$code" = 200 || fail "W1: field_today ($code)"
+test "$(jv 'implode(",", array_column($v["cases"], "name"))')" = "'שטח בוקר,שטח היום,שטח מחר'" || fail "W1: היום ומחר בלבד, לפי שעה: $(jv 'implode(",", array_column($v["cases"], "name"))')"
+test "$(jv 'isset($v["cases"][0]["payments"]) ? 1 : 0')" = 0 || fail "W1: תשלומים במסך השטח"
+code="$(get field field_search '&q=%D7%A0%D7%A4%D7%98%D7%A8')"; test "$code" = 200 || fail "W1: חיפוש ($code)"
+test "$(jv 'count(array_filter($v["cases"], fn($c) => substr($c["date"],0,7) === "2026-10"))')" -gt 0 || fail "W1: חיפוש מוצא תיק מחודש אחר"
+code="$(get a2 field_search '&q=%D7%A9%D7%98%D7%97')"; test "$code" = 200 && test "$(jv 'count($v["cases"] ?? [])')" = 0 || fail "W1: חיפוש לא חוצה ארגון"
+FID="$(sql "SELECT id FROM funerals WHERE name='שטח היום'")"
+code="$(get field field_case "&id=$FID")"; test "$code" = 200 || fail "04: field_case ($code)"
+test "$(jv 'implode(",", $v["needs"])')" = "'grave_photo,grave'" || fail "04: מה חסר מהשטח"
+test "$(jv 'isset($v["case"]["payments"]) ? 1 : 0')" = 0 || fail "04: field_case בלי תשלומים"
+code="$(get a2 field_case "&id=$FID")"; test "$code" = 404 || fail "04: field_case של ארגון אחר → 404 ($code)"
+code="$(get nobody field_today)"; test "$code" = 403 || fail "04: בלי ארגון → 403 ($code)"
+# W5: שם או תשלום דרך field_save → 403, ושום דבר לא נשמר
+before="$(sql "SELECT body FROM funerals WHERE id='$FID'")"
+code="$(post field field_save "{\"id\":\"$FID\",\"name\":\"שם אחר\"}")"; test "$code" = 403 || fail "W5: שם דרך field_save ($code)"
+code="$(post field field_save "{\"id\":\"$FID\",\"payments\":[{\"amount\":5}]}")"; test "$code" = 403 || fail "W5: תשלום דרך field_save ($code)"
+code="$(post field field_save "{\"id\":\"$FID\",\"notes\":\"x\",\"date\":\"2020-01-01\"}")"; test "$code" = 403 || fail "W5: תאריך דרך field_save ($code)"
+test "$(sql "SELECT body FROM funerals WHERE id='$FID'")" = "$before" || fail "W5: משהו נשמר אחרי 403"
+code="$(as "${ID[field]}"; st -b "$tmp/c-field" -H 'Content-Type: application/json' -d "{\"id\":\"$FID\",\"notes\":\"x\"}" "$base?action=field_save")"; test "$code" = 403 || fail "04: field_save בלי CSRF ($code)"
+# עדכון מהשטח: בדיקה "אומת" בידי העובד (02 §2.3), מיקום קבר והערה → via: field
+code="$(post field field_save "{\"id\":\"$FID\",\"checks\":{\"license_document\":{\"status\":\"verified\"}},\"grave\":\"גוש 4 חלקה 2\",\"notes\":\"צולם\"}")"; test "$code" = 200 || fail "04: field_save ($code)"
+test "$(sql "SELECT json_extract(body,'\$.checks.license_document.status')||'|'||json_extract(body,'\$.checks.license_document.via')||'|'||json_extract(body,'\$.grave')||'|'||json_extract(body,'\$.name') FROM funerals WHERE id='$FID'")" = 'verified|field|גוש 4 חלקה 2|שטח היום' || fail "04: field_save → verified, via field"
+test "$(sql "SELECT source||'|'||action||'|'||actor FROM events WHERE case_id='$FID' ORDER BY id DESC LIMIT 1")" = 'ui|save|x@example.com' || fail "04: field_save ב-events"
+# W7: Dropbox לא מחובר (03 עוד לא בקוד, או מנותק) → הודעה ברורה, לא שגיאה שקטה
+printf '\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9' > "$tmp/p.jpg"
+up(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -H "X-CSRF-Token: ${CSRF[$1]:-}" -F "case_id=$2" -F "upload_id=$3" -F "kind=$4" -F "file=@$5" "$base?action=field_upload"; }
+# (ארגון 1 לא מחובר ל-Dropbox בבדיקות האלה — גם אחרי פרוסה 03)
+code="$(up field "$FID" up_w7_00000000000000 grave_photo "$tmp/p.jpg")"
+  test "$code" = 409 && test "$(jv '$v["error"]')" = "'Dropbox של הארגון לא מחובר — פנה למנהל'" && test "$(jv '$v["code"]')" = "'dropbox_not_connected'" || fail "W7: Dropbox לא מחובר ($code)"
+  test "$(sql "SELECT status FROM field_uploads WHERE upload_id='up_w7_00000000000000'")" = failed || fail "W7: לא נרשם כנכשל"
+printf '<svg xmlns="http://www.w3.org/2000/svg"/>' > "$tmp/x.svg"
+code="$(up field "$FID" up_svg_0000000000000 other "$tmp/x.svg")"; test "$code" = 415 || fail "04: SVG → 415 ($code)"
+cp "$tmp/p.jpg" "$tmp/x.html"; code="$(up field "$FID" up_html_000000000000 other "$tmp/x.html")"; test "$code" = 415 || fail "ביקורת 7: JPEG בשם .html → 415 ($code)"
+printf '%%PDF-1.4\n%%%%EOF\n' > "$tmp/r.pdf"; code="$(up field "$FID" up_pdfg_000000000000 grave_photo "$tmp/r.pdf")"; test "$code" = 415 || fail "ביקורת 7: PDF כצילום קבר → 415 ($code)"
+code="$(up field "$FID" up_pdfo_000000000000 license "$tmp/r.pdf")"; test "$code" = 409 || fail "ביקורת 7: PDF כרישיון — עובר את הבדיקה (409 לא מחובר) ($code)"
+code="$(up a2 "$FID" up_a2_00000000000000 other "$tmp/p.jpg")"; test "$code" = 404 || fail "04: העלאה לתיק של ארגון אחר → 404 ($code)"
+code="$(up field "$FID" bad other "$tmp/p.jpg")"; test "$code" = 400 || fail "04: מזהה העלאה לא תקין ($code)"
+code="$(get field field_upload)"; test "$code" = 405 || fail "04: GET field_upload ($code)"
+ok "W1, W5, W7 (HTTP) — היום ומחר, חיפוש, עדכון via field, שם/תשלום → 403, Dropbox מנותק → הודעה ברורה"
+
 # ===== יציאה: עם CSRF בלבד =====
 code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
 ! grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
-echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7"
+echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7; פרוסה 04 — W1, W5, W7"
 
 # ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
-kill "$pid" >/dev/null 2>&1 || true; pid=0
+if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; pid=0; fi
 bash "$APP/tests/ext.sh"
 
 # ===== פרוסה 03 — Dropbox מול Dropbox מדומה (שרתים משלה, מסד ריק) =====
 wipe
 php "$APP/tests/dropbox-test.php" || fail "פרוסה 03 — Dropbox"
+
+# ===== פרוסה 04 — העלאה מהשטח (מזהה חד-פעמי, שיוך לבדיקה) מול העלאה מדומה, מסד נקי =====
+wipe
+php "$APP/tests/field.test.php" || fail "פרוסה 04 — field.test.php"
+wipe
+php "$APP/tests/field-dropbox.test.php" || fail "פרוסה 04 — מול Dropbox מדומה"
