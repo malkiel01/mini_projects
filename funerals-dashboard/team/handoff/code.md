@@ -93,3 +93,20 @@
   בבדיקות התקינות. ההחלטה אצל הבקרה/הבעלים. שורת ה-CRONS — הבקרה. הבדיקה של 05 (`tests/ext-dbx.php`) מדלגת עכשיו — 05 רשמה להריץ מול המדומה.
 - **בדיקות:** שרתי `php -S` עם `-d opcache.jit=disable`, וסינון `in Unknown on line 0`. השער המדומה — זהות אחת לשרת; בקשות
   מקבילות רק בשני sessions של אותו משתמש (PHP נועל session).
+
+## פרוסה 04 — עובד שטח בטלפון (PR #1853, מוזג — 2f3786d, פריסה 1879 success)
+
+- **הקבצים:** `lib/field.php` (`field_today/search/case/save/upload` — החיבור ב-`api.php` שתי שורות), `assets/js/field-core.js` (בלי DOM:
+  הקטנה, GPS, התור, `idbStore`, `sendItem`, `backgroundSync` — נבדק ב-node), `assets/js/field.js` (המסך), `assets/css/field.css`, `sw.js`.
+  החיבור ל-`app.js` — האירוע `fd:me` בלבד (נורה גם בהחלפת ארגון — התור נבנה מחדש לפיו).
+- **הכניסה:** ברירת מחדל לתפקיד `field`; לכל אחד אחר `index.html#/field` (ותיק: `#/field/<id>`).
+- **עדכון מהשטח:** `fieldSave()` — רק `TRACK_FIELDS`, שדה אחר בקלט → 403; נשמר ב-`formSaveCase(..., 'field', ...)`.
+- **העלאה:** `fieldUpload()` — מזהה חד-פעמי ב-`field_uploads` (**מיגרציה v3**; הבאה — v4), ואותו `upload_id` גם ל-`dropboxUploadToCase()` של 03.
+  אחרי ההעלאה התיק **נקרא מחדש** בתוך `BEGIN IMMEDIATE` ומשתנה רק `checks[<הבדיקה של הסוג>]` (`FIELD_KINDS`). Dropbox לא מוכן → 409
+  `dropbox_not_connected` ("Dropbox של הארגון לא מחובר — פנה למנהל"), והקובץ נשאר בתור. סוג הקובץ — `dbxAllowedUpload()` של 03; צילום קבר — תמונה בלבד.
+- **התור במכשיר:** IndexedDB `fd_field` (`queue`, `meta`). `sw.js` — **רק** Background Sync (בלי fetch/מטמון, `run.sh` בודק), ב-`"public"`.
+  `navigator.locks` בין לשוניות ל-SW. iOS — נשלח בפתיחה. פריט שייך למשתמש ולארגון; של משתמש אחר יורד אחרי שבוע.
+- **בדיקות:** `tests/field.test.php` (מדומה), `tests/field-dropbox.test.php` (מול המדומה של 03), `tests/field.test.js`, ו-W1/W5/W7 ב-`run.sh`.
+  בדיקת דפדפן ל-SW נעשתה ידנית (Playwright + CDP `ServiceWorker.dispatchSyncEvent`) — לא ב-CI.
+- **מלכודת ב-`run.sh`:** `kill "$pid"` כש-`pid=0` שולח SIGTERM לכל הקבוצה — רק `if [ "$pid" != 0 ]`.
+- **פתוח:** W8 (מצב טיסה בטלפון) — מטלה לבעלים. `fieldSearch` טוען את כל תיקי הארגון (בסדר ל-22; לשנות אם יגדל). אין `manifest.webmanifest`.
