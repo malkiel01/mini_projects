@@ -22,14 +22,58 @@ function reply(int $status, array $data): never {
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
+/**
+ * ההגדרות מ-data/config.php. כשהקובץ חסר — נוצר עכשיו עם ברירות מחדל (אין יותר setup.php).
+ * מפתחות: api_token_sha256 (ריק = אין אסימון), dropbox_app_key. מפתחות ישנים מהכניסה בסיסמה שהוסרה — מתעלמים מהם.
+ */
+function configPath(): string { return __DIR__ . '/data/config.php'; }
 function config(): array {
-    $path = __DIR__ . '/data/config.php';
-    if (!is_file($path)) reply(503, ['error' => 'המערכת טרם הוגדרה. יש להריץ את setup.php דרך שורת הפקודה.']);
-    $c = require $path;
-    if (!is_array($c) || empty($c['password_hash']) || empty($c['api_token_sha256'])) {
-        reply(503, ['error' => 'קובץ ההגדרות אינו תקין']);
+    $defaults = ['api_token_sha256' => '', 'dropbox_app_key' => ''];
+    $path = configPath();
+    if (!is_file($path)) {
+        writeConfig($defaults);
+        return $defaults;
     }
-    return $c;
+    $c = require $path;
+    if (!is_array($c)) reply(503, ['error' => 'קובץ ההגדרות אינו תקין']);
+    return $c + $defaults;
+}
+/** כתיבה אטומית של data/config.php בהרשאות 0600 (קובץ זמני + rename). */
+function writeConfig(array $cfg): void {
+    $path = configPath();
+    $dir = dirname($path);
+    if (!is_dir($dir) && !@mkdir($dir, 0700, true)) reply(503, ['error' => 'לא ניתן ליצור את תיקיית הנתונים']);
+    $old = umask(0077);
+    try {
+        $tmp = @tempnam($dir, '.config-');
+        if ($tmp === false || @file_put_contents($tmp, "<?php\nreturn " . var_export($cfg, true) . ";\n", LOCK_EX) === false) {
+            if (is_string($tmp)) @unlink($tmp);
+            reply(503, ['error' => 'לא ניתן לשמור את קובץ ההגדרות. בדוק הרשאות כתיבה ל-data/']);
+        }
+        @chmod($tmp, 0600);
+        if (!@rename($tmp, $path)) { @unlink($tmp); reply(503, ['error' => 'לא ניתן לשמור את קובץ ההגדרות']); }
+    } finally {
+        umask($old);
+    }
+    @chmod($path, 0600);
+    if (function_exists('opcache_invalidate')) @opcache_invalidate($path, true);   // שאסימון שבוטל לא ימשיך לעבוד מהמטמון
+}
+/**
+ * הזהות מהשער של הפלטפורמה — המקור היחיד לזהות המשתמש באפליקציה.
+ * $_SERVER['PLATFORM_USER'] (JSON) נכתב ע"י השער; המפתח אינו HTTP_*, ולכן אי אפשר לזייף אותו מהבקשה.
+ * מחזיר null אם אין זהות, אם היא לא תקינה, או אם granted אינו true בדיוק.
+ */
+function platformUser(): ?array {
+    $raw = $_SERVER['PLATFORM_USER'] ?? null;
+    if (!is_string($raw) || $raw === '') return null;
+    $id = json_decode($raw, true);
+    if (!is_array($id) || !is_scalar($id['sub'] ?? null) || !preg_match('/^[0-9]{1,12}$/D', (string)$id['sub'])) return null;
+    if (($id['granted'] ?? null) !== true) return null;
+    $email = is_string($id['email'] ?? null) && mb_strlen($id['email']) <= 200 && filter_var($id['email'], FILTER_VALIDATE_EMAIL)
+        ? mb_strtolower($id['email']) : '';
+    $name = mb_substr(trim((string)preg_replace('/\s+/u', ' ', is_string($id['name'] ?? null) ? $id['name'] : '')), 0, 120);
+    return ['sub' => (string)$id['sub'], 'name' => $name, 'email' => $email,
+        'actor' => $email !== '' ? $email : ($name !== '' ? $name : 'platform:' . $id['sub'])];
 }
 function db(): PDO {
     static $pdo;
@@ -139,12 +183,13 @@ function store(PDO $pdo, array $v, string $actor, string $action): void {
     $st->execute([$v['id'], gmdate('c'), $actor, $action]);
 }
 
-/** אסימון ה-API מהכותרת Authorization: Bearer — נבדק מול ה-hash שב-config. */
+/** אסימון ה-API מהכותרת Authorization: Bearer — נבדק מול ה-hash שב-config. אין hash (טרם נוצר) → תמיד false. */
 function bearerOk(array $cfg): bool {
     $bearer = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? '');
     if ($bearer === '' && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) $bearer = (string)$_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
-    return str_starts_with($bearer, 'Bearer ') && strlen($bearer) > 7
-        && hash_equals((string)$cfg['api_token_sha256'], hash('sha256', substr($bearer, 7)));
+    $hash = (string)($cfg['api_token_sha256'] ?? '');
+    return $hash !== '' && str_starts_with($bearer, 'Bearer ') && strlen($bearer) > 7
+        && hash_equals($hash, hash('sha256', substr($bearer, 7)));
 }
 function listMonth(PDO $pdo, string $action, string $method): never {
     if ($method !== 'GET') reply(405, ['error'=>'שיטה לא מורשית']);
