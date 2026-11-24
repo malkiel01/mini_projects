@@ -23,9 +23,9 @@ $transcript = '';      // כל התשובות — לחיפוש סודות (C9)
 function cleanup(): void {
     global $procs, $tmp, $data;
     foreach ($procs as $p) { $s = proc_get_status($p); if ($s['running']) proc_terminate($p); proc_close($p); }
-    // data/ התחילה ריקה (נבדק למעלה) — מנקים כל מה שהבדיקה יצרה בה, חוץ מ-.htaccess
+    // data/ התחילה ריקה (נבדק למעלה) — מנקים כל מה שהבדיקה יצרה בה, חוץ מ-.htaccess ו-.gitignore
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($data, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
-    foreach ($it as $f) { if ($f->getFilename() === '.htaccess' && $f->getPath() === $data) continue; $f->isDir() ? @rmdir((string)$f) : @unlink((string)$f); }
+    foreach ($it as $f) { if (in_array($f->getFilename(), ['.htaccess', '.gitignore'], true) && $f->getPath() === $data) continue; $f->isDir() ? @rmdir((string)$f) : @unlink((string)$f); }
     if (!getenv('KEEP')) exec('rm -rf ' . escapeshellarg($tmp)); else fwrite(STDERR, "tmp: $tmp\n");
 }
 register_shutdown_function('cleanup');

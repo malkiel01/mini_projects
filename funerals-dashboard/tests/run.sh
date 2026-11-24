@@ -8,7 +8,7 @@ APP=funerals-dashboard
 D="$APP/data"
 tmp="$(mktemp -d)"
 pid=0
-wipe(){ find "$D" -mindepth 1 ! -name .htaccess -exec rm -rf {} + 2>/dev/null || true; }
+wipe(){ find "$D" -mindepth 1 ! -name .htaccess ! -name .gitignore -exec rm -rf {} + 2>/dev/null || true; }
 cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; wipe; rm -rf "$tmp"; }
 trap cleanup EXIT
 fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונה:"; head -c 600 "$tmp/out"; echo; }; exit 1; }
