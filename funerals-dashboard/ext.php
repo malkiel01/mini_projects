@@ -14,16 +14,16 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = trim((string)($_SERVER['PATH_INFO'] ?? ''), '/');
 if ($action === '') $action = (string)($_GET['action'] ?? '');
 $pdo = db();   // מריץ את המיגרציות של 01
-$logUser = null;
 // יומן הבקשות של 01 — פעולה, סטטוס, זמן ומשתמש. אף פעם לא האסימון או הכותרת.
-register_shutdown_function(static function () use ($method, &$action, $t0, &$logUser): void {
+// 401 ו-429 של הצפה לא נרשמים (ext_nolog). logRequest מבטל טרנזקציה פתוחה לפני הרישום — כך דחייה באמצע כתיבה נרשמת.
+register_shutdown_function(static function () use ($method, &$action, $t0): void {
+    if (!empty($GLOBALS['ext_nolog'])) return;
     logRequest($method, 'ext:' . substr((string)$action, 0, 40), (int)(http_response_code() ?: 200),
-        (int)round((microtime(true) - $t0) * 1000), $logUser, (string)($GLOBALS['fd_err'] ?? ''));
+        (int)round((microtime(true) - $t0) * 1000), $GLOBALS['fd_ctx']['user']['id'] ?? null, (string)($GLOBALS['fd_err'] ?? ''));
 });
 
 extEnsureSchema($pdo);
 $m = extAuthenticate($pdo);
-$logUser = (int)$m['user_id'];
 $orgId = (int)$m['org_id'];
 
 $actions = extActions();
@@ -69,11 +69,15 @@ switch ($action) {
         if ($q !== '') { $where[] = "name LIKE ? ESCAPE '\\'"; $args[] = '%' . strtr($q, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%'; }
         $status = (string)($_GET['status'] ?? '');
         if ($status !== '' && !in_array($status, ['missing', 'verify', 'unchecked', 'done'], true)) reply(400, ['error' => 'status: missing | verify | unchecked | done']);
-        $st = $pdo->prepare('SELECT body FROM funerals WHERE ' . implode(' AND ', $where) . ' ORDER BY month DESC, name LIMIT 500');
+        // הסטטוס מחושב מהבדיקות (JSON), ולכן מסננים את כל תיקי הארגון שעברו את סינון ה-SQL — ורק אז חותכים
+        $st = $pdo->prepare('SELECT body FROM funerals WHERE ' . implode(' AND ', $where) . ' ORDER BY month DESC, name');
         $st->execute($args);
-        $list = array_map(static fn($r) => extSummary(json_decode($r['body'], true)), $st->fetchAll());
-        if ($status !== '') $list = array_values(array_filter($list, static fn($c) => $c['status'] === $status));
-        reply(200, ['count' => count($list), 'cases' => array_slice($list, 0, 200)]);
+        $list = [];
+        foreach ($st as $r) {
+            $c = extSummary(json_decode($r['body'], true));
+            if ($status === '' || $c['status'] === $status) $list[] = $c;
+        }
+        reply(200, ['count' => count($list), 'more' => count($list) > 200, 'cases' => array_slice($list, 0, 200)]);
 
     case 'case':
         $c = extCase($pdo, $orgId, (string)($_GET['id'] ?? ''));
@@ -111,31 +115,46 @@ switch ($action) {
         if (!$fields && !$checksIn && $note === '') reply(400, ['error' => 'אין מה לעדכן: fields, checks או note']);
         foreach ($fields as $k => $v) {
             if (!is_string($k) || !isset(EXT_FIELDS[$k])) reply(400, ['error' => 'שדה לא מוכר: ' . $k . '. השדות: ' . implode(', ', array_keys(EXT_FIELDS))]);
+            $okType = $k === 'payments' ? is_array($v) && array_is_list($v) : (is_string($v) || is_int($v) || is_float($v));
+            if (!$okType) reply(400, ['error' => 'שדה ' . $k . ': ' . ($k === 'payments' ? 'נדרשת רשימה' : 'נדרש טקסט') . '. שום דבר לא נשמר.']);
             if (!extCan(EXT_FIELDS[$k])) reply(403, ['error' => 'אין לך הרשאה לשנות ' . $k . ' (התפקיד שלך: ' . ROLES[$m['role']] . '). שום דבר לא נשמר.']);
         }
         $raw = $old;
+        $closed = [];
         foreach ($fields as $k => $v) $raw[$k] = $v;
         foreach ($checksIn as $k => $v) {
             if (!is_string($k) || !isset(EXT_CHECKS[$k])) reply(400, ['error' => 'בדיקה לא מוכרת: ' . $k . '. הרשימה ב-schema.']);
             if (!is_array($v)) reply(400, ['error' => 'בדיקה ' . $k . ': נדרש אובייקט {status, value, note}']);
+            foreach (['status', 'value', 'note'] as $f) {
+                if (array_key_exists($f, $v) && !is_string($v[$f]) && !is_int($v[$f]) && !is_float($v[$f])) reply(400, ['error' => 'בדיקה ' . $k . ': ' . $f . ' — נדרש טקסט. שום דבר לא נשמר.']);
+            }
             $prev = $old['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => '', 'source' => ''];
             $status = cleanText($v['status'] ?? ($prev['status'] ?? 'unknown'), 30);
             if (!isset(EXT_STATUSES[$status])) reply(400, ['error' => 'סטטוס לא מוכר: ' . $status]);
+            // בדיקה שאדם כבר סגר (סטטוס סופי) — הצ'אט לא משנה אותה בכלל, גם לא ל"חסר"/"טרם נבדק"; ההצעה נכתבת בהערות התיק
+            if (!finalAllowed('api') && in_array($prev['status'] ?? '', FORM_FINAL_STATUSES, true)) {
+                $val = array_key_exists('value', $v) ? cleanText($v['value'], 500) : (string)($prev['value'] ?? '');
+                if ($status !== $prev['status'] || $val !== (string)($prev['value'] ?? '')) {
+                    $closed[$k] = 'הצעה ל"' . EXT_CHECKS[$k] . '": ' . EXT_STATUSES[$status] . ($val !== '' ? ' — ' . $val : '');
+                }
+                continue;
+            }
             $raw['checks'][$k] = ['status' => $status,
                 'value' => array_key_exists('value', $v) ? cleanText($v['value'], 500) : (string)($prev['value'] ?? ''),
                 'note' => array_key_exists('note', $v) ? cleanText($v['note'], 800) : (string)($prev['note'] ?? ''),
                 'source' => (string)($prev['source'] ?? '')];
         }
         $line = null;
+        if ($closed) $note = trim(implode('; ', $closed) . ($note !== '' ? '. ' . $note : ''));
         if ($note !== '') {
             $line = '[' . date('d.m.Y') . '] ' . extActor($m) . ': ' . $note;
             $raw['notes'] = trim(((string)($raw['notes'] ?? '')) . "\n" . $line);
             if (mb_strlen($raw['notes']) > 1500) reply(400, ['error' => 'ההערות של התיק מלאות (1500 תווים). לקצר במסך התיק.']);
         }
-        $pdo->exec('BEGIN IMMEDIATE');
+        $pdo->beginTransaction();   // של PDO — כדי ש-logRequest יבטל אותה אם הכתיבה נדחתה
         $saved = formSaveCase($pdo, $raw, 'api', ctx()['actor'], $orgId,
             fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
-        $pdo->exec('COMMIT');
+        $pdo->commit();
         $out = ['fields' => [], 'checks' => [], 'note' => $line];
         $oldN = normalize($old, $orgId);   // אותם טיפוסים (100 מול 100.0) — כדי לא לדווח על שדה שלא השתנה
         foreach (array_keys(EXT_FIELDS) as $f) {
@@ -146,14 +165,16 @@ switch ($action) {
             $c = $saved['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => ''];
             $out['checks'][$k] = ['name' => EXT_CHECKS[$k], 'status' => $c['status'], 'status_name' => EXT_STATUSES[$c['status']] ?? '',
                 'value' => $c['value'] ?? '', 'note' => $c['note'] ?? '', 'by' => $c['by'] ?? null, 'via' => $c['via'] ?? null];
-            $asked = $raw['checks'][$k]['status'];
-            if (!in_array($asked, FORM_FINAL_STATUSES, true) || finalAllowed('api')) continue;
-            $closed = in_array($old['checks'][$k]['status'] ?? '', FORM_FINAL_STATUSES, true);
-            $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $asked, 'saved' => $c['status'],
-                'reason' => $closed ? 'אדם כבר סגר את הבדיקה הזו — היא לא נפתחת מחדש; ההצעה נכתבה בהערה.'
-                    : 'רק אדם במשרד מאשר סופית. נשמר "לאימות".'];
+            $asked = (string)($checksIn[$k]['status'] ?? $c['status']);
+            if (isset($closed[$k])) {
+                $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $asked, 'saved' => $c['status'],
+                    'reason' => 'אדם כבר סגר את הבדיקה הזו — הצ\'אט לא משנה אותה. ההצעה נכתבה בהערות התיק.'];
+            } elseif (in_array($asked, FORM_FINAL_STATUSES, true) && !finalAllowed('api')) {
+                $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $asked, 'saved' => $c['status'],
+                    'reason' => 'רק אדם במשרד מאשר סופית. נשמר "לאימות".'];
+            }
         }
-        $msg = $converted ? 'נשמר. ' . count($converted) . ' בדיקות לא סומנו "מאומת" — רק אדם במשרד מאשר (נשמרו "לאימות" או כהצעה בהערה).' : 'נשמר.';
+        $msg = $converted ? 'נשמר. ' . count($converted) . ' בדיקות לא נשמרו כפי שביקשת: "מאומת" נשמר "לאימות", ובדיקה שאדם כבר סגר לא משתנה — רק אדם במשרד מאשר (פירוט ב-converted).' : 'נשמר.';
         reply(200, ['ok' => true, 'message' => $msg, 'saved' => $out, 'converted' => $converted, 'summary' => extSummary($saved)]);
 
     case 'case_create':
@@ -165,10 +186,10 @@ switch ($action) {
         $raw = ['id' => 'fd_' . bin2hex(random_bytes(12)), 'month' => $month, 'name' => $p['name'] ?? '', 'date' => $date,
             'time' => $p['time'] ?? '', 'origin' => $p['origin'] ?? '', 'team' => $p['team'] ?? '', 'grave' => $p['grave'] ?? '',
             'notes' => $note === '' ? '' : '[' . date('d.m.Y') . '] ' . extActor($m) . ': ' . $note];
-        $pdo->exec('BEGIN IMMEDIATE');
+        $pdo->beginTransaction();   // של PDO — כדי ש-logRequest יבטל אותה אם הכתיבה נדחתה
         $saved = formSaveCase($pdo, $raw, 'api', ctx()['actor'], $orgId,
             fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
-        $pdo->exec('COMMIT');
+        $pdo->commit();
         reply(200, ['ok' => true, 'message' => 'התיק נפתח.', 'case' => $saved, 'summary' => extSummary($saved)]);
 }
 reply(404, ['error' => 'פעולה לא מוכרת']);

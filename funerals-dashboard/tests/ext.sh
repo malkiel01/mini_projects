@@ -54,6 +54,12 @@ as "$ADMIN"; st -b "$tmp/ca" "$H/tokens.php?action=me" >/dev/null
 test "$(j tokens.0.state)" = active || fail "רשימת אסימונים"
 code="$(st -b "$tmp/ca" -H "X-CSRF-Token: $(j csrf)" -H 'Content-Type: application/json' -d '{"name":"x","days":7}' "$H/tokens.php?action=create")"; test "$code" = 400 || fail "תוקף לא חוקי ($code)"
 F="$(mk "$FIELD" "$tmp/cf" 'שטח' 30)"
+# ביקורת 10: בלי תוקף → 90 יום
+as "$ADMIN"; st -b "$tmp/ca" "$H/tokens.php?action=me" >/dev/null
+code="$(st -b "$tmp/ca" -H "X-CSRF-Token: $(j csrf)" -H 'Content-Type: application/json' -d '{"name":"ברירת מחדל"}' "$H/tokens.php?action=create")"; test "$code" = 200 || fail "בלי days ($code)"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); $d=(strtotime($v["expires_at"])-time())/86400; exit(abs($d-90)<1?0:1);' "$tmp/out" || fail "ביקורת 10: תוקף ברירת מחדל אינו 90"
+tid="$(j id)"; st -b "$tmp/ca" "$H/tokens.php?action=me" >/dev/null; c2="$(j csrf)"
+code="$(st -b "$tmp/ca" -H "X-CSRF-Token: $c2" -H 'Content-Type: application/json' -d "{\"id\":$tid}" "$H/tokens.php?action=revoke")"; test "$code" = 200 || fail "ביטול אסימון ברירת המחדל ($code)"
 B="$(mk "$ORG2" "$tmp/cb" 'ארגון 2' 365)"
 [ -n "$F" ] && [ -n "$B" ] || fail "יצירת אסימונים"
 as "$NOBODY"; code="$(st "$H/tokens.php?action=me")"; test "$code" = 403 || fail "בלי ארגון במסך החיבור ($code)"
@@ -118,7 +124,22 @@ fx body fd_case_org1_cohen | php -r '$b=json_decode(stream_get_contents(STDIN),t
 fx close fd_case_org1_cohen2 license_number 111
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen2","checks":{"license_number":{"status":"verified","value":"222"}}}' "$H/ext.php/case_update")"; test "$code" = 200 || fail "סגור בידי אדם ($code)"
 test "$(j saved.checks.license_number.status)" = verified && test "$(j saved.checks.license_number.value)" = 111 && test "$(j saved.checks.license_number.by)" = "מזכירה" || fail "הצ'אט פתח מחדש בדיקה שאדם סגר"
-j saved.checks.license_number.note | grep -q 222 && j converted.0.reason | grep -q 'אדם כבר סגר' || fail "ההצעה לא בהערה / התשובה לא אומרת"
+j saved.note | grep -q 222 && j converted.0.reason | grep -q 'אדם כבר סגר' || fail "ההצעה לא בהערות / התשובה לא אומרת"
+# ביקורת 3: גם "חסר" / "טרם נבדק" לא משנים בדיקה סגורה
+for stt in missing unknown; do
+  code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "{\"id\":\"fd_case_org1_cohen2\",\"checks\":{\"license_number\":{\"status\":\"$stt\",\"value\":\"\"}}}" "$H/ext.php/case_update")"; test "$code" = 200 || fail "סגור + $stt ($code)"
+  fx body fd_case_org1_cohen2 | php -r '$c=json_decode(stream_get_contents(STDIN),true)["checks"]["license_number"]; if($c["status"]!=="verified"||$c["value"]!=="111"||$c["by"]!=="מזכירה") exit(1);' || fail "ביקורת 3: $stt שינה בדיקה שאדם סגר"
+done
+# ביקורת 4: טיפוס שגוי → 400, ושום דבר לא נשמר
+before2="$(fx body fd_case_org1_cohen2)"
+for bad in '{"fields":{"origin":["x"]}}' '{"fields":{"payments":{"amount":1}}}' '{"checks":{"hall_service":{"status":"missing","value":{"a":1}}}}' '{"fields":{"team":null}}'; do
+  code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "{\"id\":\"fd_case_org1_cohen2\",${bad:1}" "$H/ext.php/case_update")"; test "$code" = 400 || fail "ביקורת 4: $bad ($code)"
+done
+test "$(fx body fd_case_org1_cohen2)" = "$before2" || fail "ביקורת 4: נשמר משהו אחרי 400"
+# ביקורת 7: דחייה בתוך הכתיבה (תאריך לא חוקי, אחרי פתיחת הטרנזקציה) — נרשמת ביומן הבקשות
+code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen2","fields":{"date":"2026-13-45"}}' "$H/ext.php/case_update")"; test "$code" = 400 || fail "תאריך לא חוקי ($code)"
+test "$(fx sql "SELECT COUNT(*) n FROM req_log WHERE action='ext:case_update' AND status=400 AND error LIKE '%תאריך%'" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" -ge 1 || fail "ביקורת 7: דחייה בתוך הכתיבה לא נרשמה"
+test "$(fx body fd_case_org1_cohen2)" = "$before2" || fail "ביקורת 7: נשמר משהו אחרי 400"
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen","fields":{"payments":[{"amount":250,"purpose":"קבר"}]}}' "$H/ext.php/case_update")"; test "$code" = 200 || fail "תשלום מנהל ($code)"
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen","checks":{"nope":{"status":"missing"}}}' "$H/ext.php/case_update")"; test "$code" = 400 || fail "בדיקה לא מוכרת ($code)"
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"name":"אהרון חדש","date":"2026-11-02","note":"נפתח מהצאט"}' "$H/ext.php/case_create")"; test "$code" = 200 || fail "case_create ($code)"
@@ -127,7 +148,7 @@ test "$(fx sql "SELECT org_id FROM funerals WHERE id='$newid'" | php -r 'echo js
 code="$(st -H "Authorization: Bearer $B" "$H/ext.php/case?id=$newid")"; test "$code" = 404 || fail "תיק חדש דולף לארגון 2 ($code)"
 
 # E9: כל כתיבה → events עם source api ושם המשתמש
-fx sql "SELECT source, actor, action, case_id FROM events WHERE source='api'" | php -r '$r=json_decode(stream_get_contents(STDIN),true); if(count($r)!==5) {fwrite(STDERR,json_encode($r,JSON_UNESCAPED_UNICODE)); exit(1);} foreach($r as $e) if($e["source"]!=="api"||!str_contains($e["actor"],"(צ\x27אט)")) exit(1);' || fail "E9 events"
+fx sql "SELECT source, actor, action, case_id FROM events WHERE source='api'" | php -r '$r=json_decode(stream_get_contents(STDIN),true); if(count($r)<5) {fwrite(STDERR,json_encode($r,JSON_UNESCAPED_UNICODE)); exit(1);} foreach($r as $e) if($e["source"]!=="api"||!str_contains($e["actor"],"(צ\x27אט)")) exit(1);' || fail "E9 events"
 fx sql "SELECT actor FROM events WHERE source='api' AND actor LIKE 'עובד שטח%'" | grep -q 'עובד שטח' || fail "E9 שם עובד השטח"
 
 # E5: משתמש שהושבת / הורד בתפקיד — מיד
@@ -169,5 +190,11 @@ code="$(st -H "Authorization: Bearer $B" "$H/ext.php/whoami")"; test "$code" = 4
 
 # openapi.json ציבורי (קובץ סטטי)
 code="$(st "$H/openapi.json")"; test "$code" = 200 && test "$(j openapi)" = 3.1.0 || fail "openapi.json לא מוגש"
+# ביקורת 6: 401 לא נרשם ביומן; 20 כושלים בדקה מאותה כתובת → 429 (גם לאסימון אחר), בלי לבדוק אסימון
+test "$(fx sql "SELECT COUNT(*) n FROM req_log WHERE action LIKE 'ext:%' AND status=401" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" = 0 || fail "ביקורת 6: 401 נרשם ב-req_log"
+codes=""; for i in $(seq 1 25); do codes="$codes $(curl -sS -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer fdx_000000000000000000000000000000000000000000000000' "$H/ext.php/whoami")"; done
+echo "$codes" | grep -q 429 || fail "ביקורת 6: אין הגבלה לפי IP ($codes)"
+test "$(echo $codes | tr ' ' '\n' | grep -c 401)" -le 20 || fail "ביקורת 6: יותר מ-20 ניסיונות נבדקו"
+test "$(fx sql "SELECT COUNT(*) n FROM req_log WHERE action LIKE 'ext:%' AND status IN (401,429) AND user_id IS NULL" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" = 0 || fail "ביקורת 6: ההצפה נרשמה ביומן"
 ! grep -qE "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" || { grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
 echo "PASS (05): E1–E10 — Bearer בלבד (בלי/שגוי/פג/בוטל/עוגייה → 401), הפרדת ארגונים (404), הרשאות שטח (403, שום דבר לא נשמר), מאומת → לאימות, השבתה ותפקיד מיד, hash בלבד ולא ביומן, 429 אחרי 60, OpenAPI 3.1 = טבלת הקוד, events עם api ושם, public"

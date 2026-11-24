@@ -18,6 +18,8 @@ if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) {
 const EXT_TOKEN_PREFIX = 'fdx_';
 const EXT_MAX_ACTIVE_TOKENS = 10;
 const EXT_RATE_PER_MINUTE = 60;
+/** ניסיונות כושלים (401) לדקה מאותה כתובת IP — מעבר → 429, בלי לבדוק את האסימון. */
+const EXT_FAILS_PER_MINUTE = 20;
 const EXT_TTL_DAYS = [30, 90, 365];
 const EXT_PUBLIC_BASE = 'https://mbe-plus.com/mini_projects/funerals-dashboard';
 
@@ -114,6 +116,8 @@ function extEnsureSchema(PDO $pdo): void {
         name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, hint TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
         last_used_at TEXT, revoked_at TEXT, revoked_by INTEGER, rl_min INTEGER NOT NULL DEFAULT 0, rl_n INTEGER NOT NULL DEFAULT 0)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens(user_id)');
+    // ניסיונות כושלים לפי IP (גיבוב, לא הכתובת עצמה) — הגבלה זולה מול ניחוש אסימונים
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ext_fail (ip TEXT PRIMARY KEY, minute INTEGER NOT NULL, n INTEGER NOT NULL)');
     $ok = true;
 }
 /** החבר (משתמש × ארגון × תפקיד), ברגע הבקשה: users.active=1 וגם members.active=1 (השבתה היא לארגון). */
@@ -155,8 +159,23 @@ function extBearer(): string {
  * מעדכן "שימוש אחרון" וסופר בקשות לדקה (61 → 429).
  */
 function extAuthenticate(PDO $pdo): array {
+    $minute = intdiv(time(), 60);
+    $ip = hash('sha256', 'fdx-ip|' . (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+    $st = $pdo->prepare('SELECT n FROM ext_fail WHERE ip=? AND minute=?');
+    $st->execute([$ip, $minute]);
+    if ((int)$st->fetchColumn() >= EXT_FAILS_PER_MINUTE) {
+        $GLOBALS['ext_nolog'] = true;   // לא ממלאים את יומן הבקשות בהצפה
+        header('Retry-After: ' . (60 - time() % 60));
+        reply(429, ['error' => 'יותר מדי ניסיונות עם אסימון שגוי. לחכות דקה.']);
+    }
+    $deny = static function () use ($pdo, $ip, $minute): never {
+        $pdo->prepare('INSERT INTO ext_fail(ip, minute, n) VALUES(?,?,1) ON CONFLICT(ip) DO UPDATE SET n = CASE WHEN minute=excluded.minute THEN n+1 ELSE 1 END, minute=excluded.minute')
+            ->execute([$ip, $minute]);
+        if (random_int(1, 50) === 1) $pdo->prepare('DELETE FROM ext_fail WHERE minute < ?')->execute([$minute - 1]);
+        $GLOBALS['ext_nolog'] = true;   // 401 לא נרשם ב-req_log
+        reply(401, ['error' => 'נדרש אסימון תקין (Authorization: Bearer fdx_…). אסימון שבוטל או שפג — יוצרים חדש במסך "חיבור ל-ChatGPT".']);
+    };
     $raw = extBearer();
-    $deny = static fn() => reply(401, ['error' => 'נדרש אסימון תקין (Authorization: Bearer fdx_…). אסימון שבוטל או שפג — יוצרים חדש במסך "חיבור ל-ChatGPT".']);
     if ($raw === '') $deny();
     $st = $pdo->prepare('SELECT * FROM tokens WHERE hash=?');
     $st->execute([hash('sha256', $raw)]);
@@ -165,7 +184,6 @@ function extAuthenticate(PDO $pdo): array {
     $m = extMember($pdo, (int)$t['user_id'], (int)$t['org_id']);
     if ($m === null) $deny();
     extSetContext($m);
-    $minute = intdiv(time(), 60);
     $pdo->prepare('UPDATE tokens SET rl_n = CASE WHEN rl_min=? THEN rl_n+1 ELSE 1 END, rl_min=?, last_used_at=? WHERE id=?')
         ->execute([$minute, $minute, gmdate('c'), (int)$t['id']]);
     $n = (int)$pdo->query('SELECT rl_n FROM tokens WHERE id=' . (int)$t['id'])->fetchColumn();
