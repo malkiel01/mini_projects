@@ -40,6 +40,17 @@ const AI_WRITE_TOOLS = ['case_update', 'case_create'];
 /** פעולות של ext.php שאינן כלי לצ'אט (הפרומפט ל-GPT — לא רלוונטי כאן). */
 const AI_SKIP_TOOLS = ['prompt'];
 
+/** קובץ לספק (06 §2.2.2): תמונה או PDF (גם סרוק), עד 5MB לקובץ, 10 קבצים לשיחה — ועד 20MB לשיחה, כדי שהבקשה לספק לא תעבור 32MB. */
+const AI_FILE_MAX = 5 * 1024 * 1024;
+const AI_FILES_PER_THREAD = 10;
+const AI_FILES_BYTES_PER_THREAD = 20 * 1024 * 1024;
+const AI_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+/** סוגי מסמך לשיוך קובץ (06 §2.3) — הבדיקות של 05 שהן מסמך, ועוד "אחר". השם = השם של הבדיקה. */
+const AI_DOC_CHECKS = ['license_document', 'identity_document', 'payment_evidence', 'hall_service', 'grave_purchase', 'partner_identity', 'national_insurance'];
+/** קובץ חדש = נוסף ב-7 הימים האחרונים. הצעה אוטומטית — לכל היותר 2 קבצים בכל פתיחת תיק. */
+const AI_KIND_NEW_DAYS = 7;
+const AI_KIND_PER_OPEN = 2;
+
 final class AiError extends RuntimeException {}
 
 function aiSchema(PDO $pdo): void {
@@ -57,6 +68,8 @@ function aiSchema(PDO $pdo): void {
         user_id INTEGER NOT NULL, case_id TEXT, tool TEXT NOT NULL, input TEXT NOT NULL, card TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'pending\',
         result TEXT, created_at TEXT NOT NULL, decided_at TEXT)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_proposals_thread ON ai_proposals(thread_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_file_kinds (org_id INTEGER NOT NULL, file_id INTEGER NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT \'\',
+        status TEXT NOT NULL DEFAULT \'pending\', created_at TEXT NOT NULL, decided_at TEXT, decided_by INTEGER, PRIMARY KEY (org_id, file_id))');
     $ok = true;
 }
 
@@ -204,6 +217,10 @@ function aiToolDefs(): array {
         if (($schema['required'] ?? null) === []) unset($schema['required']);
         $tools[] = ['name' => $name, 'description' => $desc, 'input_schema' => $schema];
     }
+    if (aiFilesReady()) $tools[] = ['name' => 'file_view',
+        'description' => 'הקובץ עצמו (תמונה, או PDF — גם סרוק) כדי לקרוא אותו. מזהה הקובץ — מ-files או case. עד 5MB, ועד '
+            . AI_FILES_PER_THREAD . ' קבצים בשיחה / The file itself (image, or PDF — also scanned) to read it. File id from files or case.',
+        'input_schema' => ['type' => 'object', 'properties' => ['file' => ['type' => 'integer', 'description' => 'מזהה הקובץ / File id']], 'required' => ['file']]];
     return $tools;
 }
 
@@ -272,6 +289,7 @@ function aiShow(mixed $v): string {
  * מחזיר [tool_result content (string), is_error, proposal|null].
  */
 function aiRunTool(PDO $pdo, array $thread, array $settings, string $name, array $input): array {
+    if ($name === 'file_view' && aiFilesReady()) return aiFileTool($pdo, $thread, $input);
     if (!aiToolsReady() || in_array($name, AI_SKIP_TOOLS, true) || !isset(extActions()[$name])) {
         return [json_encode(['error' => 'כלי לא מוכר: ' . $name], JSON_UNESCAPED_UNICODE), true, null];
     }
@@ -298,6 +316,185 @@ function aiRunTool(PDO $pdo, array $thread, array $settings, string $name, array
 }
 function aiToolJson(array $data): string {
     return mb_strcut(json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), 0, 100000);
+}
+
+// ───────────────────────── קבצים (03) ─────────────────────────
+
+/** הקבצים מגיעים מ-03 (dropbox/actions.php). אין את הפונקציה — אין כלי קובץ ואין הצעת סוג. */
+function aiFilesReady(): bool { return function_exists('dropboxFileContent') && function_exists('dropboxCaseFiles'); }
+
+/** הודעת שגיאה של 03 (DbxError->tag) בעברית — בלי פרטים פנימיים. */
+function aiDbxMessage(Throwable $e): string {
+    $tag = $e instanceof DbxError ? $e->tag : '';
+    return match ($tag) {
+        'too_large' => 'הקובץ גדול מ-5MB — אי אפשר לשלוח אותו לקריאה.',
+        'not_connected', 'no_root' => 'Dropbox לא מחובר לארגון.',
+        'reauth' => 'צריך לחבר מחדש את Dropbox (⚙️ הגדרות ← Dropbox).',
+        default => 'לא הצלחתי לקרוא את הקובץ מ-Dropbox.',
+    };
+}
+
+/** תוכן קובץ של הארגון, כבלוק לספק (image / document). [block|null, שם, שגיאה|null]. */
+function aiFileBlock(PDO $pdo, int $orgId, int $fileId): array {
+    try {
+        $f = dropboxFileContent($pdo, $orgId, $fileId, AI_FILE_MAX);
+    } catch (DbxError $e) {
+        return [null, '', aiDbxMessage($e)];
+    } catch (FdReply $r) {
+        return [null, '', (string)($r->data['error'] ?? 'לא נמצא')];
+    }
+    if ($f === null) return [null, '', 'הקובץ לא נמצא'];
+    $mime = (string)$f['mime'];
+    $data = base64_encode((string)$f['bytes']);
+    if (in_array($mime, AI_IMAGE_MIMES, true)) return [['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $data]], (string)$f['name'], null];
+    if ($mime === 'application/pdf') return [['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => $data],
+        'title' => mb_substr((string)$f['name'], 0, 200)], (string)$f['name'], null];
+    return [null, (string)$f['name'], 'סוג הקובץ לא נתמך לקריאה (' . $mime . ') — רק תמונה או PDF.'];
+}
+
+/** כמה קבצים (ובתים) כבר נשלחו לספק בשיחה הזו — לפי ההיסטוריה עצמה. */
+function aiFilesUsed(array $thread): array {
+    $n = 0; $bytes = 0;
+    foreach (json_decode(json_encode($thread['messages'])) ?: [] as $m) {   // אחידות: אובייקטים, גם מה שנוסף בבקשה הזו
+        if ($m->role !== 'user' || !is_array($m->content)) continue;
+        foreach ($m->content as $b) {
+            if (($b->type ?? '') !== 'tool_result' || !is_array($b->content ?? null)) continue;
+            foreach ($b->content as $c) if (in_array($c->type ?? '', ['image', 'document'], true)) { $n++; $bytes += (int)(strlen((string)($c->source->data ?? '')) * 3 / 4); }
+        }
+    }
+    return [$n, $bytes];
+}
+
+/** הכלי file_view: הקובץ עצמו לספק, בהרשאה של המשתמש (case.view, קובץ של הארגון הפעיל). */
+function aiFileTool(PDO $pdo, array $thread, array $input): array {
+    static $round = [0, 0];   // קבצים שנשלחו בבקשה הזו ועוד לא נכנסו להיסטוריה
+    $err = fn(string $m) => [json_encode(['error' => $m], JSON_UNESCAPED_UNICODE), true, null];
+    if (!can('case.view')) return $err('אין לך הרשאה לקבצים');
+    $id = (int)($input['file'] ?? 0);
+    if ($id <= 0) return $err('נדרש מזהה קובץ (מספר, מ-files)');
+    [$n, $bytes] = aiFilesUsed($thread);
+    if ($n + $round[0] >= AI_FILES_PER_THREAD) return $err('נשלחו כבר ' . AI_FILES_PER_THREAD . ' קבצים בשיחה הזו. לפתוח שיחה חדשה.');
+    [$block, $name, $e] = aiFileBlock($pdo, (int)$thread['org_id'], $id);
+    if ($e !== null) return $err($e);
+    $size = (int)(strlen($block['source']['data']) * 3 / 4);
+    if ($bytes + $round[1] + $size > AI_FILES_BYTES_PER_THREAD) return $err('הקבצים בשיחה הזו כבר גדולים מדי. לפתוח שיחה חדשה.');
+    $round[0]++; $round[1] += $size;
+    return [[['type' => 'text', 'text' => 'הקובץ "' . $name . '" (מזהה ' . $id . ')'], $block], false, null];
+}
+
+/** סוג המסמך → שם (השם של הבדיקה ב-05). */
+function aiKindLabel(string $kind): string {
+    return $kind === 'other' ? 'אחר' : (defined('EXT_CHECKS') ? (EXT_CHECKS[$kind] ?? $kind) : $kind);
+}
+
+/**
+ * הצעת סוג לקובץ (06 §2.3): הקובץ לספק, ותשובה במבנה קבוע (structured output). תופס יחידה מהתקרה.
+ * מחזיר את ההצעה, או null כשאין מפתח / התקרה מוצתה / הקובץ לא נקרא — בלי שגיאה למשתמש: זו הצעה, לא פעולה שביקש.
+ */
+function aiSuggestKind(PDO $pdo, int $orgId, array $file): ?array {
+    $key = aiKey($orgId);
+    if ($key === null) return null;
+    $s = aiSettings($pdo, $orgId);
+    [$block, , $e] = aiFileBlock($pdo, $orgId, (int)$file['id']);
+    if ($block === null || $e !== null) return null;
+    if (!aiTakeQuota($pdo, $orgId, $s['monthly_cap'])) return null;
+    $kinds = array_merge(AI_DOC_CHECKS, ['other']);
+    $list = implode("\n", array_map(fn($k) => "- $k: " . aiKindLabel($k), $kinds));
+    $payload = ['model' => $s['model'], 'max_tokens' => 2000, 'output_config' => ['effort' => 'low', 'format' => ['type' => 'json_schema', 'schema' => [
+            'type' => 'object', 'additionalProperties' => false, 'required' => ['kind', 'reason'],
+            'properties' => ['kind' => ['type' => 'string', 'enum' => $kinds], 'reason' => ['type' => 'string']]]]],
+        'messages' => [['role' => 'user', 'content' => [$block, ['type' => 'text', 'text' =>
+            "זה קובץ מתיק לוויה (\"{$file['name']}\"). איזה מסמך זה? הסוגים:\n$list\n"
+            . "אם לא ברור — other. reason: משפט קצר בעברית, מה בקובץ מראה את זה."]]]]];
+    if (in_array($s['model'], AI_FALLBACK_MODELS, true)) $payload['fallbacks'] = 'default';
+    try {
+        [$status, $j] = aiHttp($s['provider'], $key, $payload, 60);
+    } catch (AiError $e) {
+        return null;
+    }
+    if ($status !== 200 || $j === null || ($j->stop_reason ?? '') === 'refusal') return null;
+    $text = '';
+    foreach (($j->content ?? []) as $b) if (($b->type ?? '') === 'text') $text .= $b->text;
+    $out = json_decode($text, true);
+    if (!is_array($out) || !in_array($out['kind'] ?? '', $kinds, true)) return null;
+    $row = ['kind' => $out['kind'], 'reason' => mb_substr(cleanText($out['reason'] ?? '', 300), 0, 300)];
+    $pdo->prepare('INSERT OR IGNORE INTO ai_file_kinds(org_id, file_id, kind, reason, status, created_at) VALUES (?,?,?,?,?,?)')
+        ->execute([$orgId, (int)$file['id'], $row['kind'], $row['reason'], 'pending', gmdate('c')]);
+    return $row;
+}
+
+/**
+ * ההצעות לקבצי התיק: מה שכבר הוצע, ולקבצים חדשים בלי סוג — הצעה חדשה (עד AI_KIND_PER_OPEN בפתיחה).
+ * לא רץ בלי מפתח (aiSuggestKind בודק) ולא מעבר לתקרה. מחזיר {file_id: {kind, label, check, reason, status}}.
+ */
+function aiCaseKinds(PDO $pdo, array $case): array {
+    $orgId = (int)$case['org_id'];
+    try { $files = dropboxCaseFiles($pdo, $case); } catch (Throwable $e) { return []; }
+    $ids = array_map(fn($f) => (int)$f['id'], $files);
+    $have = [];
+    if ($ids) {
+        $st = $pdo->prepare('SELECT * FROM ai_file_kinds WHERE org_id = ? AND file_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
+        $st->execute(array_merge([$orgId], $ids));
+        foreach ($st->fetchAll() as $r) $have[(int)$r['file_id']] = $r;
+    }
+    $left = AI_KIND_PER_OPEN;
+    $since = gmdate('c', time() - AI_KIND_NEW_DAYS * 86400);
+    $st = $pdo->prepare('SELECT id, name, kind, created_at FROM files WHERE id = ? AND org_id = ?');
+    $out = [];
+    foreach ($files as $f) {
+        $id = (int)$f['id'];
+        if (!isset($have[$id]) && (string)$f['kind'] === '' && $left > 0 && in_array($f['preview'] ?? '', ['image', 'pdf'], true)) {
+            $st->execute([$id, $orgId]);
+            $row = $st->fetch();
+            $st->closeCursor();
+            if ($row && (string)$row['created_at'] >= $since) {
+                $left--;
+                $sug = aiSuggestKind($pdo, $orgId, $row);
+                if ($sug !== null) $have[$id] = $sug + ['status' => 'pending'];
+            }
+        }
+        if (isset($have[$id]) && ($have[$id]['status'] === 'pending' || (string)$f['kind'] === '')) {
+            $k = (string)$have[$id]['kind'];
+            $out[$id] = ['kind' => $k, 'label' => aiKindLabel($k), 'check' => in_array($k, AI_DOC_CHECKS, true) ? $k : null,
+                'reason' => (string)$have[$id]['reason'], 'status' => (string)$have[$id]['status']];
+        }
+    }
+    return $out;
+}
+
+/**
+ * ✓ / ✗ על הצעת סוג. ✓: files.kind = שם הסוג (רק אם עדיין ריק), והבדיקה המתאימה → "לאימות" דרך extDo (via: ai) —
+ * רק אם היא עוד "טרם נבדק" או "חסר". ההרשאה: case.track (כמו סימון בדיקה).
+ */
+function aiDecideKind(PDO $pdo, int $fileId, bool $approve): array {
+    $c = ctx();
+    $orgId = (int)$c['org']['id'];
+    need('case.track');
+    $st = $pdo->prepare("SELECT k.*, f.name, f.case_id, f.kind AS file_kind FROM ai_file_kinds k JOIN files f ON f.id = k.file_id AND f.org_id = k.org_id
+        WHERE k.org_id = ? AND k.file_id = ? AND f.deleted = 0");
+    $st->execute([$orgId, $fileId]);
+    $k = $st->fetch();
+    $st->closeCursor();
+    if (!$k) throw new AiError('ההצעה לא נמצאה', 404);
+    if ($k['status'] !== 'pending') throw new AiError('ההצעה כבר טופלה', 409);
+    $upd = $pdo->prepare("UPDATE ai_file_kinds SET status = ?, decided_at = ?, decided_by = ? WHERE org_id = ? AND file_id = ? AND status = 'pending'");
+    $upd->execute([$approve ? 'applied' : 'rejected', gmdate('c'), $c['user']['id'], $orgId, $fileId]);
+    if ($upd->rowCount() !== 1) throw new AiError('ההצעה כבר טופלה', 409);
+    if (!$approve) return ['status' => 'rejected'];
+    $label = aiKindLabel((string)$k['kind']);
+    $pdo->prepare("UPDATE files SET kind = ?, updated_at = ? WHERE id = ? AND org_id = ? AND kind = ''")->execute([$label, gmdate('c'), $fileId, $orgId]);
+    recordEvent($orgId, $k['case_id'], $c['actor'], 'ui', 'file_kind', ['file.' . $fileId . '.kind' => [(string)$k['file_kind'], $label]]);
+    $check = null;
+    if (in_array($k['kind'], AI_DOC_CHECKS, true) && $k['case_id'] !== null && aiToolsReady()) {
+        $case = existing($pdo, (string)$k['case_id'], $orgId);
+        $cur = (string)($case['checks'][$k['kind']]['status'] ?? 'unknown');
+        if (in_array($cur, ['unknown', 'missing'], true)) {
+            [$status, $data] = aiExt($pdo, 'case_update', ['id' => $k['case_id'],
+                'checks' => [$k['kind'] => ['status' => 'document_present', 'note' => 'קובץ: ' . $k['name']]]], false);
+            $check = ['key' => $k['kind'], 'label' => $label, 'ok' => $status < 400, 'error' => $status < 400 ? null : ($data['error'] ?? '')];
+        }
+    }
+    return ['status' => 'applied', 'kind' => $label, 'check' => $check];
 }
 
 // ───────────────────────── הצעות ─────────────────────────
@@ -407,7 +604,8 @@ function aiSystemPrompt(array $thread, ?array $case): string {
         . "אשר בכרטיס\", ולעולם לא \"נשמר\".\n"
         . "6. \"מאומת\" נקבע רק בידי אדם. הצעה שלך לסטטוס סופי נשמרת \"לאימות\" — וזה בסדר; אומרים זאת למשתמש.\n"
         . "7. כלי שהחזיר שגיאה (אין הרשאה, לא נמצא) — אומרים למשתמש בפשטות, ולא מנסים לעקוף.\n"
-        . "8. אין מחיקה. אין גישה לשום דבר שאין למשתמש.\n";
+        . "8. אין מחיקה. אין גישה לשום דבר שאין למשתמש.\n"
+        . "9. לקרוא מסמך (תמונה, PDF סרוק): files לרשימה, ואז file_view עם מזהה הקובץ. לא לקרוא קבצים שלא צריך.\n";
     if ($case !== null) {
         $p .= "\nההקשר: התיק \"{$case['name']}\" (id: {$case['id']}, תאריך: " . ($case['date'] ?: '—') . ", חודש: {$case['month']}). "
             . "השאלות הן על התיק הזה, אלא אם המשתמש אומר אחרת. לפרטים המלאים — הכלי case עם ה-id הזה.";

@@ -386,6 +386,12 @@
   document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
     filter = b.dataset.filter; try { sessionStorage.setItem('fd_filter', filter); } catch (e) {} renderList(); }));
   $('editDialog').addEventListener('close', () => { current = null; rows = {}; });
+  // שינוי שנשמר מחוץ לטופס (✓ על הצעה של העוזר, ai.js): הרשימה נטענת מחדש, ותיק פתוח מתעדכן — כדי ש"שמירה" לא תדרוס את השינוי
+  document.addEventListener('fd:changed', async e => {
+    const id = e.detail && e.detail.id; await load();
+    const x = current && current.id === id ? items.find(i => i.id === id) : null;
+    if (x) { edit(x); toast('התיק עודכן מההצעה שאושרה'); }
+  });
   document.querySelectorAll('[data-pane]').forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
   $('retryBtn').addEventListener('click', () => begin());
   $('tokenBtn').addEventListener('click', async () => {

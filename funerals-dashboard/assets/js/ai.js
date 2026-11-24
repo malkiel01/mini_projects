@@ -149,6 +149,38 @@
   caseBtn.addEventListener('click', () => { if (caseId) open(caseId); });
   document.addEventListener('fd:case', e => { caseId = (e.detail && e.detail.id) || ''; caseBtn.hidden = !caseId; });
 
+  /* ===== הצעת סוג לקובץ חדש (06 §2.3) — על שורת הקובץ ב"קבצים ב-Dropbox" ===== */
+  document.addEventListener('fd:files', async e => {
+    const d = e.detail || {}; const want = d.id;
+    if (!want || !(d.files || []).some(f => !f.kind)) return;
+    try { if (!status) status = await api('ai_status'); } catch (_) { return; }
+    if (!status.has_key) return;
+    let r; try { r = await api('ai_file_kinds', {case_id: want}); } catch (_) { return; }
+    if (want !== caseId) return;
+    Object.entries(r.suggestions || {}).forEach(([id, sg]) => {
+      if (sg.status !== 'pending') return;
+      const li = document.querySelector(`#dbxFiles li[data-file-id="${CSS.escape(id)}"]`); if (!li || li.querySelector('.ai-kind')) return;
+      const bar = node('div', 'ai-kind');
+      bar.append(node('span', '', `🤖 נראה כמו ${sg.label} — לשייך?`));
+      if (sg.reason) bar.title = sg.reason;
+      if (r.can_decide) {
+        const yes = node('button', 'btn primary sm', '✓'); yes.type = 'button'; yes.setAttribute('aria-label', 'לשייך כ' + sg.label);
+        const no = node('button', 'btn ghost sm', '✗'); no.type = 'button'; no.setAttribute('aria-label', 'לא לשייך');
+        const go = async approve => {
+          yes.disabled = no.disabled = true;
+          try {
+            const res = await api('ai_file_kind_decide', {file: Number(id), approve});
+            bar.replaceChildren(node('span', 'muted', approve ? `✓ שויך: ${res.kind}` + (res.check && res.check.ok ? ` · "${res.check.label}" — לאימות` : '') : '✗ לא שויך'));
+            if (approve && res.check && res.check.ok) document.dispatchEvent(new CustomEvent('fd:changed', {detail: {id: want}}));
+          } catch (err) { yes.disabled = no.disabled = false; bar.title = err.message; }
+        };
+        yes.addEventListener('click', () => go(true)); no.addEventListener('click', () => go(false));
+        bar.append(yes, no);
+      }
+      li.append(bar);
+    });
+  });
+
   /* ===== ⚙️ הגדרות ← בינה מלאכותית (מנהל) ===== */
   const tabs = document.querySelector('#settingsDialog .seg-tabs');
   const tab = node('button', '', 'בינה מלאכותית'); tab.type = 'button'; tab.setAttribute('role', 'tab'); tab.dataset.aitab = '1'; tab.hidden = true;

@@ -9,7 +9,7 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/lib.php';
 
-const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test', 'ai_chat', 'ai_thread', 'ai_decide'];
+const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test', 'ai_chat', 'ai_thread', 'ai_decide', 'ai_file_kinds', 'ai_file_kind_decide'];
 
 function aiHandles(string $action): bool { return in_array($action, AI_ACTIONS, true); }
 
@@ -106,6 +106,22 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 }
                 $t = aiThreadGet($pdo, $tid, $org, (int)$c['user']['id']) ?? reply(404, ['error' => 'השיחה לא נמצאה']);
                 reply(200, ['thread' => aiThreadView($pdo, $t)]);
+
+            case 'ai_file_kinds':
+                // הצעות סוג לקבצי התיק (06 §2.3). POST — כי הוא עשוי לקרוא לספק ולתפוס מהתקרה.
+                $want('POST');
+                need('case.view');
+                $in = body();
+                $caseId = (string)($in['case_id'] ?? '');
+                if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $caseId)) reply(404, ['error' => 'התיק לא נמצא']);
+                $case = existing($pdo, $caseId, $org) ?? reply(404, ['error' => 'התיק לא נמצא']);
+                reply(200, ['suggestions' => aiFilesReady() ? (object)aiCaseKinds($pdo, $case + ['org_id' => $org]) : new stdClass(),
+                    'can_decide' => can('case.track')]);
+
+            case 'ai_file_kind_decide':
+                $want('POST');
+                $in = body();
+                reply(200, aiDecideKind($pdo, (int)($in['file'] ?? 0), !empty($in['approve'])));
 
             case 'ai_decide':
                 $want('POST');

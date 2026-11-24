@@ -81,3 +81,7 @@
   תיקון ב-`run.sh`: הבלוק שלי לא קורא עוד ל-`kill "$pid"` אחרי ש-05 איפס אותו (`kill 0` הרג את כל קבוצת התהליכים).
 - הודעה מקוד 03 (PR #1844, עוד לא מוזג): `dropboxFileContent($pdo, int $orgId, int $fileId, $maxBytes)` → `name/mime/size/bytes`;
   `files.kind` ריקה ומתאימה לסיווג. אחרי המיזוג של 03 — §2.2.2 (קובץ לספק) ו-§2.3 (הצעת סוג) נבנים מעליהן.
+- 2026-11-24 — **יישור ל-03 (מוזג, #1844):** `main` מוזג. נבנו §2.2.2 — הכלי `file_view` (הקובץ עצמו לספק: image / document, עד 5MB, 10 קבצים
+  ו-20MB לשיחה) מעל `dropboxFileContent()`; ו-§2.3 — הצעת סוג לקובץ חדש בלי סוג (structured output, פעם אחת לקובץ, `ai_file_kinds`), ✓ →
+  `files.kind` + הבדיקה המתאימה "לאימות" דרך `extDo` (via: ai). נגיעות: `dropbox.js` (`data-file-id` + אירוע `fd:files`), `app.js` (`fd:changed`
+  → טעינה מחדש של תיק פתוח, כדי ש"שמירה" לא תדרוס שינוי שאושר מהעוזר). בדיקות: `ai.sh` מול Dropbox המדומה של 03 (`ai-dbx-fixture.php`).

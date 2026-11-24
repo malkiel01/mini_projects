@@ -13,7 +13,7 @@ trap cleanup EXIT
 fail(){ echo "FAIL (06): $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונה:"; head -c 800 "$tmp/out"; echo; }; exit 1; }
 ok(){ echo "  ✓ $*"; }
 
-for f in ai/lib.php ai/actions.php tests/ai-mock.php tests/ai-fixture.php; do php -l "$APP/$f" >/dev/null || fail "php -l $f"; done
+for f in ai/lib.php ai/actions.php tests/ai-mock.php tests/ai-fixture.php tests/ai-dbx-fixture.php; do php -l "$APP/$f" >/dev/null || fail "php -l $f"; done
 node --check "$APP/assets/js/ai.js" || fail "node --check ai.js"
 grep -q 'src="assets/js/ai.js"' "$APP/index.html" || fail "index.html לא טוען את ai.js"
 ! grep -rqE 'sk-ant-[A-Za-z0-9_-]{20,}' "$APP" --include=*.php --include=*.js --include=*.json --include=*.html || fail "מפתח API בקוד"
@@ -27,15 +27,22 @@ php "$APP/tests/ai-fixture.php" "$DB"
 sql(){ php -r '$p=new PDO("sqlite:".$argv[1]); foreach($p->query($argv[2])->fetchAll(PDO::FETCH_NUM) as $r) echo implode("|",$r),"\n";' "$DB" "$1"; }
 CASE="$(sql "SELECT id FROM funerals WHERE org_id=1 ORDER BY id LIMIT 1")"
 test -n "$CASE" || fail "אין תיק בארגון 1"
+# תיק שבו "רישיון קבורה" עוד לא נבדק — לקובץ ב-Dropbox (06 §2.2.2, §2.3)
+DCASE="$(php -r '$p=new PDO("sqlite:".$argv[1]); foreach($p->query("SELECT id, body FROM funerals WHERE org_id=1 ORDER BY id DESC") as $r){ $s=json_decode($r["body"],true)["checks"]["license_document"]["status"]??"unknown"; if(in_array($s,["unknown","missing"],true)){echo $r["id"];break;} }' "$DB")"
+test -n "$DCASE" || fail "אין תיק עם רישיון שלא נבדק"
+DBXS="$tmp/dbx-state.json"
+FID="$(php "$APP/tests/ai-dbx-fixture.php" "$APP" "$DCASE" "$DBXS")"
 
 # ===== ספק מדומה + האפליקציה =====
 M="$tmp/mock"; mkdir -p "$M"; echo '[]' > "$M/queue.json"; : > "$M/requests.jsonl"
 AI_MOCK_DIR="$M" php -d opcache.jit=disable -S 127.0.0.1:18967 "$APP/tests/ai-mock.php" > "$tmp/mock.log" 2>&1 &
 pids+=($!)
+DBX_MOCK_STATE="$DBXS" php -d opcache.jit=disable -S 127.0.0.1:18968 "$APP/tests/dropbox-mock.php" > "$tmp/dbx.log" 2>&1 &
+pids+=($!)
 idf="$tmp/identity.json"
 as(){ printf '%s' "$1" > "$idf"; }
 as ''
-AI_API_BASE=http://127.0.0.1:18967 FD_TEST_IDENTITY_FILE="$idf" php -d opcache.jit=disable -S 127.0.0.1:18966 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+AI_API_BASE=http://127.0.0.1:18967 DBX_API_BASE=http://127.0.0.1:18968 FD_TEST_IDENTITY_FILE="$idf" php -d opcache.jit=disable -S 127.0.0.1:18966 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pids+=($!)
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18966/index.html >/dev/null && break || sleep .2; done
 B=http://127.0.0.1:18966/api.php
@@ -173,6 +180,33 @@ ok "F7 — תקרה 0 ו-2/2: הודעה, אין קריאה לספק; מונה, 
   post admin ai_settings_save '{"auto_approve":false}' >/dev/null
   ok "אישור אוטומטי — בלי כרטיס, ועדיין \"לאימות\""
 
+# ===== §2.2.2: הקובץ עצמו לספק (file_view, מול Dropbox מדומה) =====
+queue "[$(tool file_view "{\"file\":$FID}"),$(text 'קראתי את הרישיון')]"
+code="$(post admin ai_chat "{\"text\":\"תקרא את הרישיון\",\"case_id\":\"$DCASE\"}")"; test "$code" = 200 && test "$(j reply)" != '' || fail "file_view ($code)"
+lastreq | php -r '$r=json_decode(stream_get_contents(STDIN),true); $m=end($r["body"]["messages"]); $t=$m["content"][0]; $d=$t["content"][1]??[];
+  exit(empty($t["is_error"]) && ($d["type"]??"")==="document" && $d["source"]["media_type"]==="application/pdf" && str_starts_with(base64_decode($d["source"]["data"]),"%PDF") ? 0 : 1);' || fail "file_view: ה-PDF לא נשלח לספק כ-document"
+lastreq | grep -q '"name":"file_view"' || fail "file_view לא בהגדרות הכלים"
+queue "[$(tool file_view '{"file":999999}'),$(text 'לא נמצא')]"
+post admin ai_chat "{\"text\":\"קובץ אחר\",\"case_id\":\"$DCASE\"}" >/dev/null
+lastreq | php -r '$r=json_decode(stream_get_contents(STDIN),true); $m=end($r["body"]["messages"]); $t=$m["content"][0]; exit(($t["is_error"]??false)===true ? 0 : 1);' || fail "file_view: קובץ לא קיים — לא שגיאה"
+ok "§2.2.2 — file_view: ה-PDF עצמו נשלח לספק (document); קובץ שלא קיים → שגיאה בכלי"
+
+# ===== §2.3: קובץ חדש בלי סוג → הצעה לסוג ולבדיקה; ✓ → סוג + "לאימות" =====
+n="$(calls)"
+queue "[$(text '{\"kind\":\"license_document\",\"reason\":\"כתוב רישיון קבורה\"}')]"
+code="$(post field ai_file_kinds "{\"case_id\":\"$DCASE\"}")"; test "$code" = 200 || fail "ai_file_kinds ($code)"
+test "$(j "suggestions.$FID.label")" = 'רישיון קבורה' && test "$(j "suggestions.$FID.status")" = pending || fail "§2.3 הצעה"
+lastreq | grep -q '"json_schema"' || fail "§2.3 בלי structured output"
+test "$(calls)" = $((n + 1)) || fail "§2.3 מספר קריאות"
+post field ai_file_kinds "{\"case_id\":\"$DCASE\"}" >/dev/null; test "$(calls)" = $((n + 1)) || fail "§2.3 קרא לספק שוב על אותו קובץ"
+before="$(caseBody "$DCASE")"
+test "$(sql "SELECT kind FROM files WHERE id=$FID")" = '' || fail "§2.3 שויך לפני ✓"
+code="$(post field ai_file_kind_decide "{\"file\":$FID,\"approve\":true}")"; test "$code" = 200 && test "$(j status)" = applied || fail "§2.3 ✓ ($code)"
+test "$(sql "SELECT kind FROM files WHERE id=$FID")" = 'רישיון קבורה' || fail "§2.3 files.kind"
+caseBody "$DCASE" | php -r '$c=json_decode(stream_get_contents(STDIN),true)["checks"]["license_document"]; exit($c["status"]==="document_present" && $c["via"]==="ai" ? 0 : 1);' || fail "§2.3 הבדיקה לא סומנה לאימות"
+code="$(post field ai_file_kind_decide "{\"file\":$FID,\"approve\":true}")"; test "$code" = 409 || fail "§2.3 ✓ פעמיים ($code)"
+ok "§2.3 — קובץ חדש בלי סוג: הצעה (structured output, פעם אחת לקובץ); ✓ → files.kind + הבדיקה \"לאימות\" via ai"
+
 head -n 4 "$M/requests.jsonl" | tail -n 1 | grep -q '"version":"2023-06-01"' || fail "anthropic-version"
 ! grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -v 'in Unknown on line 0' | head; fail "שגיאות PHP בשרת"; }
-echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה"
+echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה; §2.2.2 קובץ לספק; §2.3 הצעת סוג"
