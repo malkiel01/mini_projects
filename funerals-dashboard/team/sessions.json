@@ -9,6 +9,11 @@
       "session": "session_018g4NYFCroPuhEYVJhHMcqh",
       "branch": "claude/funerals-dashboard-08-fixes",
       "slice": "08"
+    },
+    {
+      "session": "session_018g4NYF5aVunXTh4CjYUphS",
+      "branch": "claude/funerals-dashboard-09-mcp",
+      "slice": "09"
     }
   ],
   "control": {
