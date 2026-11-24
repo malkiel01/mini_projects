@@ -1,110 +1,317 @@
 #!/usr/bin/env bash
+# הבדיקות של ניהול לוויות חברה קדישא — רצות בפריסה (deploy.yml) ועוצרות אותה בכשל.
+# שרת פיתוח של PHP + שער מדומה (tests/gate-prepend.php). מתחילים ממסד בגרסה 0 עם 22 תיקים (tests/fixture-v0.php),
+# כמו בשרת, ובודקים את קריטריוני הקבלה של פרוסה 01 (A1–A14, A16 חלקית, A17). data/ מתנקה בסוף — חוץ מ-.htaccess.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+APP=funerals-dashboard
+D="$APP/data"
 tmp="$(mktemp -d)"
 pid=0
-cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; rm -f funerals-dashboard/data/config.php funerals-dashboard/data/.config-* funerals-dashboard/data/funerals.sqlite*; rm -rf "$tmp"; }
+wipe(){ find "$D" -mindepth 1 ! -name .htaccess -exec rm -rf {} + 2>/dev/null || true; }
+cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; wipe; rm -rf "$tmp"; }
 trap cleanup EXIT
-fail(){ echo "FAIL: $*"; exit 1; }
-for f in api.php lib.php ingest.php tests/gate-prepend.php; do php -l "funerals-dashboard/$f"; done
-test ! -e funerals-dashboard/setup.php || fail "setup.php עדיין קיים"
-php -r '$a=json_decode(file_get_contents("funerals-dashboard/app.json"),true); if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==["ingest.php","ext.php","openapi.json"]) { fwrite(STDERR,"app.json: נדרשים gate:true, restricted:true ו-public בדיוק ingest.php, ext.php, openapi.json\n"); exit(1); }'
-php platform/check-apps.php
-php -r '$h=file_get_contents("funerals-dashboard/index.html"); if (!preg_match("~<script>\s*(.*?)\s*</script>~s", $h, $m)) exit(1); file_put_contents($argv[1],$m[1]); if (preg_match("~type=\"password\"|id=\"username\"|password_hash|\x27login\x27~", $h)) { fwrite(STDERR,"index.html: נשארו שדות כניסה בסיסמה\n"); exit(1); }' "$tmp/ui.js"
-node --check "$tmp/ui.js"
-# פרמטרים לא נדבקים לשם הפעולה (request('list&month=…') קודד ל-action אחד → "פעולה לא מוכרת")
-! grep -qE "request\('[a-z_]+&" funerals-dashboard/index.html || fail "index.html מדביק פרמטרים לשם הפעולה"
-test -f funerals-dashboard/assets/css/app.css || fail "חסר assets/css/app.css"
-! grep -qE "password_hash|password_verify|action === 'login'" funerals-dashboard/api.php funerals-dashboard/lib.php || fail "נשאר קוד כניסה בסיסמה"
-rm -f funerals-dashboard/data/config.php funerals-dashboard/data/funerals.sqlite*
+fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונה:"; head -c 600 "$tmp/out"; echo; }; exit 1; }
+ok(){ echo "  ✓ $*"; }
 
-# השער המדומה: הזהות בקובץ ששרת הפיתוח קורא (לא כותרת HTTP)
-id="$tmp/identity.json"
-as(){ printf '%s' "$1" > "$id"; }
+# ===== A17: בדיקות סטטיות =====
+for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php tests/gate-prepend.php tests/fixture-v0.php; do
+  php -l "$APP/$f" >/dev/null || fail "php -l $f"
+done
+node --check "$APP/assets/js/app.js" || fail "node --check app.js"
+test ! -e "$APP/setup.php" || fail "setup.php עדיין קיים"
+php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","ext.php","openapi.json","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
+  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
+php platform/check-apps.php >/dev/null || fail "check-apps.php"
+php -r 'json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);' "$APP/dev/open-items.json" || fail "dev/open-items.json אינו JSON תקין"
+! grep -qE 'type="password"|id="username"' "$APP/index.html" || fail "index.html: נשארו שדות כניסה בסיסמה"
+! grep -qE "password_hash|password_verify|action === 'login'" "$APP/api.php" "$APP/lib.php" || fail "נשאר קוד כניסה בסיסמה"
+! grep -qE "request\('[a-z_]+&" "$APP/assets/js/app.js" || fail "app.js מדביק פרמטרים לשם הפעולה"
+test -f "$APP/assets/css/app.css" || fail "חסר assets/css/app.css"
+# A14: השם, ואין קישור לכלים הדיגיטליים
+grep -q '<title>ניהול לוויות חברה קדישא</title>' "$APP/index.html" || fail "A14: <title>"
+grep -q '<h1>🕯️ ניהול לוויות חברה קדישא</h1>' "$APP/index.html" || fail "A14: כותרת"
+! grep -qE 'href="(\.\./|[^"]*index\.html)' "$APP/index.html" || fail "A14: קישור לכלים ב-index.html"
+! grep -qE "['\"]\.\./" "$APP/assets/js/app.js" || fail "A14: קישור ../ ב-app.js"
+! grep -rqE "require[_a-z]*\s*\(?\s*__DIR__\s*\.\s*'/\.\./\.\." "$APP"/*.php "$APP"/lib/*.php || fail "require מחוץ לתיקייה"
+ok "A14, A17 — סטטי"
+
+# ===== מסד בגרסה 0, כמו בשרת =====
+wipe
+TOK0="fd_$(printf 'fixture-token-%.0s' 1 2 3 | sha256sum | cut -c1-64)"
+php "$APP/tests/fixture-v0.php" "$D" "$TOK0"
+DB="$D/funerals.sqlite"
+sql(){ php -r '$p=new PDO("sqlite:".$argv[1]); $r=$p->query($argv[2])->fetchAll(PDO::FETCH_NUM); foreach($r as $row) echo implode("|",$row),"\n";' "$DB" "$1"; }
+sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases0"
+sql "SELECT * FROM audit ORDER BY id" > "$tmp/audit0"
+test "$(wc -l < "$tmp/cases0")" = 22 || fail "fixture: 22 תיקים"
+
+# ===== השער המדומה =====
+idf="$tmp/identity.json"
+as(){ printf '%s' "$1" > "$idf"; }
 as ''
-FD_TEST_IDENTITY_FILE="$id" php -S 127.0.0.1:18964 -t funerals-dashboard \
-  -d auto_prepend_file="$PWD/funerals-dashboard/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+FD_TEST_IDENTITY_FILE="$idf" php -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pid=$!
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18964/index.html >/dev/null && break || sleep .2; done
 base="http://127.0.0.1:18964/api.php"
 ingest="http://127.0.0.1:18964/ingest.php"
 st(){ curl -sS -o "$tmp/out" -w '%{http_code}' "$@"; }
+jv(){ php -r '$v=json_decode(file_get_contents($argv[1]),true); $x=eval("return ".$argv[2].";"); echo is_scalar($x)||$x===null ? var_export($x,true) : json_encode($x,JSON_UNESCAPED_UNICODE);' "$tmp/out" "$1"; }
 
-# ingest.php בלי config.php: נוצר לבד, ואין אסימון → 401
-code="$(st "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "ingest.php בלי אסימון ($code)"
-test -f funerals-dashboard/data/config.php || fail "config.php לא נוצר בקריאה ראשונה"
-test "$(stat -c %a funerals-dashboard/data/config.php)" = 600 || fail "config.php לא 0600"
-code="$(st -H 'Authorization: Bearer wrong-token' "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "ingest.php אסימון שגוי ($code)"
-code="$(st -H 'Authorization: Bearer ' "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "ingest.php אסימון ריק ($code)"
-code="$(st "http://127.0.0.1:18964/lib.php")"; test "$code" = 404 || fail "lib.php נגיש ישירות ($code)"
+declare -A ID CSRF
+ident(){ printf '{"sub":"%s","name":"%s","email":"%s","email_verified":true,"platform_admin":%s,"granted":true}' "$1" "$2" "$3" "$4"; }
+ID[dev]="$(ident 1 'המפתח' 'dev@example.com' true)"
+ID[boss]="$(ident 2 'מנהל א' 'boss@example.com' false)"
+ID[field]="$(ident 3 'עובד שטח' 'X@EXAMPLE.COM' false)"
+ID[office]="$(ident 4 'משרד' 'office@example.com' false)"
+ID[a2]="$(ident 5 'מנהל ב' 'a2@example.com' false)"
+ID[nobody]="$(ident 6 'אורח' 'nobody@example.com' false)"
+# me — ושומרים את ה-CSRF של המשתמש. לא בתוך $(…): המערך CSRF חייב להישאר בתהליך הזה. התוצאה ב-$code.
+login(){ as "${ID[$1]}"; code="$(st -b "$tmp/c-$1" -c "$tmp/c-$1" "$base?action=me")"; CSRF[$1]="$(jv '$v["csrf"] ?? ""' | tr -d "'")"; }
+get(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -c "$tmp/c-$1" "$base?action=$2${3:-}"; }
+post(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -c "$tmp/c-$1" -H "X-CSRF-Token: ${CSRF[$1]:-}" -H 'Content-Type: application/json' --data-binary "$3" "$base?action=$2${4:-}"; }
 
-# זהות מהשער
-code="$(st "$base?action=me")"; test "$code" = 401 || fail "בלי PLATFORM_USER ($code)"
-code="$(st -H 'PLATFORM_USER: {"sub":"7","granted":true}' -H 'Platform-User: {"sub":"7","granted":true}' "$base?action=me")"
-test "$code" = 401 || fail "זהות מכותרת HTTP התקבלה ($code)"
-as '{"sub":"7","name":"בודק","email":"tester@example.com","email_verified":true,"platform_admin":false,"granted":false}'
-code="$(st "$base?action=me")"; test "$code" = 401 || fail "granted:false ($code)"
-as '{"sub":"7","name":"בודק","email":"tester@example.com","email_verified":true,"platform_admin":false,"granted":"true"}'
-code="$(st "$base?action=me")"; test "$code" = 401 || fail "granted כמחרוזת ($code)"
-as '{"sub":"7","name":"בודק","email":"tester@example.com","email_verified":true,"platform_admin":false,"granted":true}'
-code="$(st -c "$tmp/cookies" "$base?action=me")"; test "$code" = 200 || fail "granted:true ($code)"
-csrf="$(php -r '$v=json_decode(file_get_contents($argv[1]),true); echo $v["csrf"] ?? "";' "$tmp/out")"
-test -n "$csrf" || fail "אין csrf ב-me"
-code="$(st -H 'Content-Type: application/json' -d '{"username":"admin","password":"x"}' "$base?action=login")"
-test "$code" != 200 || fail "action=login עדיין קיים"
-code="$(st -H 'Authorization: Bearer x' "$base?action=list&month=2026-10")"; test "$code" = 200 || fail "list עם זהות ($code)"
+# ===== A2 (כשל): תיקיית הגיבוי לא ניתנת לכתיבה → 503, והמסד נשאר בגרסה 0 =====
+: > "$D/backup"   # קובץ במקום תיקייה — mkdir נכשל גם כשרצים כ-root
+login dev; test "$code" = 503 || fail "A2: בלי תיקיית גיבוי ($code)"
+test "$(sql 'PRAGMA user_version')" = 0 || fail "A2: המסד שודרג בלי גיבוי"
+test "$(sql "SELECT COUNT(*) FROM sqlite_master WHERE name='orgs'")" = 0 || fail "A2: נוצרו טבלאות בלי גיבוי"
+rm -f "$D/backup"
+ok "A2 — גיבוי נכשל → 503, גרסה 0"
 
-# אסימון API: בלי CSRF → 403, עם CSRF → נוצר
-code="$(st -b "$tmp/cookies" -X POST -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 403 || fail "api_token בלי CSRF ($code)"
-code="$(st -b "$tmp/cookies" -X POST -H "X-CSRF-Token: wrong" -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 403 || fail "api_token עם CSRF שגוי ($code)"
-code="$(st -b "$tmp/cookies" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 200 || fail "api_token עם CSRF ($code)"
-tok1="$(php -r '$v=json_decode(file_get_contents($argv[1]),true); echo $v["token"] ?? "";' "$tmp/out")"
-test -n "$tok1" || fail "לא הוחזר אסימון"
-! grep -q "$tok1" funerals-dashboard/data/config.php || fail "האסימון נשמר בגלוי"
-grep -q "$(printf '%s' "$tok1" | sha256sum | cut -d' ' -f1)" funerals-dashboard/data/config.php || fail "ה-SHA-256 לא נשמר"
-test "$(stat -c %a funerals-dashboard/data/config.php)" = 600 || fail "config.php לא 0600 אחרי יצירת אסימון"
-code="$(st -H "Authorization: Bearer $tok1" "$ingest?action=list&month=2026-10")"; test "$code" = 200 || fail "ingest.php עם אסימון ($code)"
+# ===== A1, A2, A8: בקשה ראשונה של המפתח =====
+login dev; test "$code" = 200 || fail "A1: me של המפתח ($code)"
+test "$(sql 'PRAGMA user_version')" = 1 || fail "A1: user_version"
+sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases1"
+cmp -s "$tmp/cases0" "$tmp/cases1" || fail "A1: התיקים השתנו (id/body)"
+test "$(sql 'SELECT COUNT(*) FROM funerals WHERE org_id = 1')" = 22 || fail "A1: org_id=1 לכל 22"
+sql "SELECT * FROM audit ORDER BY id" > "$tmp/audit1"
+cmp -s "$tmp/audit0" "$tmp/audit1" || fail "A1: audit השתנה"
+ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=1"
+bk=( "$D"/backup/funerals-*-v0.sqlite )
+test "${#bk[@]}" = 1 && test -f "${bk[0]}" || fail "A2: אין גיבוי"
+test "$(stat -c %a "${bk[0]}")" = 600 || fail "A2: הגיבוי לא 0600"
+test "$(php -r '$p=new PDO("sqlite:".$argv[1]); echo $p->query("SELECT COUNT(*) FROM funerals")->fetchColumn();' "${bk[0]}")" = 22 || fail "A2: בגיבוי אין 22 תיקים"
+ok "A2 — גיבוי 0600 עם 22 תיקים"
+test "$(jv '$v["org"]["id"]')" = 1 && test "$(jv '$v["dev"]')" = true || fail "A8: המפתח בארגון 1"
+test "$(sql "SELECT m.role FROM members m JOIN users u ON u.id=m.user_id WHERE u.sub='1' AND m.org_id=1")" = admin || fail "A8: המפתח לא admin של ארגון 1"
+code="$(get dev list '&month=2026-10')"; test "$code" = 200 && test "$(jv 'count($v["records"])')" = 22 || fail "A8: המפתח רואה 22 תיקים ($code)"
+# ביקורת 5: secret.key נוצר בשימוש הראשון; מפתח פגום לא מפיל את התיקים ואת ingest.php
+test ! -e "$D/secret.key" || fail "secret.key נוצר בלי שימוש"
+printf 'bad' > "$D/secret.key"
+code="$(get dev list '&month=2026-10')"; test "$code" = 200 || fail "מפתח פגום הפיל את list ($code)"
+code="$(st -H "Authorization: Bearer $TOK0" "$ingest?action=list&month=2026-10")"; test "$code" = 200 || fail "מפתח פגום הפיל את ingest ($code)"
+rm -f "$D/secret.key"
+code="$(get dev dev_health)"; test "$code" = 200 || fail "A8: מסך מפתח ($code)"
+test "$(jv 'count(array_filter($v["checks"], fn($c) => !$c["ok"]))')" = 0 || fail "A16: בדיקת תקינות אדומה: $(jv 'array_values(array_filter($v["checks"], fn($c) => !$c["ok"]))')"
+test "$(stat -c %a "$D/secret.key")" = 600 || fail "A11: secret.key לא 0600"
+ok "A8 — המפתח admin של ארגון 1 ורואה הכול; בדיקות התקינות ירוקות"
 
-# session של משתמש אחר: CSRF הישן לא עובר
-as '{"sub":"8","name":"אחר","email":"other@example.com","email_verified":true,"platform_admin":false,"granted":true}'
-code="$(st -b "$tmp/cookies" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 403 || fail "CSRF של sub אחר התקבל ($code)"
-as '{"sub":"7","name":"בודק","email":"tester@example.com","email_verified":true,"platform_admin":false,"granted":true}'
-code="$(st -c "$tmp/cookies" "$base?action=me")"; test "$code" = 200 || fail "me מחדש ($code)"
-csrf="$(php -r '$v=json_decode(file_get_contents($argv[1]),true); echo $v["csrf"] ?? "";' "$tmp/out")"
+# ===== A3: אידמפוטנטיות =====
+login dev; test "$code" = 200 || fail "A3: me שני"
+php -r 'chdir($argv[1]); require "lib.php"; $p=db(); $p->exec("BEGIN"); migrateV1($p); migrateV1($p); $p->exec("COMMIT"); migrate($p);' "$APP" >/dev/null
+test "$(sql 'SELECT COUNT(*) FROM orgs')" = 1 || fail "A3: נוסף ארגון"
+sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases2"; cmp -s "$tmp/cases0" "$tmp/cases2" || fail "A3: תיק השתנה"
+test "$(ls "$D"/backup/*.sqlite | wc -l)" = 1 || fail "A3: גיבוי שני"
+ok "A3 — מיגרציה חוזרת לא משנה דבר"
 
-# קליטה, שמירה ידנית, ייבוא חוזר וייצוא (כמו קודם)
-curl -sS -H 'Content-Type: application/json' -H "Authorization: Bearer $tok1" \
- --data '{"records":[{"month":"2026-10","name":"שם בדיקה בלבד","date":"2026-10-01","checks":{"license_number":{"status":"unreadable","value":"","note":"דורש אימות"}}}]}' \
- "$ingest?action=import" > "$tmp/import.json"
-php -r '$v=json_decode(file_get_contents($argv[1]),true); if (($v["imported"]??0)!==1) exit(1);' "$tmp/import.json" || fail "ייבוא ב-ingest"
-curl -sS -b "$tmp/cookies" "$base?action=list&month=2026-10" > "$tmp/list.json"
-php -r '$v=json_decode(file_get_contents($argv[1]),true); if (count($v["records"]??[])!==1) exit(1); $r=$v["records"][0]; $r["checks"]["license_number"]=["status"=>"reported","value"=>"123","note"=>"עדכון משתמש"]; file_put_contents($argv[2],json_encode($r,JSON_UNESCAPED_UNICODE));' "$tmp/list.json" "$tmp/update.json"
-code="$(st -b "$tmp/cookies" -H 'Content-Type: application/json' --data-binary @"$tmp/update.json" "$base?action=save")"; test "$code" = 403 || fail "save בלי CSRF ($code)"
-code="$(st -b "$tmp/cookies" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' --data-binary @"$tmp/update.json" "$base?action=save")"
-test "$code" = 200 || { cat "$tmp/out"; fail "שמירה ידנית ($code)"; }
+# ===== זהות מהשער (כמו קודם) =====
+as ''; code="$(st "$base?action=me")"; test "$code" = 401 || fail "בלי PLATFORM_USER ($code)"
+code="$(st -H 'PLATFORM_USER: {"sub":"7","granted":true}' -H 'Platform-User: {"sub":"7","granted":true}' "$base?action=me")"; test "$code" = 401 || fail "זהות מכותרת HTTP ($code)"
+as '{"sub":"7","name":"בודק","email":"t@example.com","platform_admin":true,"granted":false}'; code="$(st "$base?action=me")"; test "$code" = 401 || fail "granted:false ($code)"
+as '{"sub":"7","name":"בודק","email":"t@example.com","platform_admin":true,"granted":"true"}'; code="$(st "$base?action=me")"; test "$code" = 401 || fail "granted כמחרוזת ($code)"
+as '{"sub":"7","granted":true,"platform_admin":"true"}'; code="$(st "$base?action=dev_health")"; test "$code" = 403 || fail "platform_admin כמחרוזת נחשב מפתח ($code)"
+code="$(st "http://127.0.0.1:18964/lib.php")"; test "$code" = 404 || fail "lib.php נגיש ($code)"
+for f in schema access events secrets devtasks; do code="$(st "http://127.0.0.1:18964/lib/$f.php")"; test "$code" = 404 || fail "lib/$f.php נגיש ($code)"; done
+as ''; code="$(st "$base?action=devapi-feed")"; test "$code" = 401 || fail "devapi בלי אסימון ($code)"
+ok "זהות מהשער, קבצי lib חסומים, devapi דורש אסימון"
 
-# החלפת אסימון: הישן → 401, החדש → 200
-code="$(st -b "$tmp/cookies" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 200 || fail "החלפת אסימון ($code)"
-tok2="$(php -r '$v=json_decode(file_get_contents($argv[1]),true); echo $v["token"] ?? "";' "$tmp/out")"
-test -n "$tok2" && test "$tok2" != "$tok1" || fail "האסימון לא הוחלף"
-code="$(st -H "Authorization: Bearer $tok1" "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "אסימון ישן אחרי החלפה ($code)"
-curl -sS -H 'Content-Type: application/json' -H "Authorization: Bearer $tok2" \
- --data '{"records":[{"month":"2026-10","name":"שם בדיקה בלבד","date":"2026-10-01","checks":{"license_number":{"status":"verified","value":"999"}}}]}' \
- "$ingest?action=import" > "$tmp/import2.json"
-php -r '$v=json_decode(file_get_contents($argv[1]),true); if (($v["imported"]??0)!==1) exit(1);' "$tmp/import2.json" || fail "ייבוא עם האסימון החדש"
-curl -sS -b "$tmp/cookies" "$base?action=export&month=2026-10" > "$tmp/export.json"
-curl -sS -H "Authorization: Bearer $tok2" "$ingest?action=export&month=2026-10" > "$tmp/ingest-export.json"
-php -r '$v=json_decode(file_get_contents($argv[1]),true); if(($v["records"][0]["checks"]["license_number"]["value"]??"")!=="123") exit(1);' "$tmp/ingest-export.json" || fail "עדכון ידני נדרס (ingest)"
-php -r '$v=json_decode(file_get_contents($argv[1]),true); if(($v["records"][0]["checks"]["license_number"]["value"]??"")!=="123") exit(1);' "$tmp/export.json" || fail "עדכון ידני נדרס (export)"
+# ===== A7: בלי ארגון =====
+login nobody; test "$code" = 403 && test "$(jv '$v["code"]')" = "'no_org'" || fail "A7: me ($code)"
+jv '$v["error"]' | grep -q 'עדיין לא שויכת' || fail "A7: ההודעה"
+jv '$v["error"]' | grep -q 'nobody@example.com' || fail "A7: המייל בהודעה"
+code="$(get nobody list '&month=2026-10')"; test "$code" = 403 || fail "A7: list ($code)"
+! grep -q 'נפטר' "$tmp/out" || fail "A7: דלף נתון"
+ok "A7 — בלי ארגון: מסך 'עדיין לא שויכת', list → 403"
 
-# ה-actor ביומן הוא המייל מהשער
-php -r '$p=new PDO("sqlite:".$argv[1]); $a=$p->query("SELECT actor FROM audit WHERE action IN (\x27save\x27,\x27api_token\x27)")->fetchAll(PDO::FETCH_COLUMN); if(!$a || array_unique($a)!==["tester@example.com"]) { fwrite(STDERR, json_encode($a)."\n"); exit(1);}' funerals-dashboard/data/funerals.sqlite || fail "actor ביומן"
+# ===== A6: הזמנה — המפתח ממנה מנהל לארגון 1, המנהל מזמין עובד שטח ומשרד =====
+code="$(post dev invite '{"email":"boss@example.com","role":"admin"}')"; test "$code" = 200 || fail "הזמנת מנהל ($code)"
+login boss; test "$code" = 200 && test "$(jv '$v["role"]')" = "'admin'" || fail "המנהל נכנס ($code)"
+code="$(post boss invite '{"email":"x@example.com","role":"field"}')"; test "$code" = 200 || fail "A6: הזמנה ($code)"
+code="$(post boss invite '{"email":"office@example.com","role":"office"}')"; test "$code" = 200 || fail "הזמנת משרד ($code)"
+test -z "$(sql "SELECT used_at FROM invites WHERE email='x@example.com'")" || fail "A6: ההזמנה סומנה לפני כניסה"
+login field; test "$code" = 200 && test "$(jv '$v["role"]')" = "'field'" || fail "A6: עובד השטח נכנס כ-field ($code)"
+test -n "$(sql "SELECT used_at FROM invites WHERE email='x@example.com'")" || fail "A6: used_at"
+test "$(sql "SELECT email FROM users WHERE sub='3'")" = x@example.com || fail "A6: המייל נשמר באותיות קטנות"
+login office; test "$code" = 200 || fail "משרד נכנס ($code)"
+# ביקורת 3: מייל לא מאומת לא מממש הזמנה ולא מקשר חשבון
+code="$(post boss invite '{"email":"unv@example.com","role":"office"}')"; test "$code" = 200 || fail "הזמנה ל-unv ($code)"
+ID[unv]='{"sub":"7","name":"לא מאומת","email":"unv@example.com","email_verified":false,"platform_admin":false,"granted":true}'
+login unv; test "$code" = 403 || fail "ביקורת 3: מייל לא מאומת מימש הזמנה ($code)"
+test -z "$(sql "SELECT used_at FROM invites WHERE email='unv@example.com'")" || fail "ביקורת 3: ההזמנה סומנה"
+test -z "$(sql "SELECT email FROM users WHERE sub='7'")" || fail "ביקורת 3: מייל לא מאומת נשמר"
+ok "A6 — הזמנה במייל (באותיות גדולות) → חבר field, used_at"
 
-# יציאה: עם CSRF בלבד
-code="$(st -b "$tmp/cookies" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
-code="$(st -b "$tmp/cookies" -X POST -H "X-CSRF-Token: $csrf" "$base?action=logout")"; test "$code" = 200 || fail "logout ($code)"
-echo "PASS: זהות מהשער (בלי/granted:false/granted:true/כותרת מזויפת), אין כניסה בסיסמה, אסימון API מהממשק (CSRF, SHA-256, 0600, החלפה מבטלת), config.php נוצר לבד, ingest.php Bearer בלבד, קליטה, ייצוא, עדכון ידני וייבוא חוזר"
+# ===== A5: תפקידים — עובד שטח =====
+code="$(get field list '&month=2026-10')"; test "$code" = 200 || fail "A5: field list ($code)"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); $r=$v["records"][0]; file_put_contents($argv[2], json_encode($r, JSON_UNESCAPED_UNICODE));' "$tmp/out" "$tmp/case.json"
+CID="$(php -r 'echo json_decode(file_get_contents($argv[1]),true)["id"];' "$tmp/case.json")"
+mut(){ php -r '$r=json_decode(file_get_contents($argv[1]),true); eval($argv[2]); echo json_encode($r, JSON_UNESCAPED_UNICODE);' "$tmp/case.json" "$1"; }
+before="$(sql "SELECT body FROM funerals WHERE id='$CID'")"
+code="$(post field save "$(mut '$r["name"]="שם אחר";')")"; test "$code" = 403 || fail "A5: שינוי שם ($code)"
+code="$(post field save "$(mut '$r["payments"][0]["amount"]=1;')")"; test "$code" = 403 || fail "A5: תשלום ($code)"
+code="$(post field save "$(mut '$r["id"]=""; $r["name"]="תיק חדש משטח";')")"; test "$code" = 403 || fail "A5: תיק חדש ($code)"
+code="$(post field import '{"records":[{"month":"2026-10","name":"ייבוא שטח"}]}')"; test "$code" = 403 || fail "A5: ייבוא ($code)"
+code="$(get field export '&month=2026-10')"; test "$code" = 403 || fail "A5: ייצוא ($code)"
+code="$(post field invite '{"email":"y@example.com","role":"field"}')"; test "$code" = 403 || fail "A5: הזמנה ($code)"
+code="$(get field members)"; test "$code" = 403 || fail "A5: רשימת חברים ($code)"
+test "$(sql "SELECT body FROM funerals WHERE id='$CID'")" = "$before" || fail "A5: משהו נשמר אחרי 403"
+test "$(sql "SELECT COUNT(*) FROM funerals WHERE name IN ('ייבוא שטח','תיק חדש משטח')")" = 0 || fail "A5: נוצר תיק"
+test "$(sql "SELECT COUNT(*) FROM invites WHERE email='y@example.com'")" = 0 || fail "A5: נשמרה הזמנה"
+code="$(post field save "$(mut '$r["checks"]["license_number"]=["status"=>"verified","value"=>"5555","note"=>"נבדק בשטח"]; $r["grave"]="גוש 9 חלקה 3"; $r["notes"]="הערה מהשטח";')")"
+test "$code" = 200 || fail "A5: עדכון בדיקה ($code)"
+ok "A5 — עובד שטח: שם/תשלום/תיק חדש/ייבוא/ייצוא/הזמנה → 403; בדיקה, קבר והערה → 200"
 
-# פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי)
+# ===== A10: אירועים =====
+ev(){ sql "SELECT org_id, actor, source, action, diff FROM events WHERE case_id='$1' ORDER BY id DESC LIMIT 1"; }
+e="$(ev "$CID")"
+php -r '[$o,$a,$s,$act,$d]=explode("|",$argv[1],5); $d=json_decode($d,true);
+  if($o!=="1"||$a!=="x@example.com"||$s!=="ui"||$act!=="save"||!isset($d["checks.license_number"],$d["grave"],$d["notes"])||isset($d["name"])) exit(1);' "$e" || fail "A10: אירוע save: $e"
+code="$(post office import '{"records":[{"month":"2026-10","name":"ייבוא משרד","date":"2026-10-30"}]}')"; test "$code" = 200 || fail "ייבוא משרד ($code)"
+IMP="$(sql "SELECT id FROM funerals WHERE name='ייבוא משרד'")"
+e="$(ev "$IMP")"; php -r '[$o,$a,$s,$act,$d]=explode("|",$argv[1],5); $d=json_decode($d,true); if($o!=="1"||$a!=="office@example.com"||$s!=="ui"||$act!=="create"||($d["name"][1]??"")!=="ייבוא משרד") exit(1);' "$e" || fail "A10: אירוע import: $e"
+code="$(get office export '&month=2026-10')"; test "$code" = 200 || fail "משרד מייצא ($code)"
+code="$(post office save "$(mut '$r["payments"][0]["amount"]=777;')")"; test "$code" = 200 || fail "משרד משנה תשלום ($code)"
+# ביקורת 4: השוואה מחמירה — תשלום null → 0 בידי עובד שטח הוא שינוי
+refresh(){ get boss list '&month=2026-10' >/dev/null; php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["id"]===$argv[3]) file_put_contents($argv[2], json_encode($r, JSON_UNESCAPED_UNICODE));' "$tmp/out" "$tmp/case.json" "$CID"; }
+refresh; code="$(post office save "$(mut '$r["payments"][0]["amount"]=null;')")"; test "$code" = 200 || fail "משרד מאפס סכום ($code)"
+refresh; code="$(post field save "$(mut '$r["payments"][0]["amount"]=0;')")"; test "$code" = 403 || fail "ביקורת 4: null→0 בידי שטח ($code)"
+code="$(post field save "$(mut '$r["payments"][0]["reference"]="1e2";')")"; test "$code" = 403 || fail "ביקורת 4: אסמכתה בידי שטח ($code)"
+code="$(post field save "$(mut '$r["notes"]="עדיין מותר";')")"; test "$code" = 200 || fail "ביקורת 4: הערה בידי שטח אחרי השוואה מחמירה ($code)"
+refresh
+ok "A10 — כל save/import נרשם ב-events עם org_id, actor ו-diff; השוואה מחמירה"
+
+# ===== A9: ingest.php עם האסימון שהיה לפני המיגרציה =====
+code="$(st -H "Authorization: Bearer $TOK0" "$ingest?action=list&month=2026-10")"; test "$code" = 200 || fail "A9: האסימון הישן ($code)"
+code="$(st "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "ingest בלי אסימון ($code)"
+code="$(st -H 'Authorization: Bearer wrong' "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "ingest אסימון שגוי ($code)"
+code="$(st -H 'Authorization: Bearer ' "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "ingest אסימון ריק ($code)"
+code="$(st -H 'Content-Type: application/json' -H "Authorization: Bearer $TOK0" --data '{"records":[{"month":"2026-10","name":"שם בדיקה בלבד","date":"2026-10-01","checks":{"license_number":{"status":"unreadable","value":"","note":"דורש אימות"}}}]}' "$ingest?action=import")"
+test "$code" = 200 || fail "A9: ייבוא ב-ingest ($code)"
+ING="$(sql "SELECT id FROM funerals WHERE name='שם בדיקה בלבד'")"
+test "$(sql "SELECT org_id FROM funerals WHERE id='$ING'")" = 1 || fail "A9: לא בארגון 1"
+test "$(sql "SELECT source||'/'||org_id FROM events WHERE case_id='$ING'")" = import/1 || fail "A9: events source import"
+ok "A9 — האסימון הקיים עובד; ייבוא לארגון 1, source: import"
+
+# ===== A4: הפרדה בין ארגונים =====
+code="$(post dev org_create '{"name":"ארגון בדיקה"}')"; test "$code" = 200 && test "$(jv '$v["created"]')" = 2 || fail "יצירת ארגון ($code)"
+code="$(post dev org_switch '{"org_id":2}')"; test "$code" = 200 || fail "מעבר לארגון 2 ($code)"
+code="$(get dev list '&month=2026-10')"; test "$(jv 'count($v["records"])')" = 0 || fail "A4: המפתח בארגון 2 רואה תיקים"
+code="$(post dev invite '{"email":"a2@example.com","role":"admin"}')"; test "$code" = 200 || fail "הזמנה לארגון 2 ($code)"
+login a2; test "$code" = 200 && test "$(jv '$v["org"]["id"]')" = 2 || fail "מנהל ב נכנס לארגון 2 ($code)"
+code="$(get a2 list '&month=2026-10')"; test "$code" = 200 && test "$(jv 'count($v["records"])')" = 0 || fail "A4: ארגון 2 רואה תיקים של 1"
+before="$(sql "SELECT body FROM funerals WHERE id='$CID'")"
+code="$(post a2 save "$(mut '$r["notes"]="פריצה";')")"; test "$code" = 404 || fail "A4: save לתיק של ארגון 1 ($code)"
+code="$(post a2 import "{\"records\":[$(mut '$r["notes"]="פריצה";')]}")"; test "$code" = 404 || fail "A4: import לתיק של ארגון 1 ($code)"
+test "$(sql "SELECT body FROM funerals WHERE id='$CID'")" = "$before" || fail "A4: התיק השתנה"
+code="$(post a2 save '{"month":"2026-10","name":"נפטר בדיקה 1","date":"2026-10-01"}')"; test "$code" = 200 || fail "A4: תיק חדש בארגון 2 ($code)"
+test "$(sql "SELECT COUNT(*) FROM funerals WHERE org_id=2")" = 1 || fail "A4: התיק לא בארגון 2"
+code="$(get boss list '&month=2026-10')"; test "$(jv 'count($v["records"])')" = 24 || fail "A4: ארגון 1 רואה $(jv 'count($v["records"])')"
+code="$(post a2 org_switch '{"org_id":1}')"; test "$code" = 404 || fail "A4: מעבר לארגון זר ($code)"
+code="$(get a2 members)"; test "$(jv 'count($v["members"])')" = 1 || fail "A4: חברים של ארגון אחר"
+# ביקורת 2: הזמנה של מייל קיים — ממתינה, לא מצרפת ולא חושפת
+code="$(post a2 invite '{"email":"boss@example.com","role":"admin"}')"; test "$code" = 200 || fail "a2 מזמין את boss ($code)"
+test "$(jv 'count(array_filter($v["members"], fn($m) => $m["email"] === "boss@example.com"))')" = 0 || fail "ביקורת 2: boss ברשימת החברים לפני כניסה"
+test "$(sql "SELECT COUNT(*) FROM members WHERE org_id=2 AND user_id=(SELECT id FROM users WHERE sub='2')")" = 0 || fail "ביקורת 2: צורף מיד"
+# ביקורת 1: השבתה בארגון ב' לא נוגעת בארגון א'
+login boss; test "$(sql "SELECT role FROM members WHERE org_id=2 AND user_id=(SELECT id FROM users WHERE sub='2')")" = admin || fail "boss לא הצטרף לארגון 2 בכניסה"
+BOSS="$(sql "SELECT id FROM users WHERE sub='2'")"
+code="$(post a2 member_active "{\"user_id\":$BOSS,\"active\":false}")"; test "$code" = 200 || fail "a2 משבית את boss בארגון 2 ($code)"
+login boss; test "$code" = 200 && test "$(jv '$v["org"]["id"]')" = 1 || fail "ביקורת 1: boss נחסם בארגון 1 ($code)"
+code="$(get boss list '&month=2026-10')"; test "$code" = 200 || fail "ביקורת 1: boss list בארגון 1 ($code)"
+test "$(sql "SELECT active FROM users WHERE id=$BOSS")" = 1 || fail "ביקורת 1: users.active השתנה"
+code="$(post boss user_active "{\"user_id\":$BOSS,\"active\":false}")"; test "$code" = 403 || fail "ביקורת 1: user_active למנהל ($code)"
+code="$(post dev org_switch '{"org_id":1}')"; test "$code" = 200 || fail "חזרה לארגון 1"
+ok "A4 — ארגון 2 לא רואה ולא משנה תיק של ארגון 1 (404)"
+
+# ===== A8 (שלילי): מסך המפתח — רק למפתח =====
+for a in dev_health dev_requests dev_events orgs dev-items dev-tokens; do
+  code="$(get boss "$a")"; test "$code" = 403 || fail "A8: $a למנהל ($code)"
+done
+code="$(post boss org_create '{"name":"x"}')"; test "$code" = 403 || fail "A8: org_create למנהל ($code)"
+code="$(post boss org_rename '{"org_id":1,"name":"x"}')"; test "$code" = 403 || fail "A8: org_rename למנהל ($code)"
+code="$(post boss dev-task-create '{"title":"x"}')"; test "$code" = 403 || fail "A8: dev-task-create למנהל ($code)"
+code="$(get dev orgs)"; test "$(jv 'count($v["orgs"])')" = 2 || fail "A8: המפתח רואה את כל הארגונים"
+code="$(post dev org_rename '{"org_id":2,"name":"ארגון ב"}')"; test "$code" = 200 || fail "שינוי שם ארגון ($code)"
+code="$(post dev dev-task-create '{"title":"בדיקת DevLoop"}')"; test "$code" = 200 || fail "DevLoop: מטלה חדשה ($code)"
+jv '$v["code"]' | grep -qE "^'FD-[0-9]{3}'$" || fail "DevLoop: קוד FD-"
+code="$(get dev dev-items)"; test "$code" = 200 || fail "DevLoop: dev-items ($code)"
+ok "A8 — מסך מפתח, ארגונים ו-DevLoop: 403 לכל מי שאינו מפתח"
+
+# ===== A12: מנהל אחרון =====
+code="$(post a2 member_role "{\"user_id\":$(sql "SELECT id FROM users WHERE sub='5'"),\"role\":\"field\"}")"; test "$code" = 400 || fail "A12: מנהל אחרון ($code)"
+test "$(sql "SELECT role FROM members WHERE org_id=2 AND user_id=(SELECT id FROM users WHERE sub='5')")" = admin || fail "A12: התפקיד השתנה"
+ok "A12 — מנהל יחיד שמוריד את עצמו → 400"
+
+# ===== A13: מושבת =====
+OFF="$(sql "SELECT id FROM users WHERE sub='4'")"
+code="$(post boss member_active "{\"user_id\":$OFF,\"active\":false}")"; test "$code" = 200 || fail "השבתה ($code)"
+login office; test "$code" = 403 || fail "A13: me ($code)"
+code="$(get office list '&month=2026-10')"; test "$code" = 403 || fail "A13: list ($code)"
+code="$(get office export '&month=2026-10')"; test "$code" = 403 || fail "A13: export ($code)"
+code="$(post office save "$(mut '$r["notes"]="מושבת";')")"; test "$code" = 403 || fail "A13: save ($code)"
+code="$(post office import '{"records":[]}')"; test "$code" = 403 || fail "A13: import ($code)"
+code="$(post boss member_active "{\"user_id\":$OFF,\"active\":true}")"; test "$code" = 200 || fail "הפעלה מחדש ($code)"
+login office; test "$code" = 200 || fail "A13: אחרי הפעלה מחדש ($code)"
+ok "A13 — active=0 → 403 על כל פעולה"
+
+# ===== A11: סודות =====
+php -r 'chdir($argv[1]); require "lib.php"; db(); secretPut("t", 1, "abc"); if (secretGet("t", 1) !== "abc" || secretGet("t", 2) !== null) exit(1);' "$APP" || fail "A11: secretGet"
+test "$(sql "SELECT COUNT(*) FROM secrets WHERE name='t' AND value_enc LIKE '%abc%'")" = 0 || fail "A11: הערך בגלוי"
+test "$(stat -c %a "$D/secret.key")" = 600 && test "$(stat -c %s "$D/secret.key")" = 32 || fail "A11: secret.key"
+ok "A11 — secretPut/secretGet, מוצפן, 0600"
+
+# ===== אסימון ingest.php מהממשק (כמו קודם): CSRF, SHA-256, 0600, החלפה מבטלת =====
+code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 403 || fail "api_token בלי CSRF ($code)"
+code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST -H 'X-CSRF-Token: wrong' -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 403 || fail "api_token CSRF שגוי ($code)"
+code="$(post field api_token '{}')"; test "$code" = 403 || fail "api_token לעובד שטח ($code)"
+code="$(post a2 api_token '{}')"; test "$code" = 403 || fail "api_token למנהל ארגון 2 ($code)"
+code="$(post boss api_token '{}')"; test "$code" = 200 || fail "api_token ($code)"
+tok1="$(jv '$v["token"]' | tr -d "'")"; test -n "$tok1" || fail "לא הוחזר אסימון"
+! grep -q "$tok1" "$D/config.php" || fail "האסימון נשמר בגלוי"
+grep -q "$(printf '%s' "$tok1" | sha256sum | cut -d' ' -f1)" "$D/config.php" || fail "ה-SHA-256 לא נשמר"
+test "$(stat -c %a "$D/config.php")" = 600 || fail "config.php לא 0600"
+code="$(st -H "Authorization: Bearer $TOK0" "$ingest?action=list&month=2026-10")"; test "$code" = 401 || fail "אסימון ישן אחרי החלפה ($code)"
+code="$(st -H "Authorization: Bearer $tok1" "$ingest?action=list&month=2026-10")"; test "$code" = 200 || fail "אסימון חדש ($code)"
+# session של משתמש אחר: CSRF של boss לא עובר אצל field
+code="$(as "${ID[field]}"; st -b "$tmp/c-boss" -H "X-CSRF-Token: ${CSRF[boss]}" -H 'Content-Type: application/json' -d '{}' "$base?action=api_token")"; test "$code" = 403 || fail "CSRF של sub אחר ($code)"
+login boss; test "$code" = 200 || fail "boss מחדש"
+ok "אסימון ingest.php: CSRF, SHA-256, 0600, רק מנהל ארגון 1, החלפה מבטלת"
+
+# ===== עדכון ידני גובר על ייבוא חוזר (כמו קודם) =====
+code="$(get boss list '&month=2026-10')"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["name"]==="שם בדיקה בלבד"){ $r["checks"]["license_number"]=["status"=>"reported","value"=>"123","note"=>"עדכון משתמש"]; echo json_encode($r,JSON_UNESCAPED_UNICODE);}' "$tmp/out" > "$tmp/update.json"
+code="$(post boss save "$(cat "$tmp/update.json")")"; test "$code" = 200 || fail "שמירה ידנית ($code)"
+code="$(st -H 'Content-Type: application/json' -H "Authorization: Bearer $tok1" --data '{"records":[{"month":"2026-10","name":"שם בדיקה בלבד","date":"2026-10-01","checks":{"license_number":{"status":"verified","value":"999"}}}]}' "$ingest?action=import")"
+test "$code" = 200 || fail "ייבוא חוזר ($code)"
+code="$(st -H "Authorization: Bearer $tok1" "$ingest?action=export&month=2026-10")"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["name"]==="שם בדיקה בלבד" && ($r["checks"]["license_number"]["value"]??"")==="123") exit(0); exit(1);' "$tmp/out" || fail "עדכון ידני נדרס"
+ok "עדכון ידני גובר על ייבוא חוזר"
+
+# ===== A16 (חלקי): בקשה שנכשלה מופיעה ביומן השגיאות =====
+code="$(get dev nonexistent_action)"; test "$code" = 404 || fail "פעולה לא מוכרת ($code)"
+code="$(get dev dev_requests '&errors=1')"; test "$code" = 200 || fail "dev_requests ($code)"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["rows"] as $r) if($r["action"]==="nonexistent_action" && (int)$r["status"]===404) exit(0); exit(1);' "$tmp/out" || fail "A16: השגיאה לא ביומן"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["rows"] as $r) if((int)$r["status"]<400) exit(1);' "$tmp/out" || fail "A16: סינון רק שגיאות"
+code="$(get dev dev_events)"; test "$code" = 200 && test "$(jv 'count($v["rows"]) > 5')" = true || fail "dev_events ($code)"
+ok "A16 — שגיאה ביומן הבקשות; יומן פעולות"
+
+# ===== יציאה: עם CSRF בלבד =====
+code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
+code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
+! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
+echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר"
+
+# ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
 kill "$pid" >/dev/null 2>&1 || true; pid=0
-bash funerals-dashboard/tests/ext.sh
+bash "$APP/tests/ext.sh"

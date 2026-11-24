@@ -1,25 +1,27 @@
 # מה צ'אט הקוד הבא צריך לדעת
 
 
-## פרוסה 05 — API חיצוני (ענף `claude/funerals-dashboard-05-external-api`)
+## אחרי פרוסה 00 (סקר) — 2026-11-24, PR ‏#1834
 
-**מצב:** בנוי ונבדק מול האפיון (E1–E10 אוטומטיים ב-`tests/ext.sh`). E11 ידני אחרי פריסה. ממתין למיזוג 01 ו-02 ליישור.
+- **קודם לקרוא:** `dev/audit.md`. יש בו מצב 12 הכללים ו-D1–D8, מה שומרים ומה מחליפים (סעיף ג׳), ותוכנית המעבר (סעיף ד׳).
+- **הקוד:** חמישה קבצים, כ-1,200 שורות. `lib.php` הוא הליבה. `api.php` משרת את הדפדפן ו-`ingest.php` עובד עם Bearer. ה-JS מוטמע בתוך `index.html`, ו-`tests/run.sh` מחלץ אותו משם (שורה 13).
+- **החוסר שחוסם הכול:** אין משתמשים ואין ארגונים. פרוסת הקוד הראשונה היא הסכמה והמיגרציה.
+- **נתונים חיים:** 22 תיקים ב-`data/funerals.sqlite`, ו-hash של אסימון ב-`data/config.php`. לא נוגעים ב-`funerals`, ב-`audit` וב-`config.php`. לפני המיגרציה גיבוי ל-`data/backup/`. האסימון הישן חייב להמשיך לעבוד, ובדיקה ב-`run.sh` מוודאת זאת.
+- **נתיבים חדשים רק תחת `data/`.** כך ההחרגה הקיימת ב-`deploy.yml:360` מכסה אותם ולא צריך `--exclude` חדש.
+- **מזהי התיקים הקיימים (`fd_…`) נשמרים.** המזהה מחושב היום משם, חודש ותאריך (`lib.php:127`), ולכן תיקון שם בייבוא יוצר תיק כפול.
+- **בדיקות לפני push:** `php platform/check-apps.php` ו-`bash funerals-dashboard/tests/run.sh`. שניהם רצים בכ-10 שניות.
+## פרוסה 05 — API חיצוני (ענף `claude/funerals-dashboard-05-external-api`, PR #1840)
 
-**יישור אחרי מיזוג 01/02/03** — כל המקומות מסומנים `ADAPTER` ב-`ext-lib.php`:
-1. `extRequireInfra` — טבלת `tokens` נוצרת כאן ב-`CREATE IF NOT EXISTS`; אם 01 מנהלת סכמה ב-`user_version` — להעביר לשם.
-2. `extMember` / `extUserBySub` / `extMemberships` — לקרוא לפונקציות של 01 אם יש (או להשאיר: אותן טבלאות).
-3. `extRecordEvent` → `recordEvent()` של 01. `extLogRequest` → הפונקציה של 01 ל-`req_log` (בלי האסימון!).
-4. `extFinalAllowed` — כבר משתמש ב-`finalAllowed()` של 02 כשהיא קיימת. לבדוק ש-02 שומרת `by/via/at` כמו כאן.
-5. `tokens.php` — הארגון הפעיל: היום `?org=` + `$_SESSION['fd_org']`; להחליף בארגון הפעיל של 01.
-6. `extDropboxReady('dropboxCaseFiles' / 'dropboxFileText')` — לבדוק את השמות והחתימות האמיתיים של 03.
-7. `tests/ext-fixture.php setup` יוצר את טבלאות 01 לפי האפיון רק אם חסרות — אחרי 01 לבדוק שהעמודות תואמות.
+**מצב:** מיושר מול 01 (מוזגה, #1839). E1–E10 אוטומטיים ב-`tests/ext.sh` (נקרא מ-`run.sh`). E11 ידני אחרי פריסה.
+ממתין למיזוג 02 (`finalAllowed`) — עד אז `extFinalAllowed()` ב-`ext-lib.php` מחזיר את אותו כלל (ui/field/import בלבד).
 
-**החלטות טכניות:** נתיב `ext.php/<action>` (PATH_INFO) ב-OpenAPI, כי GPT Actions דורש נתיב לכל פעולה ו-OpenAPI אוסר
-`?` בנתיב; `?action=` נתמך גם. אם PATH_INFO לא עובד בשרת (E11) — לעבור לקבצים `ext/<action>.php` או rewrite.
-ולידציית OpenAPI — מבנית ב-PHP (`tests/openapi-check.php`); התקנת ולידטור חיצוני מ-npm נחסמה בסשן.
+**איך 05 יושבת על 01:**
+- `ext.php`: האסימון → `extMember()` (users.active=1 וגם members.active=1, ברגע הבקשה) → `extSetContext()` בונה את `fd_ctx`,
+  וכל הרשאה היא `can()` דרך `EXT_PERM_MAP` (view→case.view, update→case.track, details/payments/create→case.edit). אף פעם לא `dev`.
+- כתיבה: `existing()` (זר → 404) ו-`store(..., ctx()['actor'], 'api', ...)` — התיק והאירוע יחד. יומן: `logRequest('ext:…')`.
+- `tokens.php`: `resolveAccess()` — הארגון הפעיל של 01. מפתח בלי תפקיד בארגון לא יוצר אסימון (אין תפקיד לתת לו).
+- טבלת `tokens` — `extEnsureSchema()` לפי שם ואידמפוטנטית, **בלי** מספר גרסה — כדי לא להתנגש במיגרציה של 03 (הצעת הבקרה).
 
-**החתימות של 01 (מקוד 01, PR #1839):** `recordEvent(?int $orgId, ?string $caseId, array $actor, string $source, string $action, array $diff=[])`
-ב-`lib/events.php` (`$actor=['id'=>…, 'actor'=>…]`, `$diff={שדה:[לפני,אחרי]}`, `caseDiff()`); `logRequest($method,$action,$status,$ms,$userId,$error)`;
-`store(PDO,$v,?$old,int $orgId,array $actor,string $source,string $action)` כותב תיק + אירוע; `existing(PDO,$id,$orgId)`; `normalize($v,int $orgId=1)`.
-`can()/scope()` נשענים על `$GLOBALS['fd_ctx']` — ב-ext.php לבנות מהאסימון. `members.active` (השבתה לארגון) — כבר מסונן ב-`extMember`.
-`tokens` — 01 מעדיפה `migrateV2()` ב-`lib/schema.php`; מספור V2 מול 02/03 — לפי סדר המיזוג (לשאול את הבקרה).
+**כש-02 תמוזג:** לבדוק ש-`finalAllowed('api')` מחזירה false, ושהשדות `by/via/at` של 02 תואמים למה ש-05 כותבת.
+**כש-03 תמוזג:** השמות `dropboxCaseFiles($pdo, $case)` / `dropboxFileText($pdo, $orgId, $fileId)` — לבדוק מול 03 (שאלתי, טרם נענה).
+**PATH_INFO:** OpenAPI משתמש ב-`ext.php/<action>`; `?action=` נתמך גם. אם לא עובד בשרת (E11) — `ext/<action>.php` או rewrite.

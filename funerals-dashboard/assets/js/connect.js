@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  let csrf = '', org = 0, data = null, freshToken = '';
+  let csrf = '', data = null, freshToken = '';
 
   function node(tag, cls, text) {
     const e = document.createElement(tag);
@@ -16,7 +16,6 @@
   }
   async function request(action, body = null) {
     const params = new URLSearchParams({action});
-    if (org) params.set('org', String(org));
     const opts = {method: body ? 'POST' : 'GET', credentials: 'same-origin', headers: {}};
     if (body) { opts.headers['Content-Type'] = 'application/json'; opts.headers['X-CSRF-Token'] = csrf; opts.body = JSON.stringify(body); }
     const res = await fetch('tokens.php?' + params, opts);
@@ -38,9 +37,8 @@
 
   function render() {
     $('topSub').textContent = data.org.name + ' · ' + data.role_name;
-    const sel = $('org');
-    $('orgBar').hidden = data.orgs.length < 2;
-    sel.replaceChildren(...data.orgs.map(o => { const op = node('option', '', o.name); op.value = o.id; op.selected = o.id === data.org.id; return op; }));
+    $('newForm').hidden = !data.can_create;
+    $('noRole').hidden = data.can_create;
     $('listTitle').textContent = data.can_manage ? 'האסימונים בארגון' : 'האסימונים שלי';
     const list = $('tokens'); list.replaceChildren();
     if (!data.tokens.length) list.append(node('li', 'empty', 'אין עדיין אסימונים'));
@@ -71,7 +69,7 @@
   async function load() {
     try {
       data = await request('me');
-      csrf = data.csrf; org = data.org.id;
+      csrf = data.csrf;
       $('app').hidden = false; $('fatal').hidden = true;
       render();
     } catch (e) { $('fatal').textContent = e.message; $('fatal').hidden = false; $('app').hidden = true; }
@@ -100,6 +98,5 @@
   $('copyApi').addEventListener('click', () => data && copy(data.openapi_url, 'קובץ ה-API'));
   $('copyToken').addEventListener('click', () => freshToken ? copy(freshToken, 'האסימון') : toast('קודם ליצור אסימון', true));
   $('copyFresh').addEventListener('click', () => copy(freshToken, 'האסימון'));
-  $('org').addEventListener('change', e => { org = +e.target.value; freshToken = ''; $('fresh').hidden = true; $('copyToken').disabled = true; load(); });
   load();
 })();

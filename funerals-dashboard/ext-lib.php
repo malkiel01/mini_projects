@@ -5,9 +5,8 @@ declare(strict_types=1);
  * פרוסה 05 — API חיצוני לצ'אט (GPT): טבלת הפעולות (המקור היחיד ל-ext.php, ל-openapi.json ולפרומפט),
  * אסימונים אישיים, הרשאות לפי תפקיד, והשכבה הדקה מול 01/02/03.
  *
- * **שכבת המעבר (מסומנת ADAPTER):** 01 (ארגונים, משתמשים, events, req_log) ו-02 (finalAllowed) נבנות במקביל.
- * עד שימוזגו — הפונקציות כאן קוראות לטבלאות לפי האפיון (01 §2.1) ומשתמשות בפונקציה של 02 כשהיא קיימת.
- * אחרי המיזוג מחליפים את גוף פונקציות ה-ADAPTER בקריאה לפונקציות של 01/02 — בלי לשנות את החתימות כאן.
+ * נשען על 01: can() (ההקשר נבנה מהאסימון — extAuthenticate), existing()/store() (תיק + אירוע ב-events), logRequest().
+ * על 02 — דרך extFinalAllowed() (finalAllowed() כשתמוזג); על 03 — רק כשהפונקציות שלה קיימות (extDropboxReady).
  *
  * הקובץ אינו נקודת קצה: גישה ישירה אליו מחזירה 404. נטען אחרי lib.php.
  */
@@ -39,13 +38,11 @@ const EXT_FIELDS = [
     'name' => 'details', 'date' => 'details', 'time' => 'details', 'origin' => 'details', 'team' => 'details',
     'notes' => 'details', 'folder_url' => 'details', 'payments' => 'payments', 'grave' => 'update',
 ];
-/** הרשאות לפי תפקיד (01 §2.3). דרך אסימון אין "מפתח" — רק התפקיד בארגון. */
-const EXT_ROLE_PERMS = [
-    'field' => ['view', 'update'],
-    'office' => ['view', 'update', 'details', 'payments', 'create'],
-    'admin' => ['view', 'update', 'details', 'payments', 'create', 'manage_tokens'],
+/** ההרשאות של 05 → ההרשאות של 01 (lib/access.php PERMS). דרך אסימון אין "מפתח" — רק התפקיד בארגון. */
+const EXT_PERM_MAP = [
+    'view' => 'case.view', 'update' => 'case.track', 'details' => 'case.edit', 'payments' => 'case.edit',
+    'create' => 'case.edit', 'manage_tokens' => 'members.manage',
 ];
-const EXT_ROLE_NAMES = ['field' => 'עובד שטח', 'office' => 'משרד', 'admin' => 'מנהל'];
 
 /**
  * טבלת הפעולות — המקור היחיד. ext.php מנתב לפיה, tools/build-ext.php מייצר ממנה את openapi.json ואת gpt-prompt.md.
@@ -107,76 +104,40 @@ function extActions(): array {
     ];
 }
 
-// ───────────────────────── ADAPTER: 01 / 02 / 03 ─────────────────────────
+// ───────────────────────── מול 01 / 02 / 03 ─────────────────────────
 
-function extTableExists(PDO $pdo, string $table): bool {
-    $st = $pdo->prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");
-    $st->execute([$table]);
-    return (bool)$st->fetchColumn();
-}
-function extColumnExists(PDO $pdo, string $table, string $col): bool {
-    foreach ($pdo->query('PRAGMA table_info(' . $table . ')')->fetchAll() as $c) if ($c['name'] === $col) return true;
-    return false;
-}
-/** ADAPTER (01): התשתית קיימת? בלי ארגונים ומשתמשים אין למי לשייך אסימון — 503, לא פתיחה. */
-function extRequireInfra(PDO $pdo): void {
+/** טבלת האסימונים — לפי שם ואידמפוטנטית (CREATE IF NOT EXISTS), בלי מספר גרסה, כדי לא להתנגש במיגרציות של 03. */
+function extEnsureSchema(PDO $pdo): void {
     static $ok = false;
     if ($ok) return;
-    foreach (['orgs', 'users', 'members', 'events'] as $t) {
-        if (!extTableExists($pdo, $t)) reply(503, ['error' => 'תשתית הארגונים והמשתמשים (פרוסה 01) עוד לא הותקנה']);
-    }
-    if (!extColumnExists($pdo, 'funerals', 'org_id')) reply(503, ['error' => 'תשתית הארגונים (פרוסה 01) עוד לא הותקנה']);
     $pdo->exec('CREATE TABLE IF NOT EXISTS tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, org_id INTEGER NOT NULL,
         name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, hint TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
         last_used_at TEXT, revoked_at TEXT, revoked_by INTEGER, rl_min INTEGER NOT NULL DEFAULT 0, rl_n INTEGER NOT NULL DEFAULT 0)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tokens_user ON tokens(user_id)');
     $ok = true;
 }
-/** ADAPTER (01): החבר (משתמש × ארגון × תפקיד) — רק משתמש פעיל, ברגע הבקשה. */
+/** החבר (משתמש × ארגון × תפקיד), ברגע הבקשה: users.active=1 וגם members.active=1 (השבתה היא לארגון). */
 function extMember(PDO $pdo, int $userId, int $orgId): ?array {
-    // השבתה היא גם לארגון (members.active של 01): חבר פעיל = u.active=1 וגם m.active=1
-    $mActive = extColumnExists($pdo, 'members', 'active') ? ' AND m.active=1' : '';
-    $st = $pdo->prepare('SELECT u.id AS user_id, u.name, u.email, u.active, m.org_id, m.role, o.name AS org_name
-        FROM users u JOIN members m ON m.user_id=u.id JOIN orgs o ON o.id=m.org_id WHERE u.id=? AND m.org_id=?' . $mActive);
+    $st = $pdo->prepare('SELECT u.id AS user_id, u.name, u.email, m.org_id, m.role, o.name AS org_name
+        FROM users u JOIN members m ON m.user_id=u.id JOIN orgs o ON o.id=m.org_id
+        WHERE u.id=? AND m.org_id=? AND u.active=1 AND m.active=1');
     $st->execute([$userId, $orgId]);
     $m = $st->fetch();
-    if (!$m || (int)$m['active'] !== 1 || !isset(EXT_ROLE_PERMS[$m['role']])) return null;
-    return $m;
+    return $m && isset(ROLES[$m['role']]) ? $m : null;
 }
-/** ADAPTER (01): המשתמש המקומי לפי ה-sub מהשער (01 מקשר/יוצר אותו בכניסה; כאן רק קוראים). */
-function extUserBySub(PDO $pdo, string $sub): ?array {
-    $st = $pdo->prepare('SELECT id, name, email, active FROM users WHERE sub=?');
-    $st->execute([$sub]);
-    $u = $st->fetch();
-    return $u && (int)$u['active'] === 1 ? $u : null;
+/** ההקשר של 01 (ctx) מהאסימון — כדי ש-can() יעבוד ב-ext.php בלי השער. אף פעם לא מפתח. */
+function extSetContext(array $m): void {
+    $org = ['id' => (int)$m['org_id'], 'name' => $m['org_name'], 'role' => $m['role']];
+    $GLOBALS['fd_ctx'] = ['user' => ['id' => (int)$m['user_id'], 'name' => (string)$m['name'], 'email' => (string)($m['email'] ?? '')],
+        'actor' => ['id' => (int)$m['user_id'], 'actor' => extActor($m)], 'dev' => false, 'active' => true,
+        'orgs' => [$org], 'org' => $org, 'role' => $m['role']];
 }
-/** ADAPTER (01): החברויות של משתמש — לבורר הארגון במסך החיבור. */
-function extMemberships(PDO $pdo, int $userId): array {
-    $mActive = extColumnExists($pdo, 'members', 'active') ? ' AND m.active=1' : '';
-    $st = $pdo->prepare('SELECT m.org_id, m.role, o.name AS org_name FROM members m JOIN orgs o ON o.id=m.org_id WHERE m.user_id=?' . $mActive . ' ORDER BY o.name');
-    $st->execute([$userId]);
-    return array_values(array_filter($st->fetchAll(), static fn($m) => isset(EXT_ROLE_PERMS[$m['role']])));
-}
-/** ADAPTER (01 recordEvent): שורה ב-events. */
-function extRecordEvent(PDO $pdo, array $m, ?string $caseId, string $action, array $diff): void {
-    $pdo->prepare('INSERT INTO events(org_id, case_id, at, actor_user_id, actor, source, action, diff) VALUES(?,?,?,?,?,?,?,?)')
-        ->execute([(int)$m['org_id'], $caseId, gmdate('c'), (int)$m['user_id'], extActor($m), 'api', $action,
-            json_encode($diff, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
-}
-/** ADAPTER (01 req_log): שורת יומן — פעולה, סטטוס, זמן ומשתמש. **אף פעם לא האסימון או הכותרת.** */
-function extLogRequest(PDO $pdo, string $method, string $action, int $status, float $t0, ?int $userId): void {
-    try {
-        if (!extTableExists($pdo, 'req_log')) return;
-        $pdo->prepare('INSERT INTO req_log(at, method, action, status, ms, user_id, error) VALUES(?,?,?,?,?,?,?)')
-            ->execute([gmdate('c'), $method, 'ext:' . substr($action, 0, 40), $status, (int)round((microtime(true) - $t0) * 1000), $userId, null]);
-    } catch (Throwable $e) { /* יומן לא מפיל בקשה */ }
-}
-/** ADAPTER (02 finalAllowed): "הושלם" רק באדם. כשהפונקציה של 02 קיימת — היא הקובעת. */
+/** "הושלם" רק באדם. כשהפונקציה של 02 קיימת — היא הקובעת. */
 function extFinalAllowed(string $via): bool {
     if (function_exists('finalAllowed')) return (bool)finalAllowed($via);
     return in_array($via, ['ui', 'field', 'import'], true);
 }
-/** ADAPTER (03): קבצי תיק ו-טקסט של קובץ — רק כשהפונקציות של 03 קיימות. */
+/** קבצי תיק וטקסט של קובץ — רק כשהפונקציות של 03 קיימות. */
 function extDropboxReady(string $fn): bool { return function_exists($fn); }
 
 // ───────────────────────── אסימונים ─────────────────────────
@@ -185,8 +146,8 @@ function extActor(array $m): string {
     $who = trim((string)($m['name'] ?? '')) !== '' ? $m['name'] : ((string)($m['email'] ?? '') !== '' ? $m['email'] : 'משתמש ' . $m['user_id']);
     return $who . " (צ'אט)";
 }
-function extPerms(string $role): array { return EXT_ROLE_PERMS[$role] ?? []; }
-function extCan(array $m, string $perm): bool { return in_array($perm, extPerms((string)$m['role']), true); }
+/** הרשאה של 05 — דרך can() של 01, על ההקשר הנוכחי. */
+function extCan(string $perm): bool { return can(EXT_PERM_MAP[$perm]); }
 
 /** האסימון מהכותרת Authorization: Bearer בלבד. */
 function extBearer(): string {
@@ -208,6 +169,7 @@ function extAuthenticate(PDO $pdo): array {
     if (!$t || $t['revoked_at'] !== null || strcmp((string)$t['expires_at'], gmdate('c')) <= 0) $deny();
     $m = extMember($pdo, (int)$t['user_id'], (int)$t['org_id']);
     if ($m === null) $deny();
+    extSetContext($m);
     $minute = intdiv(time(), 60);
     $pdo->prepare('UPDATE tokens SET rl_n = CASE WHEN rl_min=? THEN rl_n+1 ELSE 1 END, rl_min=?, last_used_at=? WHERE id=?')
         ->execute([$minute, $minute, gmdate('c'), (int)$t['id']]);
@@ -232,33 +194,29 @@ function extCreateToken(PDO $pdo, array $m, string $name, int $days): array {
     $pdo->prepare('INSERT INTO tokens(user_id, org_id, name, hash, hint, created_at, expires_at) VALUES(?,?,?,?,?,?,?)')
         ->execute([(int)$m['user_id'], (int)$m['org_id'], $name, hash('sha256', $token), substr($token, -4), gmdate('c'), $expires]);
     $id = (int)$pdo->lastInsertId();
-    $pdo->prepare('INSERT INTO events(org_id, case_id, at, actor_user_id, actor, source, action, diff) VALUES(?,?,?,?,?,?,?,?)')
-        ->execute([(int)$m['org_id'], null, gmdate('c'), (int)$m['user_id'], (string)($m['name'] ?: $m['email']), 'ui', 'token_created',
-            json_encode(['token_id' => $id, 'name' => $name, 'expires_at' => $expires], JSON_UNESCAPED_UNICODE)]);
+    recordEvent((int)$m['org_id'], null, ctx()['actor'], 'ui', 'token_created', ['token' => [null, $name . ' #' . $id], 'expires_at' => [null, $expires]]);
     return ['id' => $id, 'token' => $token, 'name' => $name, 'expires_at' => $expires];
 }
 /** הרשימה: שלי, ולמנהל — של כל הארגון. בלי hash. */
-function extListTokens(PDO $pdo, array $m): array {
-    $all = extCan($m, 'manage_tokens');
+function extListTokens(PDO $pdo, int $orgId, int $userId): array {
+    $all = extCan('manage_tokens');
     $st = $pdo->prepare('SELECT t.id, t.name, t.hint, t.created_at, t.expires_at, t.last_used_at, t.revoked_at, t.user_id,
         COALESCE(NULLIF(u.name, \'\'), u.email) AS owner FROM tokens t LEFT JOIN users u ON u.id=t.user_id
         WHERE t.org_id=? ' . ($all ? '' : 'AND t.user_id=? ') . 'ORDER BY t.revoked_at IS NOT NULL, t.created_at DESC LIMIT 200');
-    $st->execute($all ? [(int)$m['org_id']] : [(int)$m['org_id'], (int)$m['user_id']]);
+    $st->execute($all ? [$orgId] : [$orgId, $userId]);
     $now = gmdate('c');
-    return array_map(static fn($t) => $t + ['mine' => (int)$t['user_id'] === (int)$m['user_id'],
+    return array_map(static fn($t) => $t + ['mine' => (int)$t['user_id'] === $userId,
         'state' => $t['revoked_at'] !== null ? 'revoked' : (strcmp($t['expires_at'], $now) <= 0 ? 'expired' : 'active')], $st->fetchAll());
 }
 /** ביטול: שלי, או כל אסימון בארגון למנהל. אסימון של ארגון אחר → 404. אין מחיקה — השורה נשארת עם revoked_at. */
-function extRevokeToken(PDO $pdo, array $m, int $id): void {
+function extRevokeToken(PDO $pdo, int $orgId, int $userId, int $id): void {
     $st = $pdo->prepare('SELECT id, user_id, revoked_at FROM tokens WHERE id=? AND org_id=?');
-    $st->execute([$id, (int)$m['org_id']]);
+    $st->execute([$id, $orgId]);
     $t = $st->fetch();
-    if (!$t || ((int)$t['user_id'] !== (int)$m['user_id'] && !extCan($m, 'manage_tokens'))) reply(404, ['error' => 'אסימון לא נמצא']);
+    if (!$t || ((int)$t['user_id'] !== $userId && !extCan('manage_tokens'))) reply(404, ['error' => 'אסימון לא נמצא']);
     if ($t['revoked_at'] !== null) return;
-    $pdo->prepare('UPDATE tokens SET revoked_at=?, revoked_by=? WHERE id=?')->execute([gmdate('c'), (int)$m['user_id'], $id]);
-    $pdo->prepare('INSERT INTO events(org_id, case_id, at, actor_user_id, actor, source, action, diff) VALUES(?,?,?,?,?,?,?,?)')
-        ->execute([(int)$m['org_id'], null, gmdate('c'), (int)$m['user_id'], (string)($m['name'] ?: $m['email']), 'ui', 'token_revoked',
-            json_encode(['token_id' => $id], JSON_UNESCAPED_UNICODE)]);
+    $pdo->prepare('UPDATE tokens SET revoked_at=?, revoked_by=? WHERE id=?')->execute([gmdate('c'), $userId, $id]);
+    recordEvent($orgId, null, ctx()['actor'], 'ui', 'token_revoked', ['token' => ['#' . $id, null]]);
 }
 
 // ───────────────────────── תיקים ─────────────────────────
@@ -281,14 +239,10 @@ function extSummary(array $c): array {
     return ['id' => $c['id'], 'name' => $c['name'], 'date' => $c['date'] ?? '', 'time' => $c['time'] ?? '', 'month' => $c['month'],
         'origin' => $c['origin'] ?? '', 'status' => $status, 'next' => $next, 'counts' => $n];
 }
-/** תיק של הארגון בלבד; של ארגון אחר — כאילו לא קיים (404, לא 403). */
+/** תיק של הארגון בלבד; של ארגון אחר — כאילו לא קיים (404, existing() של 01). */
 function extCase(PDO $pdo, int $orgId, string $id): array {
     if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(404, ['error' => 'תיק לא נמצא']);
-    $st = $pdo->prepare('SELECT body FROM funerals WHERE id=? AND org_id=?');
-    $st->execute([$id, $orgId]);
-    $b = $st->fetchColumn();
-    if ($b === false) reply(404, ['error' => 'תיק לא נמצא. לחפש קודם עם find.']);
-    return json_decode((string)$b, true);
+    return existing($pdo, $id, $orgId) ?? reply(404, ['error' => 'תיק לא נמצא. לחפש קודם עם find.']);
 }
 
 /** ההנחיות ל-GPT — נוצרות מכאן ל-gpt-prompt.md, ל-ext.php?action=prompt ולמסך החיבור. */

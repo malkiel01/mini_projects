@@ -13,13 +13,15 @@ $t0 = microtime(true);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = trim((string)($_SERVER['PATH_INFO'] ?? ''), '/');
 if ($action === '') $action = (string)($_GET['action'] ?? '');
-$pdo = db();
+$pdo = db();   // מריץ את המיגרציות של 01
 $logUser = null;
-register_shutdown_function(static function () use ($pdo, $method, &$action, $t0, &$logUser): void {
-    extLogRequest($pdo, $method, (string)$action, (int)http_response_code(), $t0, $logUser);
+// יומן הבקשות של 01 — פעולה, סטטוס, זמן ומשתמש. אף פעם לא האסימון או הכותרת.
+register_shutdown_function(static function () use ($method, &$action, $t0, &$logUser): void {
+    logRequest($method, 'ext:' . substr((string)$action, 0, 40), (int)(http_response_code() ?: 200),
+        (int)round((microtime(true) - $t0) * 1000), $logUser, (string)($GLOBALS['fd_err'] ?? ''));
 });
 
-extRequireInfra($pdo);
+extEnsureSchema($pdo);
 $m = extAuthenticate($pdo);
 $logUser = (int)$m['user_id'];
 $orgId = (int)$m['org_id'];
@@ -28,16 +30,16 @@ $actions = extActions();
 if (!isset($actions[$action])) { $action = 'unknown'; reply(404, ['error' => 'פעולה לא מוכרת. הפעולות: ' . implode(', ', array_keys($actions))]); }
 $def = $actions[$action];
 if ($method !== $def['method']) reply(405, ['error' => 'שיטה לא מורשית: ' . $action . ' היא ' . $def['method']]);
-if (!extCan($m, $def['perm'])) reply(403, ['error' => 'אין לך הרשאה לפעולה הזו (התפקיד שלך: ' . (EXT_ROLE_NAMES[$m['role']] ?? $m['role']) . ')']);
+if (!extCan($def['perm'])) reply(403, ['error' => 'אין לך הרשאה לפעולה הזו (התפקיד שלך: ' . (ROLES[$m['role']] ?? $m['role']) . ')']);
 
 $now = gmdate('c');
 switch ($action) {
     case 'whoami':
-        $allowed = array_keys(array_filter($actions, static fn($a) => extCan($m, $a['perm'])));
-        $fields = array_keys(array_filter(EXT_FIELDS, static fn($p) => extCan($m, $p)));
+        $allowed = array_keys(array_filter($actions, static fn($a) => extCan($a['perm'])));
+        $fields = array_keys(array_filter(EXT_FIELDS, static fn($p) => extCan($p)));
         reply(200, ['user' => ['name' => $m['name'], 'email' => $m['email']], 'org' => ['id' => $orgId, 'name' => $m['org_name']],
-            'role' => $m['role'], 'role_name' => EXT_ROLE_NAMES[$m['role']], 'actions' => $allowed, 'editable_fields' => $fields,
-            'can_update_checks' => extCan($m, 'update'), 'can_delete' => false]);
+            'role' => $m['role'], 'role_name' => ROLES[$m['role']], 'actions' => $allowed, 'editable_fields' => $fields,
+            'can_update_checks' => extCan('update'), 'can_delete' => false]);
 
     case 'schema':
         reply(200, ['checks' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v], array_keys(EXT_CHECKS), EXT_CHECKS),
@@ -110,7 +112,7 @@ switch ($action) {
         // קודם כל ההרשאות — שום דבר לא נשמר אם שדה אחד אסור
         foreach ($fields as $k => $v) {
             if (!is_string($k) || !isset(EXT_FIELDS[$k])) reply(400, ['error' => 'שדה לא מוכר: ' . $k . '. השדות: ' . implode(', ', array_keys(EXT_FIELDS))]);
-            if (!extCan($m, EXT_FIELDS[$k])) reply(403, ['error' => 'אין לך הרשאה לשנות ' . $k . ' (התפקיד שלך: ' . EXT_ROLE_NAMES[$m['role']] . '). שום דבר לא נשמר.']);
+            if (!extCan(EXT_FIELDS[$k])) reply(403, ['error' => 'אין לך הרשאה לשנות ' . $k . ' (התפקיד שלך: ' . ROLES[$m['role']] . '). שום דבר לא נשמר.']);
         }
         $saved = ['fields' => [], 'checks' => [], 'note' => null];
         $converted = [];
@@ -140,32 +142,26 @@ switch ($action) {
             if (mb_strlen($new['notes']) > 1500) reply(400, ['error' => 'ההערות של התיק מלאות (1500 תווים). לקצר במסך התיק.']);
             $saved['note'] = $line;
         }
-        $norm = normalize($new);
+        $norm = normalize($new, $orgId);
         $norm['id'] = $old['id'];
         foreach ($norm['checks'] as $k => &$c) {
             if (isset($changedChecks[$k])) $c += $meta;
             else foreach (['by', 'via', 'at'] as $f) if (isset($old['checks'][$k][$f])) $c[$f] = $old['checks'][$k][$f];
         }
         unset($c);
-        $diff = [];
         foreach (array_keys(EXT_FIELDS) as $f) {
             if (($norm[$f] ?? null) !== ($old[$f] ?? null)) {
-                $diff[$f] = ['from' => $old[$f] ?? null, 'to' => $norm[$f]];
                 $norm['manual_fields'][] = $f;
                 if ($f !== 'notes' || isset($fields['notes'])) $saved['fields'][$f] = $norm[$f];
             }
         }
         $norm['manual_fields'] = array_values(array_unique($norm['manual_fields']));
         foreach (array_keys($changedChecks) as $k) {
-            $before = $old['checks'][$k] ?? null;
             $after = $norm['checks'][$k];
-            $diff['checks.' . $k] = ['from' => $before === null ? null : ['status' => $before['status'] ?? '', 'value' => $before['value'] ?? ''],
-                'to' => ['status' => $after['status'], 'value' => $after['value']]];
             $saved['checks'][$k] = ['name' => EXT_CHECKS[$k], 'status' => $after['status'], 'status_name' => EXT_STATUSES[$after['status']],
                 'value' => $after['value'], 'note' => $after['note']];
         }
-        store($pdo, $norm, extActor($m), 'api_update');
-        extRecordEvent($pdo, $m, $norm['id'], 'case_update', $diff);
+        store($pdo, $norm, $old, $orgId, ctx()['actor'], 'api', 'case_update');   // תיק + אירוע ב-events (01)
         $pdo->exec('COMMIT');
         $msg = $converted ? 'נשמר. ' . count($converted) . ' בדיקות נשמרו "לאימות" (לא "מאומת") — אדם במשרד יאשר.' : 'נשמר.';
         reply(200, ['ok' => true, 'message' => $msg, 'saved' => $saved, 'converted' => $converted, 'summary' => extSummary($norm)]);
@@ -179,12 +175,10 @@ switch ($action) {
         $rec = ['id' => 'fd_' . bin2hex(random_bytes(12)), 'month' => $month, 'name' => $p['name'] ?? '', 'date' => $date,
             'time' => $p['time'] ?? '', 'origin' => $p['origin'] ?? '', 'team' => $p['team'] ?? '', 'grave' => $p['grave'] ?? '',
             'notes' => $note === '' ? '' : '[' . date('d.m.Y') . '] ' . extActor($m) . ': ' . $note];
-        $norm = normalize($rec);
+        $norm = normalize($rec, $orgId);
         $norm['manual_fields'] = array_keys(EXT_FIELDS);
         $pdo->exec('BEGIN IMMEDIATE');
-        store($pdo, $norm, extActor($m), 'api_create');
-        $pdo->prepare('UPDATE funerals SET org_id=? WHERE id=?')->execute([$orgId, $norm['id']]);
-        extRecordEvent($pdo, $m, $norm['id'], 'case_create', ['name' => $norm['name'], 'date' => $norm['date'], 'month' => $norm['month']]);
+        store($pdo, $norm, null, $orgId, ctx()['actor'], 'api', 'create');   // תיק + אירוע "create" ב-events (01)
         $pdo->exec('COMMIT');
         reply(200, ['ok' => true, 'message' => 'התיק נפתח.', 'case' => $norm, 'summary' => extSummary($norm)]);
 }

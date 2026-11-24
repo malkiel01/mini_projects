@@ -17,10 +17,6 @@
 <main id="main" tabindex="-1">
   <p class="error" id="fatal" role="alert" hidden></p>
   <div id="app" hidden>
-    <div class="toolbar" id="orgBar" hidden>
-      <select id="org" aria-label="ארגון"></select>
-    </div>
-
     <h2 class="sec-title">שלושה דברים להעתיק</h2>
     <div class="tiles copy-tiles">
       <button type="button" class="tile" id="copyPrompt"><span class="tile-ic" aria-hidden="true">📋</span><span class="one">ההנחיות</span></button>
@@ -30,6 +26,7 @@
 
     <section class="summary" aria-labelledby="newTitle">
       <h2 class="sec-title" id="newTitle">אסימון חדש</h2>
+      <p class="hint" id="noRole" hidden>האסימון עובד בהרשאות התפקיד שלך בארגון, ואין לך תפקיד בארגון הזה. החלפת ארגון — במסך התיקים.</p>
       <form id="newForm" class="fields" novalidate>
         <label class="f wide"><span>שם (כדי לזהות אותו ברשימה)</span><input id="tName" maxlength="60" placeholder="GPT של משה" autocomplete="off"></label>
         <div class="f wide"><span>תוקף</span>

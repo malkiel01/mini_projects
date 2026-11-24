@@ -5,7 +5,8 @@ cd "$(dirname "$0")/../.."
 D=funerals-dashboard
 tmp="$(mktemp -d)"
 pid=0
-cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; rm -f $D/data/config.php $D/data/.config-* $D/data/funerals.sqlite*; rm -rf "$tmp"; }
+wipe(){ find "$D/data" -mindepth 1 ! -name .htaccess -exec rm -rf {} + 2>/dev/null || true; }
+cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; wipe; rm -rf "$tmp"; }
 trap cleanup EXIT
 fail(){ echo "FAIL (05): $*"; [ -f "$tmp/out" ] && head -c 600 "$tmp/out" && echo; exit 1; }
 for f in ext.php ext-lib.php tokens.php tools/build-ext.php tests/ext-fixture.php tests/openapi-check.php; do php -l "$D/$f" >/dev/null || fail "php -l $f"; done
@@ -15,7 +16,7 @@ php $D/tools/build-ext.php --check || fail "openapi.json / gpt-prompt.md לא נ
 php $D/tests/openapi-check.php || fail "E8 openapi.json"
 php -r '$a=json_decode(file_get_contents($argv[1]),true); foreach(["ingest.php","ext.php","openapi.json"] as $p) if(!in_array($p,$a["public"]??[],true)) exit(1); if (in_array("tokens.php",$a["public"],true)||in_array("connect.html",$a["public"],true)) exit(1);' $D/app.json || fail "E10 public"
 php platform/check-apps.php >/dev/null || fail "E10 check-apps"
-rm -f $D/data/config.php $D/data/funerals.sqlite*
+wipe
 db=$D/data/funerals.sqlite
 fx(){ php $D/tests/ext-fixture.php "$db" "$@"; }
 
@@ -33,8 +34,8 @@ FIELD='{"sub":"9","name":"עובד שטח","email":"field@example.com","platform
 ORG2='{"sub":"10","name":"משרד שני","email":"org2@example.com","platform_admin":false,"granted":true}'
 NOBODY='{"sub":"11","name":"בלי ארגון","email":"nobody@example.com","platform_admin":false,"granted":true}'
 
-# לפני 01: אין תשתית → 503, לא פתיחה
-code="$(st -H 'Authorization: Bearer fdx_000000000000000000000000000000000000000000000000' "$H/ext.php/whoami")"; test "$code" = 503 || fail "בלי תשתית 01 ($code)"
+# הבקשה הראשונה מריצה את המיגרציה של 01; בלי אסימון → 401
+code="$(st "$H/ext.php/whoami")"; test "$code" = 401 || fail "בקשה ראשונה ($code)"
 fx setup
 
 # מסך החיבור: CSRF, יצירה, האסימון מוצג פעם אחת
@@ -121,7 +122,7 @@ test "$(fx sql "SELECT org_id FROM funerals WHERE id='$newid'" | php -r 'echo js
 code="$(st -H "Authorization: Bearer $B" "$H/ext.php/case?id=$newid")"; test "$code" = 404 || fail "תיק חדש דולף לארגון 2 ($code)"
 
 # E9: כל כתיבה → events עם source api ושם המשתמש
-fx sql "SELECT source, actor, action, case_id FROM events WHERE action IN ('case_update','case_create')" | php -r '$r=json_decode(stream_get_contents(STDIN),true); if(count($r)!==4) {fwrite(STDERR,json_encode($r,JSON_UNESCAPED_UNICODE)); exit(1);} foreach($r as $e) if($e["source"]!=="api"||!str_contains($e["actor"],"(צ\x27אט)")) exit(1);' || fail "E9 events"
+fx sql "SELECT source, actor, action, case_id FROM events WHERE source='api'" | php -r '$r=json_decode(stream_get_contents(STDIN),true); if(count($r)!==4) {fwrite(STDERR,json_encode($r,JSON_UNESCAPED_UNICODE)); exit(1);} foreach($r as $e) if($e["source"]!=="api"||!str_contains($e["actor"],"(צ\x27אט)")) exit(1);' || fail "E9 events"
 fx sql "SELECT actor FROM events WHERE action='case_update' AND actor LIKE 'עובד שטח%'" | grep -q 'עובד שטח' || fail "E9 שם עובד השטח"
 
 # E5: משתמש שהושבת / הורד בתפקיד — מיד
@@ -150,7 +151,7 @@ for t in "$A" "$F" "$B" "$G"; do
   test "$(fx sql "SELECT COUNT(*) n FROM tokens WHERE hash='$h'" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" = 1 || fail "E6 hash"
 done
 test "$(fx sql "SELECT COUNT(*) n FROM req_log WHERE action LIKE 'ext:%'" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" -gt 50 || fail "req_log לא נכתב"
-fx sql "SELECT * FROM req_log" | grep -q 'fdx_' && fail "E6 אסימון ב-req_log" || true
+fx sql "SELECT * FROM req_log" | grep -qE 'fdx_[a-f0-9]{48}' && fail "E6 אסימון ב-req_log" || true
 
 # עד 10 פעילים למשתמש
 as "$ORG2"; for i in $(seq 2 10); do mk "$ORG2" "$tmp/cb" "n$i" 30 >/dev/null; done
@@ -163,4 +164,5 @@ code="$(st -H "Authorization: Bearer $B" "$H/ext.php/whoami")"; test "$code" = 4
 
 # openapi.json ציבורי (קובץ סטטי)
 code="$(st "$H/openapi.json")"; test "$code" = 200 && test "$(j openapi)" = 3.1.0 || fail "openapi.json לא מוגש"
+! grep -qE "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" || { grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
 echo "PASS (05): E1–E10 — Bearer בלבד (בלי/שגוי/פג/בוטל/עוגייה → 401), הפרדת ארגונים (404), הרשאות שטח (403, שום דבר לא נשמר), מאומת → לאימות, השבתה ותפקיד מיד, hash בלבד ולא ביומן, 429 אחרי 60, OpenAPI 3.1 = טבלת הקוד, events עם api ושם, public"
