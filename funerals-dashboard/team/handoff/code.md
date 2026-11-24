@@ -93,3 +93,20 @@
   בבדיקות התקינות. ההחלטה אצל הבקרה/הבעלים. שורת ה-CRONS — הבקרה. הבדיקה של 05 (`tests/ext-dbx.php`) מדלגת עכשיו — 05 רשמה להריץ מול המדומה.
 - **בדיקות:** שרתי `php -S` עם `-d opcache.jit=disable`, וסינון `in Unknown on line 0`. השער המדומה — זהות אחת לשרת; בקשות
   מקבילות רק בשני sessions של אותו משתמש (PHP נועל session).
+
+## אחרי פרוסה 06 (AI מובנה) — 2026-11-24, PR ‏#1848 (7192b8b) + ‏#1857 (5c7a910)
+
+- **איפה:** `ai/lib.php` (הגדרות, תקרות, הספק, כלים, לולאה, הצעות, קבצים), `ai/actions.php` (פעולות `ai_*`; החיבור ב-`api.php` — שתי שורות),
+  `assets/js/ai.js` + `assets/css/ai.css`. הטבלאות — **מיגרציה v4** ב-`lib/schema.php` (`ai_settings`, `ai_usage`, `ai_threads`, `ai_proposals`,
+  `ai_file_kinds`). המיגרציה הבאה — v5.
+- **הכלים = `extDo()` של 05**, בהקשר של המשתמש המחובר, `via: 'ai'`. שני פרמטרים ש-06 הוסיף ל-`extDo`: `$dry` (כתיבה מלאה ואז ROLLBACK —
+  לכרטיס ההצעה) ו-`$guard` (נקרא בתוך הטרנזקציה, לפני `formSaveCase`). פעולה חדשה ב-`extActions()` נהיית כלי של העוזר לבד.
+- **`reply()` במצב לכידה** (`$GLOBALS['fd_reply_capture']` → `FdReply`) — כך 403/404 של פונקציות הליבה חוזרים לספק כ-tool_result.
+  קוד שקורא לפעולה מתוך פעולה — דרך `aiExt()`, ולא ישירות.
+- **שום כתיבה בלי ✓.** הצעה שומרת hash של השדות/הבדיקות שהיא נוגעת בהם (`base`); ✓ אחרי שאדם שינה אותם → 409 `stale`.
+- **הספק:** HTTP ישיר (אין composer בשרת). `fallbacks: "default"`, `cache_control`, ו-`prefix_mismatch_behavior: "drop_block"` (בטא
+  `thinking-binding-controls-2026-08-01`) — כי קבצים מוחלפים בסימון בהיסטוריה אחרי כל סבב. **לא לערוך היסטוריה ולא את `system` של שיחה**
+  בלי לשמור על זה: הודעת המערכת נקבעת פעם אחת לשיחה (`ai_threads.system`).
+- **בדיקות:** `tests/ai.sh` (ספק מדומה `tests/ai-mock.php` + Dropbox המדומה של 03, `tests/ai-dbx-fixture.php`). F1–F7, §2.2.2, §2.3, R1–R3.
+  כל `php -S` — עם `-d opcache.jit=disable`; הניקוי של `data/` שומר `.htaccess` ו-`.gitignore`; אחרי בלוק שמאפס `pid=0` — לא `kill "$pid"` (= `kill 0`).
+- **פתוח:** F8 — ידני אחרי פריסה ומפתח אמיתי ("מה חסר ב<שם>?", "תמלא מהקבצים").
