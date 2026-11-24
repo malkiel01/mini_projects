@@ -1148,10 +1148,18 @@ foreach (array_merge(glob("$root/lib/*.php"), glob("$root/api/*.php")) as $f) {
     foreach ($mm[1] as $expr) check('require רק בתוך האפליקציה: ' . basename($f), str_starts_with(trim($expr), '__DIR__') && !preg_match("~__DIR__\s*\.\s*'/\.\./\.\.~", $expr), $expr);
     check('אין POST/PUT/DELETE ל-GitHub: ' . basename($f), !preg_match('/CURLOPT_(POST|PUT)\b|CUSTOMREQUEST/', $src));
 }
+// חריגה מפורשת אחת: admin.js (מסך מנהל) מזין את אסימון הקליטה ושולח אותו רק ל-api/integrations.php.
+// הוא לא פונה ל-GitHub, לא שומר את האסימון באחסון דפדפן, ולא מדפיס אותו. בדיקות הכללים האלה כאן, במקום הכלל הכללי.
 foreach (glob("$root/assets/js/*.js") as $f) {
     $src = (string) file_get_contents($f);
-    check('הדפדפן לא פונה ל-GitHub: ' . basename($f), !str_contains($src, 'api.github.com') && !str_contains($src, 'token'));
+    $name = basename($f);
+    check('הדפדפן לא פונה ל-GitHub: ' . $name, !str_contains($src, 'api.github.com'));
+    if ($name !== 'admin.js') check('הדפדפן לא מכיל מחרוזת token: ' . $name, !str_contains($src, 'token'));
 }
+$adminJs = (string) file_get_contents("$root/assets/js/admin.js");
+check('admin.js: האסימון לא נשמר באחסון דפדפן', !preg_match('/localStorage|sessionStorage|indexedDB|document\.cookie/', $adminJs));
+check('admin.js: האסימון לא נרשם (console) ולא מוצג בהודעה', !preg_match('/console\.|innerHTML|outerHTML|insertAdjacentHTML/', $adminJs));
+check('admin.js: שולח אסימון רק ל-api/integrations.php', str_contains($adminJs, "const API = 'api/integrations.php'") && substr_count($adminJs, 'fetch(') === 1);
 $idx = (string) file_get_contents("$root/index.html");
 check('אין קישור חזרה לכלים', !preg_match('~href="\.\./|\.\./index\.html~', $idx));
 
