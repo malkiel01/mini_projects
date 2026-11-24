@@ -20,4 +20,9 @@
 - הממשק: הלוגיקה (מצב תיק, "הבא בתור", סינונים, מקור) ב-`assets/js/form.js` — טהורה, נבדקת ב-node (`tests/form.test.js`). `app.js` רק מצייר.
 - היסטוריה: `action=history&id=…` → `formHistory()`; `formDiffChanges()` מסנן רעש של `caseDiff()` (402 מול 402.0 — ממצא שעוד פתוח אצל 01).
 - בדיקות: `tests/form.test.php` (בלי `data/`), `tests/form.test.js`, וקטע "פרוסה 02" ב-`run.sh`. `tests/fixtures/legacy-cases.json` — 22 תיקים בצורות ישנות.
-- **פתוח:** B8 ידני בטלפון. 05 מימש fallback משלו ל-`finalAllowed` — מי שממוזג שני מאחד ל-`formApplyChecks()` (ראה `team/log/code.md`).
+- **פתוח:**
+  - B8 ידני בטלפון (מטלה לבעלים).
+  - **רעש ב-`events`:** `caseDiff()` (`lib/events.php`) רושם `payments` כשינוי בכל save, כי סכום שחוזר מ-JSON כ-402.0 מול 402 נכשל ב-`!==`.
+    התיקון: השוואה רופפת לשדות מספריים (כמו `caseChangeNeeds`). ההיסטוריה של 02 מסננת את זה בתצוגה בלבד — ב-`events` זה נשאר.
+  - 05 מימש fallback משלו ל-`finalAllowed` — הבקרה העבירה לו לעבור דרך `formSaveCase()` (ראה `team/log/code.md`).
+- **הכרעות 02 (אושרו בבקרה):** אוטומטי לא פותח מחדש בדיקה שאדם סגר; מיפוי `via` → מקור `events`; בדיקה בלי מקור ועם תוכן = "מייבוא ישן".
