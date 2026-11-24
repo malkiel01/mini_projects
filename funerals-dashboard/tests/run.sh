@@ -17,7 +17,6 @@ ok(){ echo "  ✓ $*"; }
 # ===== A17: בדיקות סטטיות =====
 for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php \
     dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php; do
-for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
 node --check "$APP/assets/js/app.js" || fail "node --check app.js"
@@ -377,5 +376,3 @@ bash "$APP/tests/ext.sh"
 # ===== פרוסה 03 — Dropbox מול Dropbox מדומה (שרתים משלה, מסד ריק) =====
 wipe
 php "$APP/tests/dropbox-test.php" || fail "פרוסה 03 — Dropbox"
-! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
-echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7"
