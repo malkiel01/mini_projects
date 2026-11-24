@@ -6,9 +6,9 @@
   },
   "code": [],
   "control": {
-    "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
+    "session": "session_018g4NYEtyGfJPB3ADzV5Upg",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_01FteeWPuFwKcA4ZoRitKQAU"
+    "clock": "ממתין — המנהל יוצר"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -72,6 +72,11 @@
     {
       "session": "session_018g4NYES4G3kVk57413GPnM",
       "role": "בקרה 2",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
+      "role": "בקרה 3",
       "state": "רדום"
     }
   ]
