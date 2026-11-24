@@ -117,6 +117,168 @@
     if (sum.unmapped) box.append(el('p', 'muted small', `${sum.unmapped} תרגולים לא מקושרים למודול בתוכנית.`));
   }
 
+
+  // ---------- מדדים, תחזית, סימולטור ואבני דרך ----------
+  const LAB_SHARE = 0.33;
+  const MILESTONES = [
+    { title: 'שליטה ביסודות מחשוב', tracks: ['01'] },
+    { title: 'שליטה ב-Linux וברשתות', tracks: ['02', '03'] },
+    { title: 'אבטחת Web ו-API', tracks: ['05', '07'] },
+    { title: 'ביצוע בדיקות חדירה בסיסיות בסביבות מורשות', tracks: ['08'] },
+    { title: 'ביצוע בדיקות חדירה עצמאיות וכתיבת דוחות', tracks: ['08', '09'] },
+    { title: 'מוכנות ראשונית להשתלבות מקצועית', tracks: ['11'] },
+    { title: 'יכולת מקצועית מתקדמת', tracks: ['09', '10'] },
+    { title: 'יכולת מחקר אבטחה עצמאית', tracks: ['10'] },
+  ];
+
+  function fmtDate(d) {
+    return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  }
+
+  // חישוב תחזית לפי הנחות: כמה שבועות נשארו, כשהחלק המעשי חייב להתבצע במחשב.
+  function forecastWeeks(remainingModules, totalModules, totalHours, hoursPerDay, daysPerWeek, phoneShare) {
+    const remainingHours = (remainingModules / totalModules) * totalHours;
+    const weekly = hoursPerDay * daysPerWeek;
+    if (weekly <= 0) return null;
+    const pcWeekly = weekly * (1 - phoneShare);
+    const weeksAll = remainingHours / weekly;
+    const weeksLab = pcWeekly > 0 ? (remainingHours * LAB_SHARE) / pcWeekly : Infinity;
+    const weeks = Math.max(weeksAll, weeksLab);
+    if (!isFinite(weeks)) return null;
+    const date = new Date();
+    date.setDate(date.getDate() + Math.ceil(weeks * 7));
+    return { weeks, months: weeks / 4.345, date };
+  }
+
+  function renderMetrics(sum) {
+    const box = $('metrics');
+    box.textContent = '';
+    if (!sum || !sum.metrics) { box.hidden = true; return; }
+    box.hidden = false;
+    const m = sum.metrics.measured;
+    box.append(el('h2', 'sec', 'מדדים (רק מה שנמדד)'));
+    const grid = el('div', 'kpis');
+    const kpis = [
+      ['נלמד', m.percentPracticed + '%', `${m.modulesPracticed} מתוך ${m.modulesTotal} מודולים`],
+      ['אומת', m.percentVerified + '%', `${m.modulesVerified} מודולים`],
+      ['נותרו', String(m.modulesRemaining), 'מודולים'],
+      ['ימים פעילים', String(m.activeDays), m.daysSinceLast === null ? 'עדיין לא נרשם' : `התרגול האחרון לפני ${m.daysSinceLast} ימים`],
+    ];
+    for (const [label, value, sub] of kpis) {
+      const c = el('div', 'kpi');
+      c.append(el('div', 'kpi-label', label), el('div', 'kpi-value', value), el('div', 'kpi-sub', sub));
+      grid.append(c);
+    }
+    box.append(grid);
+
+    const win = el('ul', 'windows');
+    for (const k of ['d7', 'd14', 'd30']) {
+      const w = m.windows[k];
+      win.append(el('li', '', `${w.days} ימים אחרונים: ${w.items} תרגולים (${w.perWeek} בשבוע)`));
+    }
+    box.append(win);
+
+    box.append(el('p', 'sub-title', 'תרגולים לפי שבוע (8 שבועות אחרונים)'));
+    const bars = el('div', 'weekbars');
+    const max = Math.max(1, ...m.weekly.map((w) => w.items));
+    for (const w of m.weekly) {
+      const col = el('div', 'wbar');
+      const fill = el('div', 'wfill');
+      fill.style.height = Math.round((w.items / max) * 100) + '%';
+      fill.title = `${w.items} תרגולים`;
+      col.append(fill, el('span', 'wlabel', w.items));
+      bars.append(col);
+    }
+    box.append(bars);
+
+    const gaps = el('div', 'gaps');
+    gaps.append(el('p', 'sub-title', 'מה עדיין לא נמדד'));
+    const gl = el('ul', 'gap-list');
+    for (const v of Object.values(sum.metrics.missing)) gl.append(el('li', '', v));
+    gaps.append(gl);
+    box.append(gaps);
+  }
+
+  function renderForecast(sum) {
+    const box = $('forecast');
+    box.textContent = '';
+    if (!sum || !sum.metrics) { box.hidden = true; return; }
+    box.hidden = false;
+    const fb = sum.metrics.forecastBasis;
+    const remaining = fb.remainingModules;
+    const total = fb.totalModules;
+    box.append(el('h2', 'sec', 'תחזית סיום'));
+    box.append(el('p', 'warn', `רמת ביטחון: ${fb.confidence}. התחזית מבוססת על הנחות עבודה של מנהל האקדמיה, לא על זמן לימוד שנמדד.`));
+
+    const cards = el('div', 'scenarios');
+    const sim = { h: 3, d: 6, p: 0.5 };
+    const scen = Object.entries(fb.scenarios);
+    const paint = () => {
+      cards.textContent = '';
+      for (const [key, sc] of scen) {
+        const f = forecastWeeks(remaining, total, sc.totalHours, sim.h, sim.d, sim.p);
+        const c = el('div', 'scenario');
+        c.append(el('div', 'scen-name', sc.label));
+        if (!f) {
+          c.append(el('div', 'scen-date', 'לא ניתן לחשב'));
+        } else {
+          c.append(el('div', 'scen-date', fmtDate(f.date)), el('div', 'scen-sub', `${f.months.toFixed(1)} חודשים · ${sc.totalHours} שעות בהנחה`));
+        }
+        cards.append(c);
+      }
+    };
+    box.append(cards);
+
+    box.append(el('h3', 'sub-title', 'סימולטור (לא משנה את הנתונים)'));
+    const form = el('div', 'sim');
+    const row = (label, min, max, step, value, key, fmt) => {
+      const wrap = el('label', 'sim-row');
+      const out = el('span', 'sim-out', fmt(value));
+      const input = document.createElement('input');
+      input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = value;
+      input.addEventListener('input', () => { sim[key] = Number(input.value); out.textContent = fmt(sim[key]); paint(); });
+      wrap.append(el('span', 'sim-label', label), input, out);
+      return wrap;
+    };
+    form.append(
+      row('שעות לימוד ביום', 1, 8, 0.5, sim.h, 'h', (v) => `${v} שעות`),
+      row('ימי לימוד בשבוע', 1, 7, 1, sim.d, 'd', (v) => `${v} ימים`),
+      row('חלק מהזמן בטלפון (תיאוריה)', 0, 1, 0.1, sim.p, 'p', (v) => `${Math.round(v * 100)}%`),
+    );
+    box.append(form);
+    box.append(el('p', 'muted small', 'תרגולים מעשיים דורשים מחשב. הנחת העבודה: שליש מהזמן הוא מעבדה.'));
+    box.append(cards);
+    paint();
+  }
+
+  function renderMilestones(sum) {
+    const box = $('milestones');
+    box.textContent = '';
+    if (!sum) { box.hidden = true; return; }
+    box.hidden = false;
+    box.append(el('h2', 'sec', 'אבני דרך מקצועיות'));
+    box.append(el('p', 'warn', 'טיוטה בלבד. ההגדרות והדרישות ממתינות לאישור מנהל האקדמיה.'));
+    const byTrack = {};
+    for (const t of sum.tracks) byTrack[t.id] = t;
+    const list = el('ul', 'milestones-list');
+    for (const ms of MILESTONES) {
+      let total = 0, verified = 0;
+      for (const id of ms.tracks) {
+        const t = byTrack[id];
+        if (!t) continue;
+        total += t.total;
+        verified += t.modules.filter((m) => m.status === 'verified').length;
+      }
+      const pct = total ? Math.round((verified / total) * 100) : 0;
+      const li = el('li', 'ms');
+      li.append(el('div', 'ms-title', ms.title), el('div', 'ms-sub', `מסלולים: ${ms.tracks.join(', ')} · מאומתים ${verified}/${total}`));
+      const bar = el('div', 'bar'); const fill = el('div', 'fill'); fill.style.width = pct + '%'; bar.append(fill);
+      li.append(bar);
+      list.append(li);
+    }
+    box.append(list);
+  }
+
   function renderItems(items) {
     const list = $('items');
     list.textContent = '';
@@ -152,6 +314,9 @@
         if (data.status === 'ok') {
           renderItems(Array.isArray(data.items) ? data.items : []);
           renderSummary(data.summary);
+          renderMetrics(data.summary);
+          renderForecast(data.summary);
+          renderMilestones(data.summary);
           return;
         }
         show('state', MESSAGES[data.status] || MESSAGES.unavailable);

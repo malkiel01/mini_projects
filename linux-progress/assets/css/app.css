@@ -79,3 +79,32 @@ body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-u
 .item .note { margin: 4px 0 0; font-size: 0.92rem; }
 .admin-link { text-align: center; margin-top: 18px; }
 .admin-link a, .muted a { color: var(--accent); }
+
+#metrics, #forecast, #milestones { margin-top: 18px; }
+.warn { background: var(--done-bg); color: var(--fg); border-radius: 10px; padding: 8px 10px; font-size: 0.92rem; }
+.sub-title { font-weight: 600; margin: 12px 0 4px; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.kpi-label { color: var(--muted); font-size: 0.85rem; }
+.kpi-value { font-size: 1.4rem; font-weight: 700; }
+.kpi-sub { color: var(--muted); font-size: 0.8rem; }
+.windows { list-style: none; padding: 0; margin: 8px 0; color: var(--muted); font-size: 0.9rem; }
+.weekbars { display: flex; align-items: flex-end; gap: 6px; height: 110px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.wbar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+.wfill { width: 100%; background: var(--accent); border-radius: 6px 6px 2px 2px; min-height: 2px; }
+.wlabel { font-size: 0.75rem; color: var(--muted); }
+.gap-list { padding-inline-start: 18px; color: var(--muted); font-size: 0.9rem; }
+.scenarios { display: grid; gap: 8px; margin: 10px 0; }
+.scenario { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.scen-name { font-weight: 600; }
+.scen-date { font-size: 1.15rem; font-weight: 700; }
+.scen-sub { color: var(--muted); font-size: 0.85rem; }
+.sim { display: grid; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.sim-row { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.sim-label { font-size: 0.9rem; }
+.sim-out { color: var(--muted); font-size: 0.85rem; }
+.sim input { width: 100%; }
+.milestones-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 8px; }
+.ms { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.ms-title { font-weight: 600; }
+.ms-sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; }
