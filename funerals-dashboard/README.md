@@ -124,7 +124,30 @@ OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, ו�
 📋 ההנחיות (`gpt-project-prompt.md`) בהוראות הפרויקט, 📤 ייצוא החודש כקובץ בפרויקט, וה-JSON שה-GPT מחזיר — 📥 במסך התיקים
 (`index.html#import`). ההנחיות נוצרות מ-`extProjectPrompt()` ב-`ext-lib.php` (אותו `build-ext.php`), ומשקפות את כללי הייבוא: `id` מהייצוא,
 תיק חדש בלי `id`, שדה ריק לא דורס, בדיקה נשלחת שלמה, ואף פעם לא `verified`. האסימונים ו-`openapi.json` — בקפל "מתקדם".
-חיבור ישיר (Plugin / MCP) — פרוסה 09.
+חיבור ישיר (Plugin / MCP) — פרוסה 09, למטה.
+
+## חיבור ישיר — שרת MCP ו-OAuth (פרוסה 09)
+
+ChatGPT בדפדפן (chatgpt.com/plugins ← Add custom MCP server) או Claude (Custom connector) מתחברים לכתובת אחת —
+`https://mbe-plus.com/mini_projects/funerals-dashboard/mcp` — עם **OAuth**, ומאז קוראים ומעדכנים תיקים בלי JSON ובלי 📥.
+
+- **`mcp.php`** — Streamable HTTP בלי SSE ובלי session: `POST` עם JSON-RPC 2.0 (גם מערך), `GET` → 405, התראות → 202. `initialize`,
+  `ping`, `tools/list` — בלי אסימון; `tools/call` — Bearer `fdo_` (OAuth) או `fdx_` (05), אחרת 401 עם `WWW-Authenticate: Bearer
+  resource_metadata=…`. `Origin` זר → 403. **הכלים = `extActions()` חוץ מ-`prompt`**, והביצוע — `extDo(..., 'api')`: אותן הרשאות, אותו
+  "לאימות", אותו יומן; שגיאת פעולה → `isError` עם ההודעה בעברית. ביומן: "<שם> (<client_name>)", למשל "בודק (ChatGPT)". 60 קריאות
+  לדקה לחיבור.
+- **OAuth 2.1** (`oauth/`, `mcp-lib.php`): מטא-נתונים (`.well-known/oauth-protected-resource`, `…/oauth-authorization-server`,
+  `…/openid-configuration` — rewrite ב-`.htaccess` אל `oauth/metadata.php`), DCR (`register.php`, לקוח ציבורי, 20 לשעה ל-IP), CIMD
+  (`client_id` שהוא כתובת https: 5 שניות, 64KB, בלי הפניות, בלי IP פרטי/מקומי, מטמון שעה), `authorize.php` **מאחורי השער** — מסך
+  הסכמה עם CSRF (עוגייה נפרדת `fd_oauth`), `token.php` (PKCE S256 חובה; קוד 60 שניות חד-פעמי; גישה שעה, רענון 30 יום שמתחלף, שימוש
+  חוזר → כל החיבור מבוטל), `revoke.php`. הכול נשמר רק כ-SHA-256 בטבלאות `oauth_*` של `data/funerals.sqlite`.
+- **כתובת חזרה** — https, וגם `http://localhost` / `127.0.0.1` (RFC 8252) — בשביל MCP Inspector.
+- **מסך 🤖** — המסלול הראשון: הכתובת עם 📋, חמשת הצעדים, ו"חיבורים פעילים" עם "ניתוק" (מנהל רואה ומנתק את כל הארגון).
+- **בדיקה ידנית אחרי פריסה:** `npx @modelcontextprotocol/inspector` ← Streamable HTTP ← הכתובת ← Open Auth Settings ← Quick OAuth Flow;
+  או `curl -sX POST <base>/mcp -H 'Authorization: Bearer fdx_…' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{}}}'`.
+- **סיכון פתוח:** לפי RFC 8414 המטא-נתונים של issuer עם נתיב יושבים בשורש הדומיין
+  (`/.well-known/oauth-authorization-server/mini_projects/funerals-dashboard`) — מחוץ לתיקייה. לקוחות MCP מנסים גם
+  `<issuer>/.well-known/openid-configuration` (אצלנו). אם ChatGPT / Inspector לא מוצאים — בקשה לפלטפורמה, לא כאן.
 
 ## API לצ'אט חיצוני — `ext.php` (פרוסה 05)
 
@@ -181,7 +204,7 @@ OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, ו�
 ## מה עדיין לא חובר
 
 - **F8 (06) — פתוח, ידני אחרי פריסה ומפתח אמיתי:** "מה חסר ב<שם>?" → תשובה נכונה; "תמלא מהקבצים" → הצעות עם מקור.
-- עדכוני צ'אט ישירים: קיימת נקודת קליטת API, אבל חיבור כלי הצ'אט אל כתובת האפליקציה יוגדר בשלב נפרד.
+- **K16–K18 (09) — ידני אחרי פריסה:** MCP Inspector, ChatGPT (Add custom MCP server) ו-Claude (custom connector).
 - מסד הנתונים בשרת יתחיל ריק. נתוני אוקטובר 2026 לא נכתבים לקוד ציבורי.
 - לא בוצעה בדיקת הרשאות אמיתית של Embedder עד שיוגדרו דומיין ואפליקציית Dropbox.
 - רישיון קבורה, אישור העברה מחו"ל ואישור שמירת חלקת קבר הם מסמכים שונים ואינם מסומנים כאותו סוג.
