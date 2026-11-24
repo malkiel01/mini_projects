@@ -15,18 +15,20 @@ fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונ�
 ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
-for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php; do
+for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php \
+    dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
 node --check "$APP/assets/js/app.js" || fail "node --check app.js"
 node --check "$APP/assets/js/form.js" || fail "node --check form.js"
+node --check "$APP/assets/js/dropbox.js" || fail "node --check dropbox.js"
 # פרוסה 02 — בדיקות יחידה (בלי שרת ובלי data/)
 php "$APP/tests/form.test.php" || fail "form.test.php"
 node "$APP/tests/form.test.js" || fail "form.test.js"
 grep -q 'src="assets/js/form.js"' "$APP/index.html" || fail "index.html לא טוען את form.js"
 test ! -e "$APP/setup.php" || fail "setup.php עדיין קיים"
-php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","ext.php","openapi.json","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
-  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
+php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","dropbox-webhook.php","ext.php","openapi.json","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
+  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, dropbox-webhook.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
 php platform/check-apps.php >/dev/null || fail "check-apps.php"
 php -r 'json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);' "$APP/dev/open-items.json" || fail "dev/open-items.json אינו JSON תקין"
 ! grep -qE 'type="password"|id="username"' "$APP/index.html" || fail "index.html: נשארו שדות כניסה בסיסמה"
@@ -86,13 +88,13 @@ ok "A2 — גיבוי נכשל → 503, גרסה 0"
 
 # ===== A1, A2, A8: בקשה ראשונה של המפתח =====
 login dev; test "$code" = 200 || fail "A1: me של המפתח ($code)"
-test "$(sql 'PRAGMA user_version')" = 1 || fail "A1: user_version"
+test "$(sql 'PRAGMA user_version')" = 2 || fail "A1: user_version (01 → 1, 03 → 2)"
 sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases1"
 cmp -s "$tmp/cases0" "$tmp/cases1" || fail "A1: התיקים השתנו (id/body)"
 test "$(sql 'SELECT COUNT(*) FROM funerals WHERE org_id = 1')" = 22 || fail "A1: org_id=1 לכל 22"
 sql "SELECT * FROM audit ORDER BY id" > "$tmp/audit1"
 cmp -s "$tmp/audit0" "$tmp/audit1" || fail "A1: audit השתנה"
-ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=1"
+ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=2 (סכמה עדכנית)"
 bk=( "$D"/backup/funerals-*-v0.sqlite )
 test "${#bk[@]}" = 1 && test -f "${bk[0]}" || fail "A2: אין גיבוי"
 test "$(stat -c %a "${bk[0]}")" = 600 || fail "A2: הגיבוי לא 0600"
@@ -370,3 +372,7 @@ echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער
 # ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
 kill "$pid" >/dev/null 2>&1 || true; pid=0
 bash "$APP/tests/ext.sh"
+
+# ===== פרוסה 03 — Dropbox מול Dropbox מדומה (שרתים משלה, מסד ריק) =====
+wipe
+php "$APP/tests/dropbox-test.php" || fail "פרוסה 03 — Dropbox"

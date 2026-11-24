@@ -92,7 +92,7 @@ code="$(st -H "Authorization: Bearer $B" "$H/ext.php/case?id=fd_case_org1_cohen"
 code="$(st -H "Authorization: Bearer $B" "$H/ext.php/find?q=%D7%9B%D7%94%D7%9F")"; test "$code" = 200 && test "$(j count)" = 0 || fail "E2 find דולף"
 code="$(st -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen","note":"x"}' "$H/ext.php/case_update")"; test "$code" = 404 || fail "E2 update ($code)"
 code="$(st -H "Authorization: Bearer $A" "$H/ext.php/case?id=fd_case_org1_cohen")"; test "$code" = 200 || fail "case ($code)"
-test "$(j summary.next.check)" = license_document && test "$(j files_note)" = "Dropbox עוד לא חובר" || fail "case תוכן"
+test "$(j summary.next.check)" = license_document && case "$(j files_note)" in *Dropbox*) ;; *) false;; esac || fail "case תוכן"
 
 # find, cases, schema, 405, 501, אין מחיקה
 code="$(st -H "Authorization: Bearer $A" "$H/ext.php/find?q=%D7%9B%D7%94%D7%9F")"; test "$code" = 200 && test "$(j count)" = 2 && [ -n "$(j hint)" ] || fail "find שתי תוצאות + hint"
@@ -100,8 +100,9 @@ code="$(st -H "Authorization: Bearer $A" "$H/ext.php/find?q=x")"; test "$code" =
 code="$(st -H "Authorization: Bearer $A" "$H/ext.php/cases?month=2026-10&status=missing")"; test "$code" = 200 && test "$(j count)" = 2 || fail "cases status"
 code="$(st -H "Authorization: Bearer $A" "$H/ext.php/schema")"; test "$code" = 200 && test "$(j checks.0.key)" = license_document || fail "schema"
 code="$(st -H "Authorization: Bearer $A" "$H/ext.php/case_update")"; test "$code" = 405 || fail "GET case_update ($code)"
-code="$(st -H "Authorization: Bearer $A" "$H/ext.php/files?id=fd_case_org1_cohen")"; test "$code" = 501 && test "$(j error)" = "Dropbox עוד לא חובר" || fail "files בלי 03 ($code)"
-code="$(st -H "Authorization: Bearer $A" "$H/ext.php/file_text?file=x")"; test "$code" = 501 || fail "file_text בלי 03 ($code)"
+code="$(st -H "Authorization: Bearer $A" "$H/ext.php/files?id=fd_case_org1_cohen")"; test "$code" = 501 && case "$(j error)" in *Dropbox*) true;; *) false;; esac || fail "files — ארגון בלי Dropbox ($code)"
+code="$(st -H "Authorization: Bearer $A" "$H/ext.php/file_text?file=x")"; test "$code" = 400 || fail "file_text — מזהה לא תקין ($code)"
+code="$(st -H "Authorization: Bearer $A" "$H/ext.php/file_text?file=1")"; test "$code" = 501 || fail "file_text — ארגון בלי Dropbox ($code)"
 for a in delete case_delete remove; do code="$(st -X POST -H "Authorization: Bearer $A" "$H/ext.php/$a")"; test "$code" = 404 || fail "פעולת מחיקה $a ($code)"; done
 code="$(st -X DELETE -H "Authorization: Bearer $A" "$H/ext.php/case?id=fd_case_org1_cohen")"; test "$code" = 405 || fail "DELETE ($code)"
 code="$(st -H "Authorization: Bearer $A" "$H/ext.php/prompt")"; test "$code" = 200 && grep -q 'לאימות' "$tmp/out" || fail "prompt"

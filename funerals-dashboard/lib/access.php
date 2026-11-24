@@ -18,6 +18,8 @@ const PERMS = [
     'case.export'    => ['office', 'admin'],
     'members.manage' => ['admin'],
     'token.manage'   => ['admin'],                      // אסימון ingest.php (של ארגון 1)
+    'dropbox.manage' => ['admin'],                      // פרוסה 03: חיבור Dropbox, תיקייה ראשית, סריקה ושיוך תיקיות
+    'files.upload'   => ['office', 'admin'],            // פרוסה 03: העלאה לתיקיית התיק (שטח — פרוסה 04)
     'orgs.manage'    => [],
     'dev'            => [],
 ];

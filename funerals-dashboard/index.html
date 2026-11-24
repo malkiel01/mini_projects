@@ -8,6 +8,7 @@
 <title>ניהול לוויות חברה קדישא</title>
 <link rel="stylesheet" href="assets/css/app.css">
 <link rel="stylesheet" href="assets/css/devloop.css">
+<link rel="stylesheet" href="assets/css/dropbox.css">
 </head>
 <body>
 <div id="signin" class="center" hidden>
@@ -101,6 +102,11 @@
         <div id="documents" class="list"></div>
       </section>
 
+      <section class="group" aria-labelledby="gFiles">
+        <h3 id="gFiles">קבצים ב-Dropbox</h3>
+        <div id="dbxFiles"></div>
+      </section>
+
       <section class="group" aria-labelledby="gPay">
         <div class="group-head"><h3 id="gPay">אסמכתאות תשלום</h3><button type="button" class="btn ghost sm" id="addPayment"><span aria-hidden="true">+</span> תשלום</button></div>
         <div id="payments" class="list"></div>
@@ -180,6 +186,7 @@
       <div class="seg-tabs" role="tablist" aria-label="הגדרות">
         <button role="tab" type="button" data-stab="members" aria-selected="true">חברים</button>
         <button role="tab" type="button" data-stab="orgs" aria-selected="false">ארגונים</button>
+        <button role="tab" type="button" data-stab="dropbox" aria-selected="false">Dropbox</button>
       </div>
       <section id="sMembers">
         <div class="group">
@@ -196,6 +203,7 @@
         <h3 class="sec-title">הזמנות פתוחות</h3>
         <ul class="list" id="invitesList"></ul>
       </section>
+      <section id="sDropbox" hidden></section>
       <section id="sOrgs" hidden>
         <div class="group">
           <h3>ארגון חדש</h3>
@@ -233,5 +241,6 @@
 <script src="assets/js/form.js"></script>
 <script src="assets/js/devloop.js"></script>
 <script src="assets/js/app.js"></script>
+<script src="assets/js/dropbox.js"></script>
 </body>
 </html>

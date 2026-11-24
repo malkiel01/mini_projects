@@ -1,0 +1,12 @@
+/* Dropbox (פרוסה 03) — קבצי התיק והגדרות. רק משתנים מ-app.css. */
+.dbx-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
+.dbx-head .primary { margin-inline-start: auto; }
+.dbx-thumb { overflow: hidden; }
+.dbx-thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.dbx-preview { display: block; max-inline-size: 100%; max-block-size: 70dvh; margin: 0 auto var(--s3); border-radius: var(--r); }
+.dbx-pdf { display: block; inline-size: 100%; block-size: 70dvh; border: 1px solid var(--line); border-radius: var(--r); margin-bottom: var(--s3); background: var(--surface); }
+.dbx-crumbs { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
+.dbx-picker { display: grid; gap: var(--s2); }
+.dbx-picker .list { max-block-size: 40dvh; overflow-y: auto; }
+#sDropbox .group { display: grid; gap: var(--s2); }
+#sDropbox .card select { margin-top: var(--s1); }
