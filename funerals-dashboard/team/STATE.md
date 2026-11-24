@@ -72,7 +72,7 @@
 - ✅ **בקרה 3 פעילה:** `session_018g4NYDegWrLYkRkfQRRfVQ` (2026-11-24 15:25); שעון חדש `trig_01FteeWPuFwKcA4ZoRitKQAU` (דקה 22); הישן `trig_01PYjng67oPYVSwpwmksWifo` כובה בידי המנהל.
 - **שעון:** `trig_01PYjng67oPYVSwpwmksWifo` מעיר את בקרה 2 — המנהל מעביר/יוצר לבקרה 3 ומכבה את הישן.
 - **מחכה:** תשובות הבעלים ל-FD-T1…T6 (דרך המטלות). כשמשהו נכשל בבדיקה ידנית — להעיר את צ'אט הקוד של אותה פרוסה (`sessions.json`, `code_done`).
-- **פרוסה 09** — חיבור ישיר (MCP מרוחק + OAuth מול משתמשי האפליקציה, ב-public): אפיון #1864; קוד 09 `session_018g4NYF5aVunXTh4CjYUphS` (16:29), connect.html רק אחרי 08. ש7 + FD-T7 למטלות. שאלה עקרונית OAuth מלא מול אסימון — לבעלים עם המלצה.
+- **פרוסה 09** — חיבור ישיר (MCP מרוחק + OAuth מול משתמשי האפליקציה, ב-public): אפיון #1864; קוד 09 `session_018g4NYF5aVunXTh4CjYUphS` (16:29), connect.html רק אחרי 08. ש7 נענתה: OAuth (הבעלים, 16:30). FD-T7 במטלות. שאלה עקרונית OAuth מלא מול אסימון — לבעלים עם המלצה.
 - **פרוסה 08** (`docs/spec/08-fixes-project.md`): P1–P6 — connect.html לפרויקט ChatGPT, הנחיות לפרויקט, אזהרת "תיק דומה", payments, כותרת בטלפון (P6 הועבר ל-09). קוד 08 נפתח: `session_018g4NYFCroPuhEYVJhHMcqh` (16:25).
 - ✅ **50MB:** נכתבה `.claude/teams/requests/app-upload-limit.md` (16:25) — ממתין להכרעת הפלטפורמה. היה: לכתוב בקשה ב-`.claude/teams/requests/` לשורת `upload_max_filesize`/`post_max_size` ב-`.user.ini` שהשער בונה.
 - **לקח:** סמן SQLite פתוח (`fetch` בלי `closeCursor`) לפני כתיבה → "database is locked" מול כותב מקביל. לבדוק בכל ביקורת.
