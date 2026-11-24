@@ -77,6 +77,22 @@
 - כל check כולל status, value, source, note. סטטוסים: verified, document_present, unreadable, missing, unknown, reported, not_applicable.
 - עדכון ידני לא נדרס אוטומטית על ידי ייבוא חדש; כל שינוי נרשם ב-`events` עם מה שהשתנה (`diff`). ה-actor הוא המייל מהשער (או השם, אם אין מייל), `api` לקליטה דרך ingest.php — שכותבת תמיד לארגון 1.
 
+## API לצ'אט חיצוני — `ext.php` (פרוסה 05)
+
+לחיבור GPT מותאם (Actions) או כל צ'אט אחר. **Bearer בלבד** — אסימון אישי `fdx_…`; עוגייה או session לא מתקבלים (401).
+ציבורי ב-`app.json` (`ext.php`, `openapi.json`). אין פעולת מחיקה.
+
+- **האסימון** — אישי (משתמש + ארגון), נוצר במסך "🤖 חיבור ל-ChatGPT" (`connect.html`, דרך `tokens.php` מאחורי השער),
+  מוצג פעם אחת, נשמר רק כ-SHA-256 בטבלה `tokens`. תוקף 30 / 90 / 365 יום, ביטול (השורה נשארת), עד 10 פעילים למשתמש,
+  60 בקשות לדקה (אחר כך 429). ההרשאות — התפקיד של המשתמש בארגון **ברגע הבקשה**: הושבת או הורד בתפקיד — חל מיד.
+- **הפעולות** — `ext.php/<action>` (או `ext.php?action=`): `whoami`, `schema`, `find`, `cases`, `case`, `case_update`,
+  `case_create`, `files`, `file_text`, `prompt`. הטבלה היחידה — `extActions()` ב-`ext-lib.php`.
+- **"מאומת" דרך הצ'אט נשמר "לאימות"** (`document_present`) — רק אדם מאשר סופית (02, `finalAllowed('api')`). התשובה
+  אומרת זאת (`converted`). כל כתיבה — שורה ב-`events` עם `source: api` ו-"<שם> (צ'אט)".
+- **`openapi.json` ו-`gpt-prompt.md` נוצרים מהקוד:** `php funerals-dashboard/tools/build-ext.php`. הבדיקות נכשלות אם
+  הקבצים שבריפו לא תואמים לקוד.
+- `files` / `file_text` — 501 "Dropbox עוד לא חובר" עד פרוסה 03.
+
 ## חיבור Dropbox
 
 המסמכים נשארים ב-Dropbox. בדשבורד נשמרים כתובות קישור בלבד.
