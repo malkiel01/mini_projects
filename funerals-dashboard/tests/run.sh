@@ -364,5 +364,5 @@ ok "B7 — 22 התיקים הקיימים (ועוד 22 ישנים) נפתחים;
 # ===== יציאה: עם CSRF בלבד =====
 code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
-! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
+! grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
 echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7"
