@@ -120,3 +120,9 @@
   ב-`aiDecide` (#1855); בדיקת ה-`base` גם בתוך הטרנזקציה של הכתיבה — `extDo(..., ?callable $guard)` נקרא אחרי `beginTransaction`, לפני
   `formSaveCase`. בדיקות: user_version=4 ב-`run.sh` וב-`dropbox-test.php`; ב-`ai.sh` — v4 על טבלאות AI בצורה הישנה.
 - 2026-11-24 — #1857 מוזג (5c7a910). `team/handoff/code.md` עודכן ("אחרי פרוסה 06"). צ'אט הקוד של 06 יוצא.
+- 2026-11-24 — **פרוסה 08 (תיקונים + פרויקט ChatGPT), ענף `claude/funerals-dashboard-08-fixes`.** P1–P5 לפי `docs/spec/08-fixes-project.md`
+  (P6 הוצא מהאפיון לפרוסה 09). P1 — `connect.html`: שלושה מסלולים (🗂️ פרויקט עם 4 צעדים ו-📋/📤/📥 בתוך הצעדים, 💬, 🔌 "בקרוב"), שורת
+  Create GPT עם התאריך, אסימונים ו-API בקפל "מתקדם"; 📥 במסך התיקים נפתח כחלון הדבקה (`FDForm.parseImport`, סובל ```json וטקסט מסביב),
+  `index.html#import` / `#ai`. P2 — `extProjectPrompt()` → `gpt-project-prompt.md` דרך `build-ext.php` (נבדק ב-`--check`), `tokens.php` מחזיר
+  `project_prompt`. P3 — `importSimilar()` / `similarName()` ב-`lib.php`: 409 `similar` עד בחירה (`resolve`), ingest → לעדכן. P4 — `diffSame()`
+  ב-`caseDiff`. P5 — `[data-more]` + ⋯ ב-≤420px. בדיקות: `tests/fixes08.test.php` (P2, P4, parseImport) וקטע "פרוסה 08" ב-`run.sh` (P3, P4 ב-HTTP).

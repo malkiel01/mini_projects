@@ -11,3 +11,20 @@
 .steps ol { padding-inline-start: 1.3em; display: grid; gap: 4px; font-size: .9rem; }
 .card.tok { cursor: default; }
 .card.tok.off { opacity: .6; }
+
+/* פרוסה 08 (P1): שלושה מסלולים — פרויקט ChatGPT ראשון, Plugin "בקרוב", ומה שישן בקפל "מתקדם" */
+.route h3 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font-size: 1rem; font-weight: 600; }
+.route .hint { margin: 0; }
+.route > .btn { justify-self: start; }
+.main-route { border-color: var(--brand); }
+.route-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s3); font-size: .9rem; counter-reset: step; }
+.route-steps li { display: grid; gap: var(--s2); position: relative; padding-inline-start: 2em; counter-increment: step; }
+.route-steps li::before { content: counter(step); position: absolute; inset-inline-start: 0; top: 0; display: grid; place-items: center;
+    inline-size: 1.5em; block-size: 1.5em; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 600; font-size: .85rem; }
+a.btn { text-decoration: none; }
+.route-steps li > .btn { justify-self: start; }
+.route-steps .row-btns input { flex: 1; }
+.route-steps .row-btns .btn { flex: none; }
+.route.soon { opacity: .75; }
+.gone { padding: 0 var(--s1); }
+#advanced[open] { gap: var(--s2); }

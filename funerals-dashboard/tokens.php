@@ -52,7 +52,7 @@ if ($action === 'me') {
         'org' => ['id' => $orgId, 'name' => $ctx['org']['name']], 'can_create' => $m !== null,
         'can_manage' => extCan('manage_tokens'), 'tokens' => extListTokens($pdo, $orgId, (int)$ctx['user']['id']),
         'ttl_days' => EXT_TTL_DAYS, 'max_active' => EXT_MAX_ACTIVE_TOKENS,
-        'prompt' => extPrompt(), 'openapi_url' => EXT_PUBLIC_BASE . '/openapi.json', 'ingest' => $ingest]);
+        'prompt' => extPrompt(), 'project_prompt' => extProjectPrompt(), 'openapi_url' => EXT_PUBLIC_BASE . '/openapi.json', 'ingest' => $ingest]);
 }
 if ($action === 'create') {
     if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
