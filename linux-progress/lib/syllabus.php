@@ -3,13 +3,14 @@
  * סיכום ההתקדמות מול התוכנית המאושרת של האקדמיה.
  *
  * מקור התוכנית: dashboard/data/curriculum-v2-approved.json בריפו האקדמיה (קריאה בלבד, דרך השרת).
- * כל רשומת תרגול יכולה לכלול moduleId (למשל "03.02"). רשומה בלי מזהה, או עם מזהה שלא קיים בתוכנית, נספרת כ"לא ממופה".
+ * רשומת תרגול יכולה לכלול moduleId (למשל "03.02"). רשומה בלי מזהה, או עם מזהה שלא קיים, נספרת כ"לא ממופה".
  *
- * כללי הספירה (ברירת מחדל שאושרה):
- * - מודול "נלמד" כשיש לו לפחות תרגול אחד בסטטוס done או verified.
- * - מודול "אומת" כשיש לו לפחות תרגול אחד בסטטוס verified. זה מוצג בנפרד ולא מסכם את הנלמד.
+ * כללי הספירה:
+ * - מודול "נלמד": יש לו לפחות תרגול אחד (done או verified).
+ * - מודול "אומת": יש לו לפחות תרגול אחד verified. מוצג בנפרד.
+ * - סטטוס מודול: none (לא התחלתי) | done (נלמד) | verified (אומת).
  * - אחוז מסלול = נלמדו / סה"כ מודולים במסלול, מעוגל לעשירית.
- * - קצב = מספר מודולים נלמדים לשבוע, מאז התאריך הראשון ברשומות.
+ * - קצב = מודולים נלמדים לשבוע, מאז התאריך הראשון ברשומות.
  */
 
 declare(strict_types=1);
@@ -17,8 +18,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/store.php';
 
 const LP_CURRICULUM_PATH = 'dashboard/data/curriculum-v2-approved.json';
+const LP_KINDS = ['theory' => 'תיאוריה', 'analysis' => 'ניתוח', 'lab' => 'מעבדה'];
 
-/** מסלולים ומודולים מהתוכנית. מחזיר null אם הצורה לא תקינה. */
+/** מסלולים, מודולים ושיעורים מהתוכנית. מחזיר null אם הצורה לא תקינה. */
 function lp_read_curriculum(mixed $data): ?array {
     if (!is_array($data) || !isset($data['tracks'], $data['modules']) || !is_array($data['tracks']) || !is_array($data['modules'])) return null;
     $tracks = [];
@@ -31,28 +33,35 @@ function lp_read_curriculum(mixed $data): ?array {
         if (!is_array($m) || !is_string($m['id'] ?? null) || !preg_match(LP_MODULE_ID, $m['id'])) continue;
         $tid = (string) ($m['trackId'] ?? '');
         if (!isset($tracks[$tid])) continue;
-        $modules[$m['id']] = ['trackId' => $tid, 'title' => (string) ($m['title'] ?? $m['id'])];
+        $modules[$m['id']] = ['trackId' => $tid, 'title' => (string) ($m['title'] ?? $m['id']), 'lessons' => []];
     }
+    foreach (($data['lessons'] ?? []) as $l) {
+        if (!is_array($l) || !is_string($l['moduleId'] ?? null) || !isset($modules[$l['moduleId']])) continue;
+        $kind = (string) ($l['kind'] ?? '');
+        $modules[$l['moduleId']]['lessons'][] = [
+            'id' => (string) ($l['id'] ?? ''),
+            'title' => (string) ($l['title'] ?? ''),
+            'kind' => LP_KINDS[$kind] ?? $kind,
+            'objectives' => array_values(array_filter((array) ($l['learningObjectives'] ?? []), 'is_string')),
+            'order' => (int) ($l['order'] ?? 0),
+        ];
+    }
+    foreach ($modules as &$m) usort($m['lessons'], fn($a, $b) => $a['order'] <=> $b['order']);
+    unset($m);
     return ['tracks' => $tracks, 'modules' => $modules];
 }
 
-/**
- * הסיכום עצמו. $items: הרשומות שכבר עברו lp_validate (עם moduleId אופציונלי).
- * $today: מוזרק לבדיקות.
- */
+/** הסיכום עצמו. $items: רשומות שעברו lp_validate. $today: מוזרק לבדיקות. */
 function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): array {
-    $done = [];       // moduleId => true (נלמד)
-    $verified = [];  // moduleId => true (אומת)
+    $done = [];
+    $verified = [];
     $unmapped = 0;
     $first = null;
     foreach ($items as $it) {
         $d = (string) ($it['date'] ?? '');
         if ($first === null || $d < $first) $first = $d;
         $mid = $it['moduleId'] ?? null;
-        if (!is_string($mid) || !isset($curriculum['modules'][$mid])) {
-            $unmapped++;
-            continue;
-        }
+        if (!is_string($mid) || !isset($curriculum['modules'][$mid])) { $unmapped++; continue; }
         $done[$mid] = true;
         if (($it['status'] ?? '') === 'verified') $verified[$mid] = true;
     }
@@ -63,10 +72,12 @@ function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): 
         $mods = array_filter($curriculum['modules'], fn($m) => $m['trackId'] === $tid);
         $total = count($mods);
         if ($total === 0) continue;
-        $d = 0; $v = 0; $remaining = [];
+        $d = 0; $v = 0; $remaining = []; $modules = [];
         foreach ($mods as $mid => $m) {
+            $status = isset($verified[$mid]) ? 'verified' : (isset($done[$mid]) ? 'done' : 'none');
             if (isset($done[$mid])) $d++; else $remaining[] = ['id' => $mid, 'title' => $m['title']];
             if (isset($verified[$mid])) $v++;
+            $modules[] = ['id' => $mid, 'title' => $m['title'], 'status' => $status, 'lessons' => $m['lessons']];
         }
         $tracks[] = [
             'id' => $tid,
@@ -76,6 +87,7 @@ function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): 
             'verified' => $v,
             'percent' => round($d / $total * 100, 1),
             'remaining' => $remaining,
+            'modules' => $modules,
         ];
         $totalAll += $total; $doneAll += $d; $verAll += $v;
     }
