@@ -34,6 +34,46 @@
 - רשימת הכלים: `extActions()` (שם, שיטה, הרשאה, תיאור he/en, פרמטרים, סכמת גוף) — אותה טבלה של openapi.json.
 - בדיקה: `tests/ext-ai.php`, `tests/ext-ai2.php`.
 
+## אחרי פרוסה 01 (תשתית) — 2026-11-24, PR ‏#1839 (מוזג)
+
+- **המבנה:** `lib.php` (ליבה, `VERSION`, `store()` / `existing()` / `normalize($v, $orgId)`), ותחת `lib/`: `schema.php` (מיגרציות), `access.php` (`resolveAccess`, `can`, `scope`, `need`, `ctx`, `PERMS`), `events.php` (`recordEvent`, `caseDiff`, `logRequest`), `secrets.php` (`secretPut` / `secretGet`), `devtasks.php` (חיבור DevLoop). הממשק ב-`assets/js/app.js`; `index.html` הוא HTML בלבד.
+- **מיגרציה חדשה:** `migrateVn()` ב-`lib/schema.php` + העלאת `SCHEMA_VERSION`, ובתוך `migrate()` שורה `if ($from < n) migrateVn($pdo);`. הגיבוי ל-`data/backup/` קורה לבד לפני כל קפיצה. מוסיפים בלבד; `CREATE … IF NOT EXISTS` ו-`hasColumn()` לעמודות, כדי שמיגרציה תהיה אידמפוטנטית.
+- **התאמה ל-03 ול-05 (נבנו במקביל):** הן מביאות v2 / v3 (חיבורי Dropbox; טבלת `tokens`). מי שממוזג שני מיישר את המספור מול `main` — מספר רץ, בלי לדלג ובלי שתי מיגרציות באותו מספר — ומוסיף בדיקה ב-`run.sh` שעוברת ממסד v1 לגרסה החדשה בלי לשנות תיק. 05 מסננת חברים לפי `members.active=1` ו-`users.active=1`.
+- **הרשאות:** הרשאה חדשה = שורה ב-`PERMS`; כל פעולה ב-`api.php` קוראת ל-`need()`. תיק של ארגון אחר → 404 (`existing`). עובד שטח: רק `TRACK_FIELDS` (checks, notes, grave), בהשוואה מחמירה מול `normalize($old)`.
+- **פעיל:** `members.active` — השבתה לארגון (מנהל); `users.active` — חסימה גלובלית (מפתח, `user_active`). חבר פעיל = שניהם 1. מפתח (`platform_admin`) לא נחסם.
+- **זהות:** קישור לפי מייל ומימוש הזמנה רק עם `email_verified === true`. הזמנה תמיד ממתינה עד הכניסה הבאה.
+- **מקורות ב-events:** `ui | import | api | system` (`EVENT_SOURCES`). מקור חדש (dropbox, gpt, ai) — להוסיף שם.
+- **ציבורי:** `ingest.php` ו-`api.php?action=devapi-*`. `tests/run.sh` נועל את רשימת `public` — כתובת חדשה מעדכנים גם שם.
+- **סודות:** `secret.key` נוצר בשימוש הראשון; בלי sodium נופלת רק פעולת סוד.
+- **בדיקות:** `tests/run.sh` מתחיל ממסד v0 עם 22 תיקים (`tests/fixture-v0.php`), כ-15 שניות. CI: `.github/workflows/funerals-dashboard-ci.yml` (`coverage: none`, sodium) — הבדיקה נכשלת על כל אזהרת PHP בלוג השרת.
+- **פתוח:** A15/A16 ידניים בשרת (מטלה חדשה תקבל FD-008 — מפת הדרכים תופסת FD-001…007). שורת `.devloop.json` — אצל הבקרה. **בטלפון הכותרת של המפתח צפופה** (📥 📤 ⚙️ 🛠️ 🐞 👤 — שישה כפתורים, והשם נחתך) — להעביר את 📥/📤 לתפריט 👤 או לסרגל שמתחת לכותרת.
+
+## אחרי פרוסה 02 (טופס חכם) — 2026-11-24, PR ‏#1842
+
+- **הכלל בפונקציה אחת:** `finalAllowed($via)` ב-`lib/form.php`. **כל כתיבה של תיק בודד עוברת ב-`formSaveCase($pdo, $raw, $via, $actor, $orgId, $authorize)`** —
+  היא מחילה `by`/`via`/`at`, את "הושלם רק באדם" ואת `manual_fields`, וקוראת ל-`store()` (שרושם ב-`events`). 03/04/05/06 — לא לממש מחדש.
+- `via` ∈ `ui` · `field` · `dropbox` · `api` · `ai` · `import`. ממופה למקור של `events` ב-`formEventSource()` (field→ui, ai→api, dropbox→system).
+- מקור אוטומטי **לא פותח מחדש** בדיקה שאדם סגר; ההצעה נכנסת להערה (הכרעה של 02, ב-PR).
+- הממשק: הלוגיקה (מצב תיק, "הבא בתור", סינונים, מקור) ב-`assets/js/form.js` — טהורה, נבדקת ב-node (`tests/form.test.js`). `app.js` רק מצייר.
+- היסטוריה: `action=history&id=…` → `formHistory()`; `formDiffChanges()` מסנן רעש של `caseDiff()` (402 מול 402.0 — ממצא שעוד פתוח אצל 01).
+- בדיקות: `tests/form.test.php` (בלי `data/`), `tests/form.test.js`, וקטע "פרוסה 02" ב-`run.sh`. `tests/fixtures/legacy-cases.json` — 22 תיקים בצורות ישנות.
+- **פתוח:**
+  - B8 ידני בטלפון (מטלה לבעלים).
+  - **רעש ב-`events`:** `caseDiff()` (`lib/events.php`) רושם `payments` כשינוי בכל save, כי סכום שחוזר מ-JSON כ-402.0 מול 402 נכשל ב-`!==`.
+    התיקון: השוואה רופפת לשדות מספריים (כמו `caseChangeNeeds`). ההיסטוריה של 02 מסננת את זה בתצוגה בלבד — ב-`events` זה נשאר.
+  - 05 מימש fallback משלו ל-`finalAllowed` — הבקרה העבירה לו לעבור דרך `formSaveCase()` (ראה `team/log/code.md`).
+- **הכרעות 02 (אושרו בבקרה):** אוטומטי לא פותח מחדש בדיקה שאדם סגר; מיפוי `via` → מקור `events`; בדיקה בלי מקור ועם תוכן = "מייבוא ישן".
+
+## אחרי מיזוג 05 (#1840, d7f0063)
+
+**05 מוזגה.** פתוח אחרי המיזוג:
+1. **E11** (ידני, הבעלים): GPT מותאם עם הפרומפט, קובץ ה-API והאסימון — "תוסיף ל<שם>: הערה בדיקה". במטלות.
+   כאן ייבדק גם ש-`ext.php/<action>` (PATH_INFO) עובד בשרת; אם לא — `ext/<action>.php` או rewrite.
+2. **אחרי מיזוג 03:** `tests/ext-dbx.php` ידלג (03 קיימת). לבדוק את `files`/`file_text` מול ה-Dropbox המדומה של 03
+   (`tests/dropbox-mock.php`, `DBX_API_BASE=http://127.0.0.1:PORT`, כמו ב-`tests/dropbox-test.php`).
+3. **אחרי מיזוג 03:** להעביר את `tokens` / `ext_fail` מ-`extEnsureSchema()` למיגרציה ממוספרת (migrateV3), אחרי v2 של 03.
+4. **06:** קורא ל-`extDo(..., 'ai')`. פונקציות הליבה עונות ב-`reply()` ולא זורקות — אם 06 צריך, זה שינוי של 01.
+
 ## פרוסה 03 — Dropbox דו-כיווני (PR #1844, מוזג — f3064a0)
 
 **מצב:** C1–C11, C13 אוטומטיים ב-`tests/dropbox-test.php` מול Dropbox מדומה (`tests/dropbox-mock.php`), נקרא בסוף `run.sh`.
