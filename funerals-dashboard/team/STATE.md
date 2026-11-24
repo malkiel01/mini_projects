@@ -82,3 +82,5 @@
 
 - ✅ **בקרה 4 פעילה:** `session_018g4NYEtyGfJPB3ADzV5Upg` (Sonnet; סף החלפה ~150K). שעון חדש — מגיע מהמנהל; הקודם `trig_01FteeWPuFwKcA4ZoRitKQAU` — המנהל מכבה.
 - אין PR פתוח של הצוות; 00–09 ב-main (4fd7eab). נשאר ידני אצל הבעלים: FD-T1…T7, K16–K18.
+
+- שעון בקרה 4: `trig_013zPmsBMZiHTC9V8S7SdN1V` (כל שעתיים, דקה 22). פתוח קטן: `--exclude` ל-`funerals-dashboard/dev/` ב-deploy.yml (צילומי מסך נפרסים) — לפרוסת תיקונים.
