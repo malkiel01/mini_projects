@@ -274,3 +274,13 @@ a.tile { color: inherit; text-decoration: none; }
 .lrn-more { margin-top: var(--s3); }
 .lrn-more summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; color: var(--brand); font-weight: 600; font-size: .9rem; }
 .sample-bar.real.empty { background: var(--brand-soft); border-bottom-color: color-mix(in srgb, var(--brand) 35%, transparent); }
+
+/* מסך ניהול (admin.html) — מוגבל ל-body.admin כדי לא להשפיע על הדשבורד */
+body.admin main { max-width: 720px; margin: 0 auto; padding: var(--s3); }
+body.admin .card-wrap { display: grid; gap: var(--s2); background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow); padding: var(--s3) var(--s4); margin: var(--s2) 0 var(--s3); }
+body.admin .card-wrap label { font-weight: 600; font-size: .9rem; }
+body.admin .note { font-size: .9rem; color: var(--muted); margin: 0; }
+body.admin .note.ok { color: var(--ok); }
+body.admin .note.bad { color: var(--danger); }
+body.admin .btn { justify-self: start; }
+body.admin [hidden] { display: none !important; }

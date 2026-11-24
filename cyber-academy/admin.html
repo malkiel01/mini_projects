@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>ניהול אקדמיית סייבר</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="admin">
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+  <a class="icon-btn" href="index.html" aria-label="חזרה לדשבורד">›</a>
+  <span class="logo" aria-hidden="true">🛠️</span>
+  <div class="titles">
+    <h1>ניהול אקדמיית סייבר</h1>
+    <div class="sub">אינטגרציות · מנהל בלבד</div>
+  </div>
+</header>
+<main id="main" tabindex="-1">
+  <section id="denied" class="card-wrap" hidden>
+    <p class="note bad" role="status">למנהל בלבד.</p>
+  </section>
+
+  <section id="panel" hidden>
+    <h2 class="sec-title">קליטת דיווחי מורים</h2>
+    <div class="card-wrap">
+      <p id="token-state" class="note" role="status"></p>
+      <form id="token-form" autocomplete="off" novalidate>
+        <label for="token">אסימון קליטה</label>
+        <input id="token" type="password" autocomplete="new-password" spellcheck="false"
+               autocapitalize="off" autocorrect="off" aria-describedby="token-help">
+        <p id="token-help" class="note">האסימון נשמר בשרת בלבד ולא יוצג שוב. אחרי השמירה השדה מתנקה.</p>
+        <button class="btn" id="save" type="submit">שמור אסימון בשרת</button>
+      </form>
+      <p id="save-msg" class="note" role="status"></p>
+    </div>
+
+    <h2 class="sec-title">סנכרון</h2>
+    <div class="card-wrap">
+      <button class="btn" id="sync" type="button">סנכרן התקדמות עכשיו</button>
+      <p id="sync-msg" class="note" role="status"></p>
+    </div>
+  </section>
+</main>
+<script src="assets/js/admin.js" defer></script>
+</body>
+</html>
