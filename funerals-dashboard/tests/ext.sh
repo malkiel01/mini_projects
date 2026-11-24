@@ -201,5 +201,5 @@ codes=""; for i in $(seq 1 25); do codes="$codes $(curl -sS -o /dev/null -w '%{h
 echo "$codes" | grep -q 429 || fail "ביקורת 6: אין הגבלה לפי IP ($codes)"
 test "$(echo $codes | tr ' ' '\n' | grep -c 401)" -le 20 || fail "ביקורת 6: יותר מ-20 ניסיונות נבדקו"
 test "$(fx sql "SELECT COUNT(*) n FROM req_log WHERE action LIKE 'ext:%' AND status IN (401,429) AND user_id IS NULL" | php -r 'echo json_decode(stream_get_contents(STDIN),true)[0]["n"];')" = 0 || fail "ביקורת 6: ההצפה נרשמה ביומן"
-! grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" | grep -vq "in Unknown on line 0" || { grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" | grep -v "in Unknown on line 0"; fail "שגיאות PHP בשרת"; }
+! grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E "PHP (Fatal|Warning|Parse|Deprecated)" "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
 echo "PASS (05): E1–E10 — Bearer בלבד (בלי/שגוי/פג/בוטל/עוגייה → 401), הפרדת ארגונים (404), הרשאות שטח (403, שום דבר לא נשמר), מאומת → לאימות, השבתה ותפקיד מיד, hash בלבד ולא ביומן, 429 אחרי 60, OpenAPI 3.1 = טבלת הקוד, events עם api ושם, public"
