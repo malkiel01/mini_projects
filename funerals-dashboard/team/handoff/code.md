@@ -33,3 +33,17 @@
   (`normalize`, `cleanText`, `existing`, `need`) עונות בעצמן ב-`reply()` ויוצאות — ב-06 זה מסיים את הבקשה עם JSON שגיאה.
 - רשימת הכלים: `extActions()` (שם, שיטה, הרשאה, תיאור he/en, פרמטרים, סכמת גוף) — אותה טבלה של openapi.json.
 - בדיקה: `tests/ext-ai.php`, `tests/ext-ai2.php`.
+
+## אחרי פרוסה 01 (תשתית) — 2026-11-24, PR ‏#1839 (מוזג)
+
+- **המבנה:** `lib.php` (ליבה, `VERSION`, `store()` / `existing()` / `normalize($v, $orgId)`), ותחת `lib/`: `schema.php` (מיגרציות), `access.php` (`resolveAccess`, `can`, `scope`, `need`, `ctx`, `PERMS`), `events.php` (`recordEvent`, `caseDiff`, `logRequest`), `secrets.php` (`secretPut` / `secretGet`), `devtasks.php` (חיבור DevLoop). הממשק ב-`assets/js/app.js`; `index.html` הוא HTML בלבד.
+- **מיגרציה חדשה:** `migrateVn()` ב-`lib/schema.php` + העלאת `SCHEMA_VERSION`, ובתוך `migrate()` שורה `if ($from < n) migrateVn($pdo);`. הגיבוי ל-`data/backup/` קורה לבד לפני כל קפיצה. מוסיפים בלבד; `CREATE … IF NOT EXISTS` ו-`hasColumn()` לעמודות, כדי שמיגרציה תהיה אידמפוטנטית.
+- **התאמה ל-03 ול-05 (נבנו במקביל):** הן מביאות v2 / v3 (חיבורי Dropbox; טבלת `tokens`). מי שממוזג שני מיישר את המספור מול `main` — מספר רץ, בלי לדלג ובלי שתי מיגרציות באותו מספר — ומוסיף בדיקה ב-`run.sh` שעוברת ממסד v1 לגרסה החדשה בלי לשנות תיק. 05 מסננת חברים לפי `members.active=1` ו-`users.active=1`.
+- **הרשאות:** הרשאה חדשה = שורה ב-`PERMS`; כל פעולה ב-`api.php` קוראת ל-`need()`. תיק של ארגון אחר → 404 (`existing`). עובד שטח: רק `TRACK_FIELDS` (checks, notes, grave), בהשוואה מחמירה מול `normalize($old)`.
+- **פעיל:** `members.active` — השבתה לארגון (מנהל); `users.active` — חסימה גלובלית (מפתח, `user_active`). חבר פעיל = שניהם 1. מפתח (`platform_admin`) לא נחסם.
+- **זהות:** קישור לפי מייל ומימוש הזמנה רק עם `email_verified === true`. הזמנה תמיד ממתינה עד הכניסה הבאה.
+- **מקורות ב-events:** `ui | import | api | system` (`EVENT_SOURCES`). מקור חדש (dropbox, gpt, ai) — להוסיף שם.
+- **ציבורי:** `ingest.php` ו-`api.php?action=devapi-*`. `tests/run.sh` נועל את רשימת `public` — כתובת חדשה מעדכנים גם שם.
+- **סודות:** `secret.key` נוצר בשימוש הראשון; בלי sodium נופלת רק פעולת סוד.
+- **בדיקות:** `tests/run.sh` מתחיל ממסד v0 עם 22 תיקים (`tests/fixture-v0.php`), כ-15 שניות. CI: `.github/workflows/funerals-dashboard-ci.yml` (`coverage: none`, sodium) — הבדיקה נכשלת על כל אזהרת PHP בלוג השרת.
+- **פתוח:** A15/A16 ידניים בשרת (מטלה חדשה תקבל FD-008 — מפת הדרכים תופסת FD-001…007). שורת `.devloop.json` — אצל הבקרה. **בטלפון הכותרת של המפתח צפופה** (📥 📤 ⚙️ 🛠️ 🐞 👤 — שישה כפתורים, והשם נחתך) — להעביר את 📥/📤 לתפריט 👤 או לסרגל שמתחת לכותרת.
