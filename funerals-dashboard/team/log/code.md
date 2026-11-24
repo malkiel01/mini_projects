@@ -119,3 +119,4 @@
   (אידמפוטנטית: על מסד שכבר הריץ את ה-ALTER העצל — רק עמודות חסרות, הנתונים נשארים; `aiSchema` הוסר); `closeCursor()` אחרי `fetchColumn`
   ב-`aiDecide` (#1855); בדיקת ה-`base` גם בתוך הטרנזקציה של הכתיבה — `extDo(..., ?callable $guard)` נקרא אחרי `beginTransaction`, לפני
   `formSaveCase`. בדיקות: user_version=4 ב-`run.sh` וב-`dropbox-test.php`; ב-`ai.sh` — v4 על טבלאות AI בצורה הישנה.
+- 2026-11-24 — #1857 מוזג (5c7a910). `team/handoff/code.md` עודכן ("אחרי פרוסה 06"). צ'אט הקוד של 06 יוצא.
