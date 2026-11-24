@@ -6,7 +6,7 @@ declare(strict_types=1);
  * אסימונים אישיים, הרשאות לפי תפקיד, והשכבה הדקה מול 01/02/03.
  *
  * נשען על 01: can() (ההקשר נבנה מהאסימון — extAuthenticate), existing()/store() (תיק + אירוע ב-events), logRequest().
- * על 02 — דרך extFinalAllowed() (finalAllowed() כשתמוזג); על 03 — רק כשהפונקציות שלה קיימות (extDropboxReady).
+ * על 02 — דרך finalAllowed() (finalAllowed() כשתמוזג); על 03 — רק כשהפונקציות שלה קיימות (extDropboxReady).
  *
  * הקובץ אינו נקודת קצה: גישה ישירה אליו מחזירה 404. נטען אחרי lib.php.
  */
@@ -131,11 +131,6 @@ function extSetContext(array $m): void {
     $GLOBALS['fd_ctx'] = ['user' => ['id' => (int)$m['user_id'], 'name' => (string)$m['name'], 'email' => (string)($m['email'] ?? '')],
         'actor' => ['id' => (int)$m['user_id'], 'actor' => extActor($m)], 'dev' => false, 'active' => true,
         'orgs' => [$org], 'org' => $org, 'role' => $m['role']];
-}
-/** "הושלם" רק באדם. כשהפונקציה של 02 קיימת — היא הקובעת. */
-function extFinalAllowed(string $via): bool {
-    if (function_exists('finalAllowed')) return (bool)finalAllowed($via);
-    return in_array($via, ['ui', 'field', 'import'], true);
 }
 /** קבצי תיק וטקסט של קובץ — רק כשהפונקציות של 03 קיימות. */
 function extDropboxReady(string $fn): bool { return function_exists($fn); }

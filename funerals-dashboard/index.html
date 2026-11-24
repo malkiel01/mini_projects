@@ -52,9 +52,12 @@
       <div class="chips" id="sumChips"></div>
     </div>
 
-    <div class="seg-tabs" role="tablist" aria-label="סינון תיקים">
+    <div class="seg-tabs six" role="tablist" aria-label="סינון תיקים">
       <button role="tab" type="button" data-filter="todo" aria-selected="true">להשלמה <small id="nTodo"></small></button>
-      <button role="tab" type="button" data-filter="done" aria-selected="false">הושלמו <small id="nDone"></small></button>
+      <button role="tab" type="button" data-filter="bad" aria-selected="false">חסר <small id="nBad"></small></button>
+      <button role="tab" type="button" data-filter="verify" aria-selected="false">לאימות <small id="nVerify"></small></button>
+      <button role="tab" type="button" data-filter="unchecked" aria-selected="false">טרם נבדק <small id="nUnchecked"></small></button>
+      <button role="tab" type="button" data-filter="done" aria-selected="false">הושלם <small id="nDone"></small></button>
       <button role="tab" type="button" data-filter="all" aria-selected="false">הכול <small id="nAll"></small></button>
     </div>
     <div class="toolbar">
@@ -74,6 +77,13 @@
     <div class="sheet-body">
       <div class="summary" id="caseSummary" style="margin:0"></div>
 
+      <div class="seg-tabs" role="tablist" aria-label="תצוגת התיק" id="caseTabs">
+        <button role="tab" type="button" data-pane="case" aria-selected="true">התיק</button>
+        <button role="tab" type="button" data-pane="history" aria-selected="false">🕓 היסטוריה</button>
+      </div>
+      <section id="historyPane" aria-label="היסטוריית התיק" hidden><div id="history" class="list"></div></section>
+
+      <div id="casePane">
       <section aria-labelledby="gChecks">
         <h3 class="sec-title" id="gChecks">מה צריך להשלים</h3>
         <p class="hint">✅ הושלם = מאומת או לא רלוונטי. "מסמך קיים" עדיין דורש אימות של מה שכתוב בו. לחיצה על שורה פותחת עדכון.</p>
@@ -109,6 +119,7 @@
           <label class="f wide"><span>קישור לתיקיית Dropbox</span><input id="fFolder" dir="ltr" inputmode="url" placeholder="https://www.dropbox.com/..."></label>
         </div>
       </section>
+      </div>
     </div>
   </form>
 </dialog>
@@ -219,6 +230,7 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<script src="assets/js/form.js"></script>
 <script src="assets/js/devloop.js"></script>
 <script src="assets/js/app.js"></script>
 </body>

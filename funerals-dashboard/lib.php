@@ -24,6 +24,7 @@ require_once __DIR__ . '/lib/schema.php';
 require_once __DIR__ . '/lib/events.php';
 require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/access.php';
+require_once __DIR__ . '/lib/form.php';   // פרוסה 02 — הטופס החכם (מקור לבדיקה, finalAllowed, יומן התיק)
 
 function dataDir(): string { return __DIR__ . '/data'; }
 
@@ -255,6 +256,7 @@ function importRecords(PDO $pdo, string $method, int $orgId, array $actor, strin
                     if (($c['source'] ?? '') === 'עדכון ידני' || ($c['status'] ?? '') === 'reported') $item['checks'][$key]=$c;
                 }
             }
+            $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, 'import', (string)($actor['actor'] ?? ''));   // פרוסה 02: מקור לבדיקה
             store($pdo, $item, $old, $orgId, $actor, $source, 'import');
             $count++;
         }

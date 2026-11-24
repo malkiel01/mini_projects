@@ -155,3 +155,15 @@ function need(string $perm, ?array $case = null): void {
     if (ctx()['org'] === null) reply(403, noOrgBody());
     if (!can($perm, $case)) reply(403, ['error' => 'אין לך הרשאה לפעולה הזו']);
 }
+
+/** איזו הרשאה השינוי דורש: תיק חדש או שינוי בפרטים/תשלומים/מסמכים — case.edit; רק בדיקות, הערות, מיקום קבר — case.track. */
+function caseChangeNeeds(?array $old, array $new): string {
+    if ($old === null) return 'case.edit';
+    foreach ($new as $k => $v) {
+        if (in_array($k, TRACK_FIELDS, true) || $k === 'manual_fields' || $k === 'id') continue;
+        $before = $old[$k] ?? (is_array($v) ? [] : '');
+        // השוואה מחמירה מול התיק הקודם אחרי normalize() — אותם טיפוסים, כך ש-null→0 או "100"→"1e2" נתפסים כשינוי
+        if ($before !== $v) return 'case.edit';
+    }
+    return 'case.track';
+}

@@ -43,7 +43,7 @@ switch ($action) {
 
     case 'schema':
         reply(200, ['checks' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v], array_keys(EXT_CHECKS), EXT_CHECKS),
-            'statuses' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v, 'human_only' => !extFinalAllowed('api') && in_array($k, ['verified', 'reported', 'not_applicable'], true)],
+            'statuses' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v, 'human_only' => !finalAllowed('api') && in_array($k, FORM_FINAL_STATUSES, true)],
                 array_keys(EXT_STATUSES), EXT_STATUSES),
             'fields' => array_keys(EXT_FIELDS),
             'rule' => 'סטטוס "מאומת" / "עודכן ידנית" / "לא רלוונטי" שנכתב דרך הצ\'אט נשמר כ"מסמך קיים — לאימות". רק אדם במשרד מאשר סופית.',
@@ -100,71 +100,61 @@ switch ($action) {
         reply(200, ['file' => $_GET['file'] ?? '', 'text' => mb_strcut((string)$text, 0, 200 * 1024)]);
 
     case 'case_update':
+        // הכתיבה — formSaveCase() של 02 עם via: api: "הושלם" רק באדם, ובדיקה שאדם כבר סגר לא נפתחת מחדש.
+        // ההרשאה — need(caseChangeNeeds()) כמו ב-api.php; לפניה בדיקה לפי שדה, כדי לומר לצ'אט בדיוק מה אסור.
         $p = body();
-        $pdo->exec('BEGIN IMMEDIATE');
         $old = extCase($pdo, $orgId, cleanText($p['id'] ?? '', 100));
-        $new = $old;
         $fields = $p['fields'] ?? [];
         $checksIn = $p['checks'] ?? [];
         $note = cleanText($p['note'] ?? '', 800);
         if (!is_array($fields) || !is_array($checksIn)) reply(400, ['error' => 'fields ו-checks — אובייקטים']);
         if (!$fields && !$checksIn && $note === '') reply(400, ['error' => 'אין מה לעדכן: fields, checks או note']);
-        // קודם כל ההרשאות — שום דבר לא נשמר אם שדה אחד אסור
         foreach ($fields as $k => $v) {
             if (!is_string($k) || !isset(EXT_FIELDS[$k])) reply(400, ['error' => 'שדה לא מוכר: ' . $k . '. השדות: ' . implode(', ', array_keys(EXT_FIELDS))]);
             if (!extCan(EXT_FIELDS[$k])) reply(403, ['error' => 'אין לך הרשאה לשנות ' . $k . ' (התפקיד שלך: ' . ROLES[$m['role']] . '). שום דבר לא נשמר.']);
         }
-        $saved = ['fields' => [], 'checks' => [], 'note' => null];
-        $converted = [];
-        $meta = ['by' => (string)($m['name'] ?: $m['email']), 'via' => 'api', 'at' => $now];
-        foreach ($fields as $k => $v) $new[$k] = $v;
-        $changedChecks = [];
+        $raw = $old;
+        foreach ($fields as $k => $v) $raw[$k] = $v;
         foreach ($checksIn as $k => $v) {
             if (!is_string($k) || !isset(EXT_CHECKS[$k])) reply(400, ['error' => 'בדיקה לא מוכרת: ' . $k . '. הרשימה ב-schema.']);
             if (!is_array($v)) reply(400, ['error' => 'בדיקה ' . $k . ': נדרש אובייקט {status, value, note}']);
             $prev = $old['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => '', 'source' => ''];
             $status = cleanText($v['status'] ?? ($prev['status'] ?? 'unknown'), 30);
             if (!isset(EXT_STATUSES[$status])) reply(400, ['error' => 'סטטוס לא מוכר: ' . $status]);
-            $value = array_key_exists('value', $v) ? cleanText($v['value'], 500) : (string)($prev['value'] ?? '');
-            $cnote = array_key_exists('note', $v) ? cleanText($v['note'], 800) : (string)($prev['note'] ?? '');
-            if (in_array($status, ['verified', 'reported', 'not_applicable'], true) && !extFinalAllowed('api')) {
-                $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $status, 'saved' => 'document_present',
-                    'reason' => 'רק אדם במשרד מאשר סופית. נשמר "לאימות".'];
-                $cnote = mb_substr(trim("הוצע בצ'אט: " . EXT_STATUSES[$status] . ($value !== '' ? ' (' . $value . ')' : '') . '. ' . $cnote), 0, 800);
-                $status = 'document_present';
-            }
-            $new['checks'][$k] = ['status' => $status, 'value' => $value, 'source' => 'עדכון ידני', 'note' => $cnote];
-            $changedChecks[$k] = true;
+            $raw['checks'][$k] = ['status' => $status,
+                'value' => array_key_exists('value', $v) ? cleanText($v['value'], 500) : (string)($prev['value'] ?? ''),
+                'note' => array_key_exists('note', $v) ? cleanText($v['note'], 800) : (string)($prev['note'] ?? ''),
+                'source' => (string)($prev['source'] ?? '')];
         }
+        $line = null;
         if ($note !== '') {
             $line = '[' . date('d.m.Y') . '] ' . extActor($m) . ': ' . $note;
-            $new['notes'] = trim(((string)($new['notes'] ?? '')) . "\n" . $line);
-            if (mb_strlen($new['notes']) > 1500) reply(400, ['error' => 'ההערות של התיק מלאות (1500 תווים). לקצר במסך התיק.']);
-            $saved['note'] = $line;
+            $raw['notes'] = trim(((string)($raw['notes'] ?? '')) . "\n" . $line);
+            if (mb_strlen($raw['notes']) > 1500) reply(400, ['error' => 'ההערות של התיק מלאות (1500 תווים). לקצר במסך התיק.']);
         }
-        $norm = normalize($new, $orgId);
-        $norm['id'] = $old['id'];
-        foreach ($norm['checks'] as $k => &$c) {
-            if (isset($changedChecks[$k])) $c += $meta;
-            else foreach (['by', 'via', 'at'] as $f) if (isset($old['checks'][$k][$f])) $c[$f] = $old['checks'][$k][$f];
-        }
-        unset($c);
-        foreach (array_keys(EXT_FIELDS) as $f) {
-            if (($norm[$f] ?? null) !== ($old[$f] ?? null)) {
-                $norm['manual_fields'][] = $f;
-                if ($f !== 'notes' || isset($fields['notes'])) $saved['fields'][$f] = $norm[$f];
-            }
-        }
-        $norm['manual_fields'] = array_values(array_unique($norm['manual_fields']));
-        foreach (array_keys($changedChecks) as $k) {
-            $after = $norm['checks'][$k];
-            $saved['checks'][$k] = ['name' => EXT_CHECKS[$k], 'status' => $after['status'], 'status_name' => EXT_STATUSES[$after['status']],
-                'value' => $after['value'], 'note' => $after['note']];
-        }
-        store($pdo, $norm, $old, $orgId, ctx()['actor'], 'api', 'case_update');   // תיק + אירוע ב-events (01)
+        $pdo->exec('BEGIN IMMEDIATE');
+        $saved = formSaveCase($pdo, $raw, 'api', ctx()['actor'], $orgId,
+            fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
         $pdo->exec('COMMIT');
-        $msg = $converted ? 'נשמר. ' . count($converted) . ' בדיקות נשמרו "לאימות" (לא "מאומת") — אדם במשרד יאשר.' : 'נשמר.';
-        reply(200, ['ok' => true, 'message' => $msg, 'saved' => $saved, 'converted' => $converted, 'summary' => extSummary($norm)]);
+        $out = ['fields' => [], 'checks' => [], 'note' => $line];
+        $oldN = normalize($old, $orgId);   // אותם טיפוסים (100 מול 100.0) — כדי לא לדווח על שדה שלא השתנה
+        foreach (array_keys(EXT_FIELDS) as $f) {
+            if (($saved[$f] ?? null) !== ($oldN[$f] ?? null) && ($f !== 'notes' || isset($fields['notes']))) $out['fields'][$f] = $saved[$f];
+        }
+        $converted = [];
+        foreach (array_keys($checksIn) as $k) {
+            $c = $saved['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => ''];
+            $out['checks'][$k] = ['name' => EXT_CHECKS[$k], 'status' => $c['status'], 'status_name' => EXT_STATUSES[$c['status']] ?? '',
+                'value' => $c['value'] ?? '', 'note' => $c['note'] ?? '', 'by' => $c['by'] ?? null, 'via' => $c['via'] ?? null];
+            $asked = $raw['checks'][$k]['status'];
+            if (!in_array($asked, FORM_FINAL_STATUSES, true) || finalAllowed('api')) continue;
+            $closed = in_array($old['checks'][$k]['status'] ?? '', FORM_FINAL_STATUSES, true);
+            $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $asked, 'saved' => $c['status'],
+                'reason' => $closed ? 'אדם כבר סגר את הבדיקה הזו — היא לא נפתחת מחדש; ההצעה נכתבה בהערה.'
+                    : 'רק אדם במשרד מאשר סופית. נשמר "לאימות".'];
+        }
+        $msg = $converted ? 'נשמר. ' . count($converted) . ' בדיקות לא סומנו "מאומת" — רק אדם במשרד מאשר (נשמרו "לאימות" או כהצעה בהערה).' : 'נשמר.';
+        reply(200, ['ok' => true, 'message' => $msg, 'saved' => $out, 'converted' => $converted, 'summary' => extSummary($saved)]);
 
     case 'case_create':
         $p = body();
@@ -172,14 +162,13 @@ switch ($action) {
         $month = cleanText($p['month'] ?? '', 7);
         if ($month === '') $month = preg_match('/^\d{4}-\d\d/', $date) ? substr($date, 0, 7) : date('Y-m');
         $note = cleanText($p['note'] ?? '', 800);
-        $rec = ['id' => 'fd_' . bin2hex(random_bytes(12)), 'month' => $month, 'name' => $p['name'] ?? '', 'date' => $date,
+        $raw = ['id' => 'fd_' . bin2hex(random_bytes(12)), 'month' => $month, 'name' => $p['name'] ?? '', 'date' => $date,
             'time' => $p['time'] ?? '', 'origin' => $p['origin'] ?? '', 'team' => $p['team'] ?? '', 'grave' => $p['grave'] ?? '',
             'notes' => $note === '' ? '' : '[' . date('d.m.Y') . '] ' . extActor($m) . ': ' . $note];
-        $norm = normalize($rec, $orgId);
-        $norm['manual_fields'] = array_keys(EXT_FIELDS);
         $pdo->exec('BEGIN IMMEDIATE');
-        store($pdo, $norm, null, $orgId, ctx()['actor'], 'api', 'create');   // תיק + אירוע "create" ב-events (01)
+        $saved = formSaveCase($pdo, $raw, 'api', ctx()['actor'], $orgId,
+            fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
         $pdo->exec('COMMIT');
-        reply(200, ['ok' => true, 'message' => 'התיק נפתח.', 'case' => $norm, 'summary' => extSummary($norm)]);
+        reply(200, ['ok' => true, 'message' => 'התיק נפתח.', 'case' => $saved, 'summary' => extSummary($saved)]);
 }
 reply(404, ['error' => 'פעולה לא מוכרת']);

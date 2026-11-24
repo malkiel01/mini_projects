@@ -113,7 +113,12 @@ code="$(st -H "Authorization: Bearer $F" -H 'Content-Type: application/json' -d 
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen","checks":{"license_number":{"status":"verified","value":"12345"}},"note":"הערה בדיקה"}' "$H/ext.php/case_update")"; test "$code" = 200 || fail "E4 ($code)"
 test "$(j saved.checks.license_number.status)" = document_present && test "$(j converted.0.requested)" = verified || fail "E4 המרה"
 j message | grep -q 'לאימות' || fail "E4 התשובה לא אומרת לאימות"
-fx body fd_case_org1_cohen | php -r '$b=json_decode(stream_get_contents(STDIN),true); $c=$b["checks"]["license_number"]; if($c["status"]!=="document_present"||$c["value"]!=="12345"||$c["via"]!=="api"||$c["by"]!=="בודק"||!str_contains($b["notes"],"הערה בדיקה")||!str_contains($b["notes"],"(צ\x27אט)")) exit(1); if(($b["checks"]["hall_service"]["via"]??"")!=="api") exit(1);' || fail "E4 במסד"
+fx body fd_case_org1_cohen | php -r '$b=json_decode(stream_get_contents(STDIN),true); $c=$b["checks"]["license_number"]; if($c["status"]!=="document_present"||$c["value"]!=="12345"||$c["via"]!=="api"||$c["by"]!=="בודק (צ\x27אט)"||!str_contains($b["notes"],"הערה בדיקה")||!str_contains($b["notes"],"(צ\x27אט)")) exit(1); if(($b["checks"]["hall_service"]["via"]??"")!=="api") exit(1);' || fail "E4 במסד"
+# 02: בדיקה שאדם כבר סגר — הצ'אט לא פותח אותה מחדש ולא מחליף ערך; ההצעה בהערה
+fx close fd_case_org1_cohen2 license_number 111
+code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen2","checks":{"license_number":{"status":"verified","value":"222"}}}' "$H/ext.php/case_update")"; test "$code" = 200 || fail "סגור בידי אדם ($code)"
+test "$(j saved.checks.license_number.status)" = verified && test "$(j saved.checks.license_number.value)" = 111 && test "$(j saved.checks.license_number.by)" = "מזכירה" || fail "הצ'אט פתח מחדש בדיקה שאדם סגר"
+j saved.checks.license_number.note | grep -q 222 && j converted.0.reason | grep -q 'אדם כבר סגר' || fail "ההצעה לא בהערה / התשובה לא אומרת"
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen","fields":{"payments":[{"amount":250,"purpose":"קבר"}]}}' "$H/ext.php/case_update")"; test "$code" = 200 || fail "תשלום מנהל ($code)"
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"id":"fd_case_org1_cohen","checks":{"nope":{"status":"missing"}}}' "$H/ext.php/case_update")"; test "$code" = 400 || fail "בדיקה לא מוכרת ($code)"
 code="$(st -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"name":"אהרון חדש","date":"2026-11-02","note":"נפתח מהצאט"}' "$H/ext.php/case_create")"; test "$code" = 200 || fail "case_create ($code)"
@@ -122,8 +127,8 @@ test "$(fx sql "SELECT org_id FROM funerals WHERE id='$newid'" | php -r 'echo js
 code="$(st -H "Authorization: Bearer $B" "$H/ext.php/case?id=$newid")"; test "$code" = 404 || fail "תיק חדש דולף לארגון 2 ($code)"
 
 # E9: כל כתיבה → events עם source api ושם המשתמש
-fx sql "SELECT source, actor, action, case_id FROM events WHERE source='api'" | php -r '$r=json_decode(stream_get_contents(STDIN),true); if(count($r)!==4) {fwrite(STDERR,json_encode($r,JSON_UNESCAPED_UNICODE)); exit(1);} foreach($r as $e) if($e["source"]!=="api"||!str_contains($e["actor"],"(צ\x27אט)")) exit(1);' || fail "E9 events"
-fx sql "SELECT actor FROM events WHERE action='case_update' AND actor LIKE 'עובד שטח%'" | grep -q 'עובד שטח' || fail "E9 שם עובד השטח"
+fx sql "SELECT source, actor, action, case_id FROM events WHERE source='api'" | php -r '$r=json_decode(stream_get_contents(STDIN),true); if(count($r)!==5) {fwrite(STDERR,json_encode($r,JSON_UNESCAPED_UNICODE)); exit(1);} foreach($r as $e) if($e["source"]!=="api"||!str_contains($e["actor"],"(צ\x27אט)")) exit(1);' || fail "E9 events"
+fx sql "SELECT actor FROM events WHERE source='api' AND actor LIKE 'עובד שטח%'" | grep -q 'עובד שטח' || fail "E9 שם עובד השטח"
 
 # E5: משתמש שהושבת / הורד בתפקיד — מיד
 fx role 7 field

@@ -111,29 +111,14 @@ switch ($action) {
     case 'save':
         $payload = $post();
         need('case.view');
-        $item = normalize($payload, $org);
-        $old = existing($pdo, $item['id'], $org);   // תיק של ארגון אחר → 404
-        need(caseChangeNeeds($old === null ? null : normalize($old, $org), $item));
-        if ($old !== null) {
-            foreach (['name','date','time','origin','team','grave','notes','folder_url','payments'] as $field) {
-                if (($item[$field] ?? null) !== ($old[$field] ?? null)) $item['manual_fields'][] = $field;
-            }
-            $item['manual_fields'] = array_values(array_unique(array_merge($old['manual_fields'] ?? [], $item['manual_fields'])));
-        } else {
-            $item['manual_fields'] = ['name','date','time','origin','team','grave','notes','folder_url','payments'];
-        }
-        foreach ($item['checks'] as $key => &$check) {
-            $previous = $old['checks'][$key] ?? null;
-            if (is_array($previous) && $previous['status'] === $check['status']
-                && $previous['value'] === $check['value'] && $previous['note'] === $check['note']) {
-                $check = $previous;
-            } elseif ($check['status'] !== 'unknown' || $check['value'] !== '' || $check['note'] !== '') {
-                $check['source'] = 'עדכון ידני';
-            }
-        }
-        unset($check);
-        store($pdo, $item, $old, $org, $actor, 'ui', 'save');
+        // lib/form.php: manual_fields, מקור לכל בדיקה (via: ui), ו-store() שרושם ב-events. תיק של ארגון אחר → 404
+        $item = formSaveCase($pdo, $payload, 'ui', $actor, $org,
+            fn(?array $old, array $item) => need(caseChangeNeeds($old === null ? null : normalize($old, $org), $item)));
         reply(200, ['ok' => true, 'record' => $item]);
+    case 'history':
+        // יומן התיק (פרוסה 02): 50 אחרונים מ-events. תיק של ארגון אחר → 404 (ה5)
+        need('case.view');
+        formHistoryAction($pdo, $method, $org);
 
     case 'api_token':
         // אסימון ingest.php — אחד, של ארגון 1 (הכרעה ה9). מוחזר פעם אחת; נשמר רק ה-SHA-256. החלפה מבטלת את הקודם.
@@ -273,17 +258,7 @@ reply(404, ['error' => 'פעולה לא מוכרת']);
 
 /* ===== עזר ===== */
 
-/** איזו הרשאה השינוי דורש: תיק חדש או שינוי בפרטים/תשלומים/מסמכים — case.edit; רק בדיקות, הערות, מיקום קבר — case.track. */
-function caseChangeNeeds(?array $old, array $new): string {
-    if ($old === null) return 'case.edit';
-    foreach ($new as $k => $v) {
-        if (in_array($k, TRACK_FIELDS, true) || $k === 'manual_fields' || $k === 'id') continue;
-        $before = $old[$k] ?? (is_array($v) ? [] : '');
-        // השוואה מחמירה מול התיק הקודם אחרי normalize() — אותם טיפוסים, כך ש-null→0 או "100"→"1e2" נתפסים כשינוי
-        if ($before !== $v) return 'case.edit';
-    }
-    return 'case.track';
-}
+// caseChangeNeeds() — ב-lib/access.php (משותף ל-api.php ול-ext.php)
 function memberRole(int $org, int $uid): ?string {
     $st = db()->prepare('SELECT role FROM members WHERE org_id = ? AND user_id = ?');
     $st->execute([$org, $uid]);

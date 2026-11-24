@@ -15,10 +15,15 @@ fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונ�
 ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
-for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php tests/gate-prepend.php tests/fixture-v0.php; do
+for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
 node --check "$APP/assets/js/app.js" || fail "node --check app.js"
+node --check "$APP/assets/js/form.js" || fail "node --check form.js"
+# פרוסה 02 — בדיקות יחידה (בלי שרת ובלי data/)
+php "$APP/tests/form.test.php" || fail "form.test.php"
+node "$APP/tests/form.test.js" || fail "form.test.js"
+grep -q 'src="assets/js/form.js"' "$APP/index.html" || fail "index.html לא טוען את form.js"
 test ! -e "$APP/setup.php" || fail "setup.php עדיין קיים"
 php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","ext.php","openapi.json","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
   if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
@@ -122,7 +127,7 @@ as '{"sub":"7","name":"בודק","email":"t@example.com","platform_admin":true,"
 as '{"sub":"7","name":"בודק","email":"t@example.com","platform_admin":true,"granted":"true"}'; code="$(st "$base?action=me")"; test "$code" = 401 || fail "granted כמחרוזת ($code)"
 as '{"sub":"7","granted":true,"platform_admin":"true"}'; code="$(st "$base?action=dev_health")"; test "$code" = 403 || fail "platform_admin כמחרוזת נחשב מפתח ($code)"
 code="$(st "http://127.0.0.1:18964/lib.php")"; test "$code" = 404 || fail "lib.php נגיש ($code)"
-for f in schema access events secrets devtasks; do code="$(st "http://127.0.0.1:18964/lib/$f.php")"; test "$code" = 404 || fail "lib/$f.php נגיש ($code)"; done
+for f in schema access events secrets devtasks form; do code="$(st "http://127.0.0.1:18964/lib/$f.php")"; test "$code" = 404 || fail "lib/$f.php נגיש ($code)"; done
 as ''; code="$(st "$base?action=devapi-feed")"; test "$code" = 401 || fail "devapi בלי אסימון ($code)"
 ok "זהות מהשער, קבצי lib חסומים, devapi דורש אסימון"
 
@@ -306,11 +311,61 @@ php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["rows"] as 
 code="$(get dev dev_events)"; test "$code" = 200 && test "$(jv 'count($v["rows"]) > 5')" = true || fail "dev_events ($code)"
 ok "A16 — שגיאה ביומן הבקשות; יומן פעולות"
 
+# ===== פרוסה 02 — טופס חכם, מול השרת =====
+code="$(get boss list '&month=2026-10')"; cp "$tmp/out" "$tmp/l02.json"
+pick(){ php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["name"]===$argv[2]) { echo json_encode($r,JSON_UNESCAPED_UNICODE); exit; } exit(1);' "$tmp/l02.json" "$1"; }
+# B1: שמירה מהממשק — by/via:ui/at רק לבדיקה ששונתה; by/via/at מהקלט מתעלמים
+pick 'נפטר בדיקה 1' > "$tmp/c1.json"
+code="$(post boss save "$(php -r '$r=json_decode(file_get_contents($argv[1]),true); $r["checks"]["hall_service"]=["status"=>"verified","value"=>"כן","note"=>"","by"=>"hacker","via"=>"import","at"=>"1999-01-01"]; echo json_encode($r,JSON_UNESCAPED_UNICODE);' "$tmp/c1.json")")"
+test "$code" = 200 || fail "B1: save ($code)"
+php -r '$v=json_decode(file_get_contents($argv[1]),true)["record"]["checks"]; $was=json_decode(file_get_contents($argv[2]),true)["checks"]; $h=$v["hall_service"];
+  if ($h["status"]!=="verified" || $h["via"]!=="ui" || $h["by"]!=="boss@example.com" || $h["at"]==="1999-01-01") exit(1);
+  if ($v["license_number"]!==$was["license_number"]) exit(2);' "$tmp/out" "$tmp/c1.json" || fail "B1: מקור רק לבדיקה ששונתה, וקלט by/via/at מתעלם"
+ok "B1 — by/via:ui/at לבדיקה ששונתה בלבד; קלט מתעלם"
+# B2: קריאה ישירה לפונקציית השמירה עם via: api — verified → document_present, וההצעה ב-note; נרשם ב-events כ-api
+php -r 'chdir($argv[1]); require "lib.php"; $p=db(); $id=$p->query("SELECT id FROM funerals WHERE name=\x27נפטר בדיקה 3\x27")->fetchColumn();
+  $r=existing($p,$id,1); $r["checks"]["license_number"]=["status"=>"verified","value"=>"555","note"=>""];
+  $s=formSaveCase($p,$r,"api",["id"=>null,"actor"=>"gpt@example.com"],1)["checks"]["license_number"];
+  if ($s["status"]!=="document_present" || !str_contains($s["note"],"555") || $s["via"]!=="api") exit(1);
+  if (existing($p,$id,1)["checks"]["license_number"]["status"]!=="document_present") exit(2);
+  $e=$p->query("SELECT source FROM events WHERE case_id=\x27$id\x27 ORDER BY id DESC LIMIT 1")->fetchColumn(); if ($e!=="api") exit(3);' "$APP" || fail "B2: via api → לאימות"
+ok "B2 — via: api שמסמן verified → document_present, ההצעה ב-note"
+# B3: אותו מעבר דרך ingest.php (via: import) → verified
+code="$(st -H 'Content-Type: application/json' -H "Authorization: Bearer $tok1" --data '{"records":[{"month":"2026-10","name":"נפטר בדיקה 2","date":"2026-10-02","checks":{"identity_document":{"status":"verified","value":"ת\"ז"}}}]}' "$ingest?action=import")"
+test "$code" = 200 || fail "B3: ingest ($code)"
+test "$(sql "SELECT json_extract(body,'\$.checks.identity_document.status')||'|'||json_extract(body,'\$.checks.identity_document.via') FROM funerals WHERE name='נפטר בדיקה 2'")" = 'verified|import' || fail "B3: ingest → verified, via=import"
+ok "B3 — ui ו-ingest (import) → verified"
+# B6: היסטוריה — שלושת השינויים האחרונים בסדר הפוך, עם מקור; ארגון אחר → 404
+cid="$(php -r 'echo json_decode(file_get_contents($argv[1]),true)["id"];' "$tmp/c1.json")"
+for n in א ב ג; do
+  code="$(get boss list '&month=2026-10')"
+  code="$(post boss save "$(php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["id"]===$argv[2]) { $r["notes"]="הערה ".$argv[3]; echo json_encode($r,JSON_UNESCAPED_UNICODE); }' "$tmp/out" "$cid" "$n")")"
+  test "$code" = 200 || fail "B6: save $n ($code)"
+done
+code="$(get boss history "&id=$cid")"; test "$code" = 200 || fail "B6: history ($code)"
+test "$(jv 'implode(",", array_map(fn($e) => $e["source"].":".(array_values(array_filter($e["changes"], fn($c) => $c["field"]==="notes"))[0]["after"] ?? ""), array_slice($v["events"],0,3)))')" = "'ui:הערה ג,ui:הערה ב,ui:הערה א'" || fail "B6: שלושה אחרונים בסדר הפוך עם מקור"
+code="$(get a2 history "&id=$cid")"; test "$code" = 404 || fail "B6: ארגון אחר → 404 ($code)"
+code="$(get boss history "&id=fd_no_such_case_000")"; test "$code" = 404 || fail "B6: תיק שלא קיים ($code)"
+code="$(get boss history '&id=../x')"; test "$code" = 400 || fail "B6: מזהה לא תקין ($code)"
+code="$(post boss history '{}' "&id=$cid")"; test "$code" = 405 || fail "B6: POST ($code)"
+ok "B6 — היסטוריה הפוכה עם מקור; ארגון אחר → 404"
+# B7: 22 התיקים (fixture-v0 של 01, ועוד 22 בצורות ישנות שונות) נפתחים: list, form.js, ו-history לכל אחד
+php -r '$p=new PDO("sqlite:".$argv[1]); $a=json_decode(file_get_contents($argv[2]),true); $st=$p->prepare("INSERT INTO funerals(id,month,name,body,updated_at,org_id) VALUES(?,?,?,?,?,1)");
+  foreach($a as $r){ $r["month"]="2026-09"; $st->execute([$r["id"],$r["month"],$r["name"],json_encode($r,JSON_UNESCAPED_UNICODE),"2026-10-01T00:00:00Z"]); }' "$DB" "$APP/tests/fixtures/legacy-cases.json"
+for m in 2026-10 2026-09; do
+  code="$(get boss list "&month=$m")"; test "$code" = 200 || fail "B7: list $m ($code)"; cp "$tmp/out" "$tmp/b7-$m.json"
+  node "$APP/tests/form.test.js" "$tmp/b7-$m.json" >/dev/null || fail "B7: form.js על התיקים של $m"
+  for lid in $(php -r 'echo implode(" ", array_column(json_decode(file_get_contents($argv[1]),true)["records"],"id"));' "$tmp/b7-$m.json"); do
+    code="$(get boss history "&id=$lid")"; test "$code" = 200 || fail "B7: history $lid ($code)"
+  done
+done
+ok "B7 — 22 התיקים הקיימים (ועוד 22 ישנים) נפתחים; בדיקות בלי מקור = מייבוא ישן"
+
 # ===== יציאה: עם CSRF בלבד =====
 code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
 ! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
-echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר"
+echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7"
 
 # ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
 kill "$pid" >/dev/null 2>&1 || true; pid=0

@@ -24,6 +24,11 @@ switch ($cmd) {
         break;
     case 'deactivate': $pdo->prepare('UPDATE users SET active=0 WHERE sub=?')->execute([$argv[3]]); break;
     case 'member_off': $pdo->prepare('UPDATE members SET active=0 WHERE user_id=(SELECT id FROM users WHERE sub=?)')->execute([$argv[3]]); break;
+    case 'close':   // אדם סגר בדיקה בממשק: verified עם ערך
+        $st = $pdo->prepare('SELECT body FROM funerals WHERE id=?'); $st->execute([$argv[3]]); $b = json_decode((string)$st->fetchColumn(), true);
+        $b['checks'][$argv[4]] = ['status' => 'verified', 'value' => $argv[5], 'source' => 'עדכון ידני', 'note' => '', 'by' => 'מזכירה', 'via' => 'ui', 'at' => gmdate('c')];
+        $pdo->prepare('UPDATE funerals SET body=? WHERE id=?')->execute([json_encode($b, JSON_UNESCAPED_UNICODE), $argv[3]]);
+        break;
     case 'role': $pdo->prepare('UPDATE members SET role=? WHERE user_id=(SELECT id FROM users WHERE sub=?)')->execute([$argv[4], $argv[3]]); break;
     case 'expire': $pdo->prepare('UPDATE tokens SET expires_at=? WHERE id=?')->execute([gmdate('c', time() - 60), (int)$argv[3]]); break;
     case 'body': $st = $pdo->prepare('SELECT body FROM funerals WHERE id=?'); $st->execute([$argv[3]]); echo $st->fetchColumn(); break;
