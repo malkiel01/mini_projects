@@ -270,6 +270,17 @@ reply(404, ['error' => 'פעולה לא מוכרת']);
 /* ===== עזר ===== */
 
 // caseChangeNeeds() — ב-lib/access.php (משותף ל-api.php ול-ext.php)
+/** איזו הרשאה השינוי דורש: תיק חדש או שינוי בפרטים/תשלומים/מסמכים — case.edit; רק בדיקות, הערות, מיקום קבר — case.track. */
+function caseChangeNeeds(?array $old, array $new): string {
+    if ($old === null) return 'case.edit';
+    foreach ($new as $k => $v) {
+        if (in_array($k, TRACK_FIELDS, true) || $k === 'manual_fields' || $k === 'id') continue;
+        $before = $old[$k] ?? (is_array($v) ? [] : '');
+        // השוואה מחמירה מול התיק הקודם אחרי normalize() — אותם טיפוסים, כך ש-null→0 או "100"→"1e2" נתפסים כשינוי
+        if ($before !== $v) return 'case.edit';
+    }
+    return 'case.track';
+}
 function memberRole(int $org, int $uid): ?string {
     $st = db()->prepare('SELECT role FROM members WHERE org_id = ? AND user_id = ?');
     $st->execute([$org, $uid]);
