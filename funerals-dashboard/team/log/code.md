@@ -29,6 +29,19 @@
   `formApplyChecks($new,$old,'api',$by)` (או `formSaveCase`) במקום מימוש משלו. לא יכולתי לענות ל-05 — send_message חסום בהרשאה.
 - 2026-11-24 — 01 מוזג (#1839, 8eb9a9f). `main` מוזג לענף 02 (הגרסה של `main` לכל קבצי 01 + ה-diff של 02 מעליה); `caseChangeNeeds`
   מקבל `normalize($old)` כמו ב-`main`. כל A ו-B1–B7 ירוקים. PR טיוטה ל-`main`.
+
+## 2026-11-24 — פרוסה 06 (AI מובנה), ענף `claude/funerals-dashboard-06-ai` — במקביל ל-03 ו-05 (טורבו)
+- חדש: `ai/lib.php`, `ai/actions.php`, `assets/js/ai.js`, `assets/css/ai.css`, `tests/ai.sh` (+ mock, fixture). נגיעות: `api.php` (2 שורות),
+  `lib.php` (`FdReply` + מצב לכידה ב-`reply()`), `index.html` (2 שורות), `app.js` (שורת `fd:case` — זהה לזו של 03), `run.sh` (שורת ai.sh).
+- **השכבה המשותפת עם 05 — `extRun($pdo, $m, $action, $query, $body, $via, $dry)` ב-`ext-lib.php`:** גוף ה-switch של `ext.php` עובר
+  לפונקציה (`$_GET`→`$query`, `body()`→`$body`, `extActor($m)`→`ctx()['actor']['actor']`, `formSaveCase(..., $via)`, `COMMIT`→`$dry ? ROLLBACK : COMMIT`),
+  ובדיקת `extCan` עוברת פנימה. ה-patch המוכן: `tests/patches/extrun-05.patch` (מול ענף 05 כפי שהוא היום). נבדק בעץ אינטגרציה (main+05+06+patch):
+  E1–E10 של 05 ירוקים, F1–F7 ירוקים.
+- ניסיון `send_message` לקוד 05 לתיאום השכבה — **נחסם בהרשאה**. לכן: אחרי ש-05 תמוזג, אני מחיל את ה-patch בענף 06 (יישור), ומוחק אותו.
+- **מבקש מ-03:** פונקציה שמחזירה תוכן קובץ לספק — `dropboxFileContent(PDO $pdo, int $orgId, string $fileId, int $maxBytes): ?array` →
+  `['mime' => ..., 'data' => bytes, 'name' => ...]`, בהרשאה של ctx (case.view, קובץ של הארגון). עד אז — §2.2.2 (קובץ לספק) ו-§2.3 (הצעת סוג) לא נבנו.
+- הכרעה טכנית: "שיחה" במונה = הודעה של משתמש (לא שרשור) — חוסם עלות גם בשרשור ארוך. ספק ב-HTTP ישיר (אין composer בשרת).
+- PR טיוטה #1848. הודעה לבקרה (send_message) — **נחסמה בהרשאה**; ממתין להודעה על מיזוג 03 ו-05 (דרך הבקרה או הבעלים).
 ## 2026-11-24 — פרוסה 05 (API חיצוני), ענף `claude/funerals-dashboard-05-external-api`
 
 - נבנה בקבצים חדשים: `ext.php` (Bearer בלבד), `ext-lib.php` (טבלת הפעולות, אסימונים, הרשאות, ADAPTER ל-01/02/03),
@@ -86,3 +99,19 @@
   ניקוי פריטים של משתמש אחר אחרי שבוע + תור מחדש בהחלפת ארגון; 🟡7 `dbxAllowedUpload` של 03 + צילום קבר רק תמונה; 🟡8 `field_uploads`
   → מיגרציה v3 (06 עוד על 2 — **מי שממוזג אחרי צריך v4**). ⚪9 org_id ב-UPDATE; ⚪10 אירוע אחד למזהה, `kind` מהרשימה, user_id;
   ⚪11 `taken_at`; ⚪12 README; ⚪14 `navigator.locks`; ⚪15 200 בלי JSON → ממתין.
+- 2026-11-24 — **יישור ל-05 (מוזג, #1840):** `main` מוזג לענף. 05 בנה שכבה משותפת משלו — `extDo($pdo, $action, $in, $via)` שזורק `ExtError` —
+  והכלים של 06 עברו אליה (ה-patch של extRun נמחק). תוספת אחת ל-05: `extDo(..., bool $dry = false)` — `rollBack` במקום `commit` בשתי
+  הכתיבות, לכרטיס ההצעה. השגיאות של פונקציות הליבה (`reply()`) נלכדות ב-`FdReply`, כך שגם הן חוזרות לספק. F1–F7 ירוקים בענף.
+  תיקון ב-`run.sh`: הבלוק שלי לא קורא עוד ל-`kill "$pid"` אחרי ש-05 איפס אותו (`kill 0` הרג את כל קבוצת התהליכים).
+- הודעה מקוד 03 (PR #1844, עוד לא מוזג): `dropboxFileContent($pdo, int $orgId, int $fileId, $maxBytes)` → `name/mime/size/bytes`;
+  `files.kind` ריקה ומתאימה לסיווג. אחרי המיזוג של 03 — §2.2.2 (קובץ לספק) ו-§2.3 (הצעת סוג) נבנים מעליהן.
+- 2026-11-24 — **יישור ל-03 (מוזג, #1844):** `main` מוזג. נבנו §2.2.2 — הכלי `file_view` (הקובץ עצמו לספק: image / document, עד 5MB, 10 קבצים
+  ו-20MB לשיחה) מעל `dropboxFileContent()`; ו-§2.3 — הצעת סוג לקובץ חדש בלי סוג (structured output, פעם אחת לקובץ, `ai_file_kinds`), ✓ →
+  `files.kind` + הבדיקה המתאימה "לאימות" דרך `extDo` (via: ai). נגיעות: `dropbox.js` (`data-file-id` + אירוע `fd:files`), `app.js` (`fd:changed`
+  → טעינה מחדש של תיק פתוח, כדי ש"שמירה" לא תדרוס שינוי שאושר מהעוזר). בדיקות: `ai.sh` מול Dropbox המדומה של 03 (`ai-dbx-fixture.php`).
+- 2026-11-24 — **ביקורת 06 סבב 1 (בקרה 2, על e37dae4):** 🔴1 הצעה ישנה — hash של השדות/הבדיקות שבהצעה (`ai_proposals.base`), ✓ אחרי שינוי →
+  409 `stale`; 🟡2 tool_use פתוח נסגר ב-tool_result is_error; 🟡3 הקובץ לא נשמר ב-`ai_threads` (סימון) + `drop_block` + הודעת מערכת קפואה
+  לשיחה; 🟡4 תקרת טוקנים חודשית (`ai_usage.tokens`, `ai_settings.token_cap`) + `cache_control`; 🟡5 `session_write_close()`; 🟡6 ✓ לא מאפס
+  טופס עם שינויים; ⚪7 לפי ההכרעה; ⚪8 הסרת מפתח; ⚪9 `#[\SensitiveParameter]`; ⚪10 תשובה מהסבב האחרון; ⚪11 `deciding` תקוע / `failed` →
+  ניסיון חוזר; ⚪12 שורת `running` לפני הקריאה; ⚪13 README. עמודות חדשות ב-ALTER אידמפוטנטי (בלי מספר גרסה — v3/v4 לא נגעו).
+  בדיקות חדשות ב-`ai.sh`: R1, R2, R3, אין base64, ⚪7, תקרת טוקנים, הסרת מפתח.

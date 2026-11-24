@@ -439,3 +439,6 @@ wipe
 php "$APP/tests/field.test.php" || fail "פרוסה 04 — field.test.php"
 wipe
 php "$APP/tests/field-dropbox.test.php" || fail "פרוסה 04 — מול Dropbox מדומה"
+
+# ===== פרוסה 06 — AI מובנה (שרת וספק מדומה נפרדים, מסד נקי; השרת של 01 כבר נעצר למעלה) =====
+bash "$APP/tests/ai.sh"

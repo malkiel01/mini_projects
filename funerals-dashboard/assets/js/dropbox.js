@@ -62,9 +62,10 @@
     if (!data.files.length) list.append(el('li', 'empty', data.folder ? 'אין עדיין קבצים בתיקייה.' : 'אין תיקייה ב-Dropbox לתיק הזה.'));
     data.files.forEach(f => list.append(fileRow(f)));
     box.append(list);
+    document.dispatchEvent(new CustomEvent('fd:files', {detail: {id: caseId, files: data.files}}));   // הצעת סוג לקובץ (ai.js)
   }
   function fileRow(f) {
-    const li = el('li');
+    const li = el('li'); li.dataset.fileId = f.id;
     const b = el('button', 'use-row'); b.type = 'button';
     const ic = el('span', 'use-ic dbx-thumb');
     if (f.thumb) { const img = el('img'); img.alt = ''; img.loading = 'lazy'; img.src = 'api.php?' + new URLSearchParams({action: 'file_view', id: f.id}); ic.append(img); }
