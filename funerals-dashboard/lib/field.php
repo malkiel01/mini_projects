@@ -35,17 +35,9 @@ final class FieldUploadError extends RuntimeException {
 
 function fieldHandles(string $action): bool { return in_array($action, FIELD_ACTIONS, true); }
 
-function fieldSchema(PDO $pdo): void {
-    static $done = [];
-    $k = spl_object_id($pdo);
-    if (isset($done[$k])) return;
-    // מוסיפה בלבד. status: pending (בשליחה) / done / failed. result — מה שהוחזר ללקוח, כדי שאותו מזהה יחזיר אותו קובץ.
-    $pdo->exec('CREATE TABLE IF NOT EXISTS field_uploads (
-        org_id INTEGER NOT NULL, upload_id TEXT NOT NULL, case_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT \'\',
-        status TEXT NOT NULL, result TEXT, error TEXT, user_id INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        PRIMARY KEY(org_id, upload_id))');
-    $done[$k] = true;
-}
+// הטבלה field_uploads — מיגרציה v3 ב-lib/schema.php (migrateV3), עם גיבוי לפני הקפיצה.
+/** חלון "בשליחה": בקשה שנייה עם אותו מזהה בזמן שהראשונה עוד מעלה (עד 50MB בקליטה חלשה) — 409 in_progress, לא העלאה מקבילה. */
+const FIELD_PENDING_WINDOW = 900;
 
 /* ---------- היום ומחר, חיפוש ---------- */
 
@@ -196,13 +188,13 @@ function fieldUploadIdValid(string $id): bool { return (bool)preg_match('/^[A-Za
  */
 function fieldUpload(PDO $pdo, int $orgId, string $caseId, string $uploadId, string $kind, string $tmp, string $original,
                      array $actor, callable $uploader, ?DateTimeImmutable $now = null): array {
-    fieldSchema($pdo);
     if (!fieldUploadIdValid($uploadId)) return [400, ['error' => 'מזהה העלאה אינו תקין']];
     if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $caseId)) return [400, ['error' => 'מזהה תיק אינו תקין']];
-    $kind = cleanText($kind, 80);
-    if ($kind === '') $kind = 'other';
     $case = existing($pdo, $caseId, $orgId);
     if ($case === null) return [404, ['error' => 'התיק לא נמצא']];
+    // סוג — רק מהרשימה של התיק (fieldKinds); אחר → "אחר"
+    $kind = cleanText($kind, 80);
+    if (!in_array($kind, array_column(fieldKinds($case), 'kind'), true)) $kind = 'other';
     $nowS = gmdate('c');
 
     // תופסים את המזהה בטרנזקציה קצרה: done → התשובה השמורה; pending טרי → "בשליחה"; אחרת — שלנו.
@@ -216,12 +208,12 @@ function fieldUpload(PDO $pdo, int $orgId, string $caseId, string $uploadId, str
             $pdo->exec('COMMIT');
             return [200, ['ok' => true, 'duplicate' => true] + (json_decode((string)$row['result'], true) ?: [])];
         }
-        if ($row !== null && $row['status'] === 'pending' && strtotime((string)$row['updated_at']) > time() - 120) {
+        if ($row !== null && $row['status'] === 'pending' && strtotime((string)$row['updated_at']) > time() - FIELD_PENDING_WINDOW) {
             $pdo->exec('COMMIT');
             return [409, ['error' => 'הקובץ הזה כבר בשליחה', 'code' => 'in_progress']];
         }
         $pdo->prepare('INSERT INTO field_uploads(org_id, upload_id, case_id, kind, status, user_id, created_at, updated_at) VALUES (?,?,?,?,\'pending\',?,?,?)
-            ON CONFLICT(org_id, upload_id) DO UPDATE SET status = \'pending\', kind = excluded.kind, error = NULL, updated_at = excluded.updated_at')
+            ON CONFLICT(org_id, upload_id) DO UPDATE SET status = \'pending\', kind = excluded.kind, user_id = excluded.user_id, error = NULL, updated_at = excluded.updated_at')
             ->execute([$orgId, $uploadId, $caseId, $kind, $actor['id'] ?? null, $nowS, $nowS]);
         $pdo->exec('COMMIT');
     } catch (Throwable $e) {
@@ -238,28 +230,42 @@ function fieldUpload(PDO $pdo, int $orgId, string $caseId, string $uploadId, str
         return [$e->status, ['error' => $e->getMessage(), 'code' => $e->tag]];
     }
 
-    // שיוך לבדיקה (W4): קובץ מסוג שמתאים לבדיקה → "לאימות", אלא אם אדם כבר סגר אותה או שהיא כבר לאימות
+    // שיוך לבדיקה (W4), האירוע וסימון "הושלם" — בטרנזקציה אחת, על התיק כפי שהוא **עכשיו** (קורא מחדש אחרי ההעלאה):
+    // עריכה של מישהו אחר בזמן ההעלאה (שם, תשלומים, הערה) נשמרת; משנים רק את הבדיקה המתאימה.
     $check = FIELD_KINDS[$kind]['check'] ?? null;
     $checkResult = null;
-    if ($check !== null) {
-        $prev = $case['checks'][$check] ?? [];
-        $status = (string)($prev['status'] ?? 'unknown');
-        if (in_array($status, ['unknown', 'missing', 'unreadable'], true)) {
-            $raw = $case;
-            $raw['checks'][$check] = ['status' => 'document_present', 'value' => (string)($prev['value'] ?? ''),
-                'note' => trim((string)($prev['note'] ?? '') === '' ? 'נשלח מהשטח: ' . $file['name'] : (string)$prev['note']),
-                'source' => (string)($prev['source'] ?? '')];
-            formSaveCase($pdo, $raw, 'field', $actor, $orgId);
-            $checkResult = ['key' => $check, 'status' => 'document_present'];
-        } else {
-            $checkResult = ['key' => $check, 'status' => $status];
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $fresh = existing($pdo, $caseId, $orgId) ?? $case;
+        if ($check !== null) {
+            $prev = $fresh['checks'][$check] ?? [];
+            $status = (string)($prev['status'] ?? 'unknown');
+            if (in_array($status, ['unknown', 'missing', 'unreadable'], true)) {
+                $raw = $fresh;
+                $raw['checks'][$check] = ['status' => 'document_present', 'value' => (string)($prev['value'] ?? ''),
+                    'note' => trim((string)($prev['note'] ?? '')) === '' ? 'נשלח מהשטח: ' . $file['name'] : (string)$prev['note'],
+                    'source' => (string)($prev['source'] ?? '')];
+                formSaveCase($pdo, $raw, 'field', $actor, $orgId);
+                $checkResult = ['key' => $check, 'status' => 'document_present'];
+            } else {
+                $checkResult = ['key' => $check, 'status' => $status];
+            }
         }
+        // אירוע אחד לכל מזהה — ניסיון חוזר אחרי בקשה שנקטעה לא רושם שוב
+        $seen = $pdo->prepare("SELECT 1 FROM events WHERE org_id = ? AND case_id = ? AND action = 'field_upload' AND diff LIKE ?");
+        $seen->execute([$orgId, $caseId, '%"upload_id":[null,"' . $uploadId . '"]%']);
+        if ($seen->fetchColumn() === false) {
+            recordEvent($orgId, $caseId, $actor, 'ui', 'field_upload', ['file' => [null, $file['name']], 'kind' => [null, $kind],
+                'via' => [null, 'field'], 'upload_id' => [null, $uploadId]]);
+        }
+        $result = ['file' => $file, 'check' => $checkResult];
+        $pdo->prepare("UPDATE field_uploads SET status = 'done', result = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
+            ->execute([json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), gmdate('c'), $orgId, $uploadId]);
+        $pdo->exec('COMMIT');
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->exec('ROLLBACK');
+        throw $e;
     }
-    recordEvent($orgId, $caseId, $actor, 'ui', 'field_upload', ['file' => [null, $file['name']], 'kind' => [null, $kind],
-        'via' => [null, 'field'], 'upload_id' => [null, $uploadId]]);
-    $result = ['file' => $file, 'check' => $checkResult];
-    $pdo->prepare("UPDATE field_uploads SET status = 'done', result = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
-        ->execute([json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), gmdate('c'), $orgId, $uploadId]);
     return [200, ['ok' => true, 'duplicate' => false] + $result];
 }
 
@@ -281,20 +287,16 @@ function fieldDropboxUploader(PDO $pdo, int $orgId, array $case, string $tmp, st
         throw new FieldUploadError(502, 'dropbox_error', 'ההעלאה ל-Dropbox נכשלה — נסה שוב');
     }
     // סוג המסמך — של השטח (03 משאיר אותו ריק)
-    $pdo->prepare("UPDATE files SET kind = ? WHERE id = ? AND kind = ''")->execute([$kind, (int)$f['id']]);
+    $pdo->prepare("UPDATE files SET kind = ? WHERE id = ? AND org_id = ? AND kind = ''")->execute([$kind, (int)$f['id'], $orgId]);
     return ['file_id' => (int)$f['id'], 'name' => (string)$f['name'], 'link' => 'api.php?action=file_view&id=' . (int)$f['id']];
 }
 
-/** סוגי קבצים: תמונה, PDF, מסמכי Office — לפי התוכן (finfo), ו-Office החדש (zip) רק עם סיומת מתאימה. בלי SVG/HTML. */
-function fieldAllowedFile(string $tmp, string $original): bool {
-    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file($tmp);
-    $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
-    if (str_starts_with($mime, 'image/')) return $mime !== 'image/svg+xml';
-    if (in_array($mime, ['application/pdf', 'application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation'], true)) return true;
-    return in_array($mime, ['application/zip', 'application/octet-stream'], true) && in_array($ext, ['docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt'], true);
+/** שעת הצילום מהדפדפן (ms מ-1970) — לשם "קבר <שם> <תאריך שעה>". מחוץ לשבוע אחורה / 10 דקות קדימה → שעת השרת. */
+function fieldTakenAt(mixed $ms): ?DateTimeImmutable {
+    if (!is_numeric($ms)) return null;
+    $sec = (int)floor((float)$ms / 1000);
+    if ($sec < time() - 7 * 86400 || $sec > time() + 600) return null;
+    return (new DateTimeImmutable('@' . $sec));
 }
 
 /* ---------- נקודות הקצה ---------- */
@@ -338,9 +340,13 @@ function fieldAction(PDO $pdo, string $action, string $method, int $orgId, array
             $size = (int)filesize($tmp);
             if ($size <= 0) reply(400, ['error' => 'קובץ ריק']);
             if ($size > FIELD_MAX_FILE) reply(413, ['error' => 'הקובץ גדול מ-50MB']);
-            if (!fieldAllowedFile($tmp, (string)($f['name'] ?? ''))) reply(415, ['error' => 'סוג קובץ לא נתמך (תמונה, PDF או מסמך Office)']);
+            // הבדיקה של 03 (סיומת + תוכן, בלי SVG/HTML); צילום קבר — תמונה בלבד
+            $orig = (string)($f['name'] ?? '');
+            $kind = (string)($_POST['kind'] ?? '');
+            if (!function_exists('dbxAllowedUpload') || !dbxAllowedUpload($orig, $tmp)) reply(415, ['error' => 'סוג קובץ לא נתמך (תמונה, PDF או מסמך Office)']);
+            if ($kind === 'grave_photo' && !str_starts_with((string)(new finfo(FILEINFO_MIME_TYPE))->file($tmp), 'image/')) reply(415, ['error' => 'צילום קבר חייב להיות תמונה']);
             [$status, $body] = fieldUpload($pdo, $orgId, (string)($_POST['case_id'] ?? ''), (string)($_POST['upload_id'] ?? ''),
-                (string)($_POST['kind'] ?? ''), $tmp, (string)($f['name'] ?? ''), $actor, 'fieldDropboxUploader');
+                $kind, $tmp, $orig, $actor, 'fieldDropboxUploader', fieldTakenAt($_POST['taken_at'] ?? null));
             reply($status, $body);
     }
     reply(404, ['error' => 'פעולה לא מוכרת']);

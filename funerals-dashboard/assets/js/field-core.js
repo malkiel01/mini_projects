@@ -134,27 +134,33 @@
     return 'up_' + Array.from(r(16), b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  const OTHER_OWNER_TTL = 7 * 864e5;   // פריט של משתמש אחר במכשיר משותף — יורד אחרי שבוע
+
   /**
-   * התור. store: {all(), put(item), del(id)} (IndexedDB בדפדפן, זיכרון בבדיקות). send(item) → {status, body}
-   * (זורק כשאין רשת). now() → מספר. onChange() — אחרי כל שינוי. owner — מי המשתמש (פריט של משתמש אחר לא נשלח).
+   * התור. store: {all(), get(id), put(item), del(id)} (IndexedDB בדפדפן וב-service worker, זיכרון בבדיקות).
+   * send(item) → {status, body} (זורק כשאין רשת). now() → מספר. onChange(item) — אחרי כל שינוי.
+   * owner / org — מי המשתמש ובאיזה ארגון: פריט של משתמש אחר או של ארגון אחר לא נשלח מכאן.
+   * lock(fn) — מריץ את fn בבלעדיות בין הלשוניות וה-service worker (navigator.locks); בלי — רץ ישר.
    */
-  function createQueue({store, send, now = () => Date.now(), onChange = () => {}, owner = ''}) {
+  function createQueue({store, send, now = () => Date.now(), onChange = () => {}, owner = '', org = null, lock = null}) {
     let flushing = null;
     const save = async item => { await store.put(item); onChange(item); return item; };
+    const mine = i => (!owner || !i.owner || i.owner === owner) && (org === null || i.org === undefined || i.org === null || i.org === org);
     async function add(x) {
-      const item = {id: x.id || uploadId(), owner, case_id: x.case_id, case_name: x.case_name || '', kind: x.kind || 'other',
+      const t = now();
+      const item = {id: x.id || uploadId(), owner, org, case_id: x.case_id, case_name: x.case_name || '', kind: x.kind || 'other',
         kind_label: x.kind_label || '', name: x.name || 'קובץ', type: x.type || (x.blob && x.blob.type) || '', size: x.size || (x.blob && x.blob.size) || 0,
-        blob: x.blob, state: 'pending', tries: 0, next: 0, message: STATE_LABELS.pending, file: null, created: now()};
+        blob: x.blob, state: 'pending', tries: 0, next: 0, message: STATE_LABELS.pending, file: null, created: t, taken_at: x.taken_at || t};
       return save(item);
     }
     async function cancel(id) {
-      const all = await store.all(), it = all.find(i => i.id === id);
+      const it = await store.get(id);
       if (!it || it.state === 'sending' || it.state === 'done') return false;
       await store.del(id); onChange({...it, state: 'cancelled'});
       return true;
     }
     async function retry(id) {
-      const all = await store.all(), it = all.find(i => i.id === id);
+      const it = await store.get(id);
       if (!it || it.state === 'done' || it.state === 'sending') return false;
       Object.assign(it, {state: 'pending', next: 0, message: STATE_LABELS.pending});
       await save(it);
@@ -163,42 +169,100 @@
     /** תוצאת שליחה → המצב הבא של הפריט. */
     function classify(it, res, err) {
       const t = now();
-      const later = msg => Object.assign(it, {state: 'pending', next: t + BACKOFF[Math.min(it.tries - 1, BACKOFF.length - 1)], message: msg});
+      const later = msg => Object.assign(it, {state: 'pending', next: t + BACKOFF[Math.min(Math.max(it.tries, 1) - 1, BACKOFF.length - 1)], message: msg});
       if (err) return later('ממתין לשליחה — אין חיבור');
       const s = res.status, b = res.body || {};
       if (s >= 200 && s < 300 && b.ok) return Object.assign(it, {state: 'done', blob: null, file: b.file || null, check: b.check || null, message: STATE_LABELS.done, done_at: t});
+      if (s >= 200 && s < 300) return later('ממתין — צריך להתחבר מחדש');   // דף ההתחברות של השער (HTML) במקום JSON
       if (s === 409 && b.code === 'dropbox_not_connected') return Object.assign(it, {state: 'blocked', next: t + 300e3, message: b.error || 'Dropbox של הארגון לא מחובר — פנה למנהל'});
       if (s === 409 && b.code === 'in_progress') return later('נשלח כבר — מחכה לאישור');
       if (s === 0 || s === 401 || s === 408 || s === 429 || s >= 500) return later(s === 401 ? 'ממתין — צריך להתחבר מחדש' : 'ממתין לשליחה — השרת לא זמין');
       return Object.assign(it, {state: 'failed', message: b.error || ('השליחה נכשלה (' + s + ')')});
     }
+    async function run(force) {
+      const ids = (await store.all()).filter(mine).sort((a, b) => a.created - b.created).map(i => i.id);
+      for (const id of ids) {
+        const it = await store.get(id);   // מהמחסן, לא מעותק ישן: פריט שבוטל בינתיים — לא נשלח
+        if (!it) continue;
+        if (it.state === 'sending') it.state = 'pending';   // נקטע באמצע (המסך נסגר) — שולחים שוב, באותו מזהה. בתוך הנעילה אף אחד אחר לא שולח
+        if (!['pending', 'blocked'].includes(it.state) || (!force && it.next > now())) continue;
+        it.state = 'sending'; it.tries++; it.message = STATE_LABELS.sending;
+        await save(it);
+        let res = null, err = null;
+        try { res = await send(it); } catch (e) { err = e; }
+        classify(it, res, err);
+        if (!(await store.get(id))) continue;   // בוטל בזמן השליחה — לא מחזירים אותו
+        await save(it);
+      }
+      const t = now();
+      for (const it of await store.all()) {
+        if (it.state === 'done' && mine(it) && t - (it.done_at || 0) > 864e5) await store.del(it.id);   // "נשלח ✓" נשאר יום
+        else if (owner && it.owner && it.owner !== owner && t - (it.created || 0) > OTHER_OWNER_TTL) await store.del(it.id);
+      }
+    }
     /** שולח את כל מה שהגיע זמנו. קריאה כפולה בזמן שליחה — מחכה לאותה ריצה. */
     function flush(force = false) {
       if (flushing) return flushing;
-      flushing = (async () => {
-        const all = (await store.all()).filter(i => (!owner || !i.owner || i.owner === owner)).sort((a, b) => a.created - b.created);
-        for (const it of all) {
-          if (it.state === 'sending' && !force) it.state = 'pending';   // נקטע באמצע (המסך נסגר) — שולחים שוב, באותו מזהה
-          if (!['pending', 'blocked'].includes(it.state) || (!force && it.next > now())) continue;
-          it.state = 'sending'; it.tries++; it.message = STATE_LABELS.sending;
-          await save(it);
-          let res = null, err = null;
-          try { res = await send(it); } catch (e) { err = e; }
-          classify(it, res, err);
-          await save(it);
-        }
-        // "נשלח ✓" נשאר יום, ואז יורד מהמכשיר
-        for (const it of await store.all()) if (it.state === 'done' && now() - (it.done_at || 0) > 864e5) await store.del(it.id);
-      })().finally(() => { flushing = null; });
+      flushing = (lock ? lock(() => run(force)) : run(force)).finally(() => { flushing = null; });
       return flushing;
     }
-    return {add, cancel, retry, flush, classify, list: () => store.all()};
+    /** נשאר משהו שיישלח בניסיון חוזר (ממתין לרשת) של המשתמש הזה. "בתור" בגלל Dropbox מנותק — לא: רשת לא תפתור אותו. */
+    const remaining = async () => (await store.all()).filter(i => mine(i) && ['pending', 'sending'].includes(i.state)).length;
+    return {add, cancel, retry, flush, classify, remaining, list: () => store.all()};
   }
 
   /** מחסן בזיכרון — לבדיקות, ולדפדפן בלי IndexedDB (אז התור לא שורד סגירה). */
   function memoryStore() {
     const m = new Map();
-    return {all: async () => [...m.values()].map(x => ({...x})), put: async x => { m.set(x.id, {...x}); }, del: async id => { m.delete(id); }};
+    return {all: async () => [...m.values()].map(x => ({...x})), get: async id => (m.has(id) ? {...m.get(id)} : null),
+      put: async x => { m.set(x.id, {...x}); }, del: async id => { m.delete(id); }};
+  }
+
+  /**
+   * IndexedDB ‏fd_field — אותו מחסן לדף ול-service worker: queue (הפריטים, עם הקובץ) ו-meta (csrf, owner, org של המשתמש
+   * האחרון בדף — כדי שה-service worker ישלח בשמו). idb — indexedDB של הסביבה.
+   */
+  function idbStore(idb) {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((ok, no) => {
+      const r = idb.open('fd_field', 2);
+      r.onupgradeneeded = () => {
+        if (!r.result.objectStoreNames.contains('queue')) r.result.createObjectStore('queue', {keyPath: 'id'});
+        if (!r.result.objectStoreNames.contains('meta')) r.result.createObjectStore('meta');
+      };
+      r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+    }));
+    const tx = async (name, mode, fn) => { const db = await open(); return new Promise((ok, no) => {
+      const t = db.transaction(name, mode), r = fn(t.objectStore(name));
+      t.oncomplete = () => ok(r && r.result); t.onerror = () => no(t.error); t.onabort = () => no(t.error);
+    }); };
+    return {all: () => tx('queue', 'readonly', s => s.getAll()).then(x => x || []), get: id => tx('queue', 'readonly', s => s.get(id)).then(x => x || null),
+      put: x => tx('queue', 'readwrite', s => s.put(x)), del: id => tx('queue', 'readwrite', s => s.delete(id)),
+      getMeta: () => tx('meta', 'readonly', s => s.get('me')).then(x => x || null), putMeta: m => tx('meta', 'readwrite', s => s.put(m, 'me'))};
+  }
+
+  /** שליחת פריט ל-api.php?action=field_upload. fetchFn — fetch של הסביבה; FormData/נתיב — של הסביבה. */
+  async function sendItem(item, {fetchFn, csrf, url = 'api.php?action=field_upload', FormDataCtor}) {
+    const fd = new FormDataCtor();
+    fd.append('case_id', item.case_id); fd.append('upload_id', item.id); fd.append('kind', item.kind);
+    fd.append('taken_at', String(item.taken_at || item.created || ''));
+    fd.append('file', item.blob, item.name);
+    const res = await fetchFn(url, {method: 'POST', credentials: 'same-origin', headers: {'X-CSRF-Token': csrf}, body: fd});
+    const body = await res.json().catch(() => ({}));
+    return {status: res.status, body};
+  }
+
+  /**
+   * סנכרון ברקע (service worker, Background Sync): אותו תור, אותו upload_id, בשם המשתמש האחרון בדף (meta).
+   * 403 (CSRF שפג) → "ממתין", לא "נכשל" — הדף ישלח בפתיחה הבאה עם CSRF טרי. מחזיר כמה נשארו (> 0 → הדפדפן ינסה שוב).
+   */
+  async function backgroundSync({store, fetchFn, FormDataCtor, lock = null, now}) {
+    const meta = store.getMeta ? await store.getMeta() : null;
+    if (!meta || !meta.csrf) return 0;
+    const q = createQueue({store, now, owner: meta.owner || '', org: meta.org ?? null, lock,
+      send: async it => { const r = await sendItem(it, {fetchFn, csrf: meta.csrf, FormDataCtor}); return r.status === 403 && !(r.body && r.body.code) ? {status: 401, body: {}} : r; }});
+    await q.flush(true);
+    return q.remaining();
   }
 
   /** "מה חסר מהשטח" לתיק: צילום, מיקום קבר, ומספר הבדיקות שלא נסגרו (form.js). */
@@ -210,7 +274,7 @@
     return out;
   }
 
-  const api = {MAX_SIDE, QUALITY, STATE_LABELS, fitSize, readExifGps, buildExifApp1, insertApp1, prepareImage, uploadId, createQueue, memoryStore, needsText};
+  const api = {MAX_SIDE, QUALITY, STATE_LABELS, fitSize, readExifGps, buildExifApp1, insertApp1, prepareImage, uploadId, createQueue, memoryStore, idbStore, sendItem, backgroundSync, needsText};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FDField = api;
 })(typeof self !== 'undefined' ? self : this);

@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function backupDir(): string { return dataDir() . '/backup'; }
 
@@ -25,6 +25,7 @@ function migrate(PDO $pdo): void {
         try {
             if ($from < 1) migrateV1($pdo);
             if ($from < 2) migrateV2($pdo);
+            if ($from < 3) migrateV3($pdo);
             $pdo->exec('PRAGMA user_version=' . SCHEMA_VERSION);
             $pdo->exec('COMMIT');
         } catch (Throwable $e) {
@@ -121,4 +122,15 @@ function migrateV2(PDO $pdo): void {
     // OAuth: state ממתין בשרת (לא ב-session), לפי hash, קשור ל-sub ולארגון, חד-פעמי, 10 דקות. ה-verifier מוצפן.
     $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_oauth (state_hash TEXT PRIMARY KEY, org_id INTEGER NOT NULL, sub TEXT NOT NULL,
         verifier_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at TEXT)');
+}
+
+/**
+ * v3 (פרוסה 04 — עובד שטח): field_uploads — מזהה חד-פעמי לכל העלאה מהשטח. status: pending (בשליחה) / done / failed;
+ * result — התשובה שהוחזרה, כדי שאותו מזהה יחזיר את אותו קובץ בלי לשלוח שוב.
+ */
+function migrateV3(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS field_uploads (
+        org_id INTEGER NOT NULL, upload_id TEXT NOT NULL, case_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT \'\',
+        status TEXT NOT NULL, result TEXT, error TEXT, user_id INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY(org_id, upload_id))');
 }

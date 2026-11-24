@@ -31,27 +31,15 @@
 
   /* ---------- התור במכשיר (IndexedDB) ---------- */
 
-  function idbStore() {
-    if (!('indexedDB' in window)) return W.memoryStore();
-    let dbp = null;
-    const open = () => dbp || (dbp = new Promise((ok, no) => {
-      const r = indexedDB.open('fd_field', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('queue', {keyPath: 'id'});
-      r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
-    }));
-    const tx = async (mode, fn) => { const db = await open(); return new Promise((ok, no) => {
-      const t = db.transaction('queue', mode), s = t.objectStore('queue'), r = fn(s);
-      t.oncomplete = () => ok(r && r.result); t.onerror = () => no(t.error); t.onabort = () => no(t.error);
-    }); };
-    return {all: () => tx('readonly', s => s.getAll()).then(x => x || []), put: x => tx('readwrite', s => s.put(x)), del: id => tx('readwrite', s => s.delete(id))};
-  }
-  async function send(item) {
-    const fd = new FormData();
-    fd.append('case_id', item.case_id); fd.append('upload_id', item.id); fd.append('kind', item.kind);
-    fd.append('file', item.blob, item.name);
-    const res = await fetch('api.php?action=field_upload', {method: 'POST', credentials: 'same-origin', headers: {'X-CSRF-Token': csrf}, body: fd});
-    const body = await res.json().catch(() => ({}));
-    return {status: res.status, body};
+  // אותו מחסן (fd_field) שה-service worker קורא ממנו — field-core.js
+  const store = 'indexedDB' in window ? W.idbStore(indexedDB) : W.memoryStore();
+  const send = item => W.sendItem(item, {fetchFn: (u, o) => fetch(u, o), csrf, FormDataCtor: FormData});
+  // לשונית אחת (או ה-service worker) שולחת בכל רגע
+  const lock = fn => (navigator.locks ? navigator.locks.request('fd-field-flush', fn) : fn());
+  let swReg = null;
+  /** Background Sync: הדפדפן יעיר את sw.js כשחוזרת רשת, גם אם המסך נסגר. בלי תמיכה (iOS) — הדף שולח בפתיחה הבאה. */
+  async function registerSync() {
+    try { if (swReg && swReg.sync) await swReg.sync.register('fd-field-queue'); } catch (e) { /* אין הרשאה / אין תמיכה */ }
   }
   const prepDeps = {
     readBytes: async b => new Uint8Array(await b.arrayBuffer()),
@@ -234,19 +222,24 @@
   }
   async function enqueue(file, kind) {
     if (!current) return;
-    let blob = file, name = file.name || 'קובץ';
+    // התיק נקבע עכשיו — לא אחרי ההקטנה: בינתיים העובד יכול לסגור את התיק או לפתוח אחר
+    const target = {id: current.id, name: current.name, kinds: current.kinds || []};
+    const takenAt = Date.now();
     try {
-      const r = await W.prepareImage(file, prepDeps);
-      blob = r.blob;
-      if (r.changed) name = name.replace(/\.[^.]+$/, '') + '.jpg';
-    } catch (e) { /* לא הוקטן — נשלח המקור */ }
-    const k = (current.kinds || []).find(x => x.kind === kind) || {label: kind};
-    try {
-      await queue.add({case_id: current.id, case_name: current.name, kind, kind_label: kind === 'grave_photo' ? 'צילום קבר' : k.label, name, blob});
+      let blob = file, name = file.name || 'קובץ';
+      try {
+        const r = await W.prepareImage(file, prepDeps);
+        blob = r.blob;
+        if (r.changed) name = name.replace(/\.[^.]+$/, '') + '.jpg';
+      } catch (e) { /* לא הוקטן — נשלח המקור */ }
+      if (kind === 'grave_photo' && !/\.jpe?g$/i.test(name) && blob.type === 'image/jpeg') name += '.jpg';
+      const k = target.kinds.find(x => x.kind === kind) || {label: kind};
+      await queue.add({case_id: target.id, case_name: target.name, kind, kind_label: kind === 'grave_photo' ? 'צילום קבר' : k.label, name, blob, taken_at: takenAt});
     } catch (e) { toast('לא נשמר במכשיר: ' + e.message, true); return; }
     toast(navigator.onLine ? 'שולח…' : 'נשמר במכשיר — יישלח כשתחזור קליטה');
     paintQueue();
-    queue.flush(true).then(paintQueue);
+    registerSync();
+    queue.flush(true).then(paintQueue).catch(() => {});
   }
   async function save() {
     if (!current) return;
@@ -270,7 +263,7 @@
 
   async function paintQueue() {
     if (!queue || !$('fieldApp')) return;
-    const all = (await queue.list()).filter(i => !i.owner || i.owner === (me.user.email || me.user.name)).sort((a, b) => b.created - a.created);
+    const all = (await queue.list()).filter(i => (!i.owner || i.owner === (me.user.email || me.user.name)) && (i.org === undefined || i.org === null || i.org === me.org.id)).sort((a, b) => b.created - a.created);
     const open = all.filter(i => i.state !== 'done');
     const sum = $('fwQueueSum'); sum.replaceChildren();
     if (open.length) sum.append(node('span', 'chip warn', '⏳ ' + open.length + ' ממתינים לשליחה'));
@@ -302,11 +295,16 @@
 
   function start(detail) {
     me = detail; csrf = detail.csrf || '';
+    // מי המשתמש — ל-service worker, שישלח בשמו כשהמסך סגור (csrf של ה-session הנוכחי בלבד)
+    if (store.putMeta) store.putMeta({csrf, owner: me.user.email || me.user.name, org: me.org.id, at: Date.now()}).catch(() => {});
+    // משתמש וארגון — בכל fd:me מחדש (החלפת ארגון לא טוענת את הדף מחדש)
+    queue = W.createQueue({store, send, lock, owner: me.user.email || me.user.name, org: me.org.id,
+      onChange: i => { paintQueue(); if (i.state === 'done') { toast('נשלח ✓'); if (current && i.case_id === current.id) openCase(current.id); } }});
     if (!started) {
       started = true;
-      queue = W.createQueue({store: idbStore(), send, owner: me.user.email || me.user.name,
-        onChange: i => { paintQueue(); if (i.state === 'done') { toast('נשלח ✓'); if (current && i.case_id === current.id) openCase(current.id); } }});
       const kick = () => queue.flush().then(paintQueue).catch(() => {});
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(r => { swReg = r; return queue.remaining(); })
+        .then(n => { if (n) registerSync(); }).catch(() => {});
       window.addEventListener('online', kick);
       document.addEventListener('visibilitychange', () => { if (!document.hidden) kick(); });
       setInterval(kick, 20000);

@@ -86,6 +86,38 @@ ok((existing($pdo, $tm['id'], 1)['checks']['license_document']['status'] ?? '') 
 ok(array_column(fieldKinds(['documents' => [['kind' => 'license'], ['kind' => 'צוואה']]]), 'kind') === array_merge(array_slice(array_keys(FIELD_KINDS), 0, -1), ['צוואה', 'other']),
     'W4: סוגי הקבצים — הקבועים, הסוגים שבתיק, ו"אחר" בסוף');
 
+// ---- ביקורת 1: עריכה בזמן ההעלאה (שם, תשלום, הערה) שורדת — משנים רק את הבדיקה, על התיק הטרי
+$ed = $mk('עריכה באמצע', '2026-11-24', '12:00');
+$midEdit = function (PDO $p, int $org, array $case, string $tmp, string $name, string $kind, array $act) use ($fake): array {
+    $c = existing($p, $case['id'], $org);
+    $c['name'] = 'עריכה באמצע (תוקן)'; $c['notes'] = 'נכתב בזמן ההעלאה'; $c['payments'] = [['amount' => 120, 'purpose' => 'קבר']];
+    formSaveCase($p, $c, 'ui', ['id' => 2, 'actor' => 'office@example.com'], $org);
+    return $fake($p, $org, $case, $tmp, $name, $kind, $act);
+};
+[$st] = fieldUpload($pdo, 1, $ed['id'], $uid('e'), 'license', $tmp, 'r.pdf', $actor, $midEdit, $now);
+$after = existing($pdo, $ed['id'], 1);
+ok($st === 200 && $after['name'] === 'עריכה באמצע (תוקן)' && $after['notes'] === 'נכתב בזמן ההעלאה' && (float)($after['payments'][0]['amount'] ?? 0) === 120.0,
+    'ביקורת 1: עריכה בזמן ההעלאה שורדת: ' . json_encode([$after['name'], $after['notes'], $after['payments']], JSON_UNESCAPED_UNICODE));
+ok(($after['checks']['license_document']['status'] ?? '') === 'document_present', 'ביקורת 1: והבדיקה עדיין לאימות');
+$lastSave = $pdo->query("SELECT diff FROM events WHERE case_id = " . $pdo->quote($ed['id']) . " AND action = 'save' ORDER BY id DESC LIMIT 1")->fetchColumn();
+// (payments מופיע לפעמים ב-diff כש-120 מול 120.0 — רעש ידוע של caseDiff ב-01, לא שינוי; לכן בודקים שהערך זהה משני הצדדים)
+$d = json_decode((string)$lastSave, true);
+ok(!isset($d['name']) && (!isset($d['payments']) || $d['payments'][0] == $d['payments'][1]), 'ביקורת 1: השמירה של השטח לא משנה שם/תשלום: ' . $lastSave);
+
+// ---- ביקורת 10: ניסיון חוזר אחרי בקשה שנקטעה — אירוע אחד; סוג לא מוכר → "אחר"
+$pdo->exec("UPDATE field_uploads SET status = 'failed' WHERE upload_id = '" . $uid('e') . "'");
+fieldUpload($pdo, 1, $ed['id'], $uid('e'), 'license', $tmp, 'r.pdf', $actor, $fake, $now);
+ok((int)$pdo->query("SELECT COUNT(*) FROM events WHERE action = 'field_upload' AND case_id = " . $pdo->quote($ed['id']))->fetchColumn() === 1, 'ביקורת 10: אירוע אחד למזהה');
+$n = count($calls);
+fieldUpload($pdo, 1, $ed['id'], $uid('f'), '<script>', $tmp, 'z.pdf', $actor, $fake, $now);
+ok(($calls[$n]['kind'] ?? '') === 'other', 'ביקורת 10: סוג לא מוכר → other');
+// ביקורת 5: "בשליחה" — חלון של 15 דקות
+$pdo->exec("UPDATE field_uploads SET status = 'pending', updated_at = '" . gmdate('c', time() - 600) . "' WHERE upload_id = '" . $uid('f') . "'");
+ok(fieldUpload($pdo, 1, $ed['id'], $uid('f'), 'other', $tmp, 'z.pdf', $actor, $fake, $now)[0] === 409, 'ביקורת 5: בשליחה לפני 10 דקות → 409 in_progress');
+// ביקורת 11: שעת הצילום מהדפדפן, בגבולות
+ok(fieldTakenAt((time() - 3600) * 1000)?->getTimestamp() === time() - 3600, 'ביקורת 11: taken_at');
+ok(fieldTakenAt((time() - 30 * 86400) * 1000) === null && fieldTakenAt('x') === null && fieldTakenAt((time() + 3600) * 1000) === null, 'ביקורת 11: מחוץ לגבולות → null');
+
 // ---- W7: Dropbox מנותק → 409 בהודעה ברורה, ואותו מזהה מצליח כשחוזר
 $down = fn() => throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
 [$st, $b] = fieldUpload($pdo, 1, $t0['id'], $uid('d'), 'grave_photo', $tmp, 'x.jpg', $actor, $down, $now);

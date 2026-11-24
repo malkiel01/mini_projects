@@ -13,6 +13,7 @@
     "dropbox-webhook.php",
     "ext.php",
     "openapi.json",
+    "sw.js",
     "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"
   ]
 }

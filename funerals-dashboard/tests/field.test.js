@@ -134,6 +134,71 @@ const deps = {
   // "נשלח ✓" יורד אחרי יום
   t += 864e5 + 1; await q.flush(); assert.strictEqual((await q.list()).length, 0, 'נשלח ✓ יורד אחרי יום');
 
+
+  // ---- ביקורת 3: ביטול בזמן flush — הפריט לא נשלח ולא חוזר לתור
+  { const st = W.memoryStore(); let sentIds = [];
+    let q3;
+    const send3 = async it => { sentIds.push(it.id); if (sentIds.length === 1) await q3.cancel(second.id); return {status: 200, body: {ok: true, file: {}}}; };
+    q3 = W.createQueue({store: st, send: send3, now: () => t});
+    const first = await q3.add({case_id: 'fd_a', blob: new Blob(['1'])}); t++;
+    const second = await q3.add({case_id: 'fd_a', blob: new Blob(['2'])});
+    await q3.flush();
+    assert.deepStrictEqual(sentIds, [first.id], 'ביקורת 3: פריט שבוטל בזמן flush לא נשלח');
+    assert.strictEqual(await st.get(second.id), null, 'ביקורת 3: ולא חזר למחסן');
+    // ביטול של הפריט שבשליחה עצמו — לא מותר; ביטול אחרי השליחה לא מחזיר
+    const q4 = W.createQueue({store: st, send: async it => { await st.del(it.id); return {status: 200, body: {ok: true}}; }, now: () => t});
+    const x = await q4.add({case_id: 'fd_a', blob: new Blob(['3'])}); await q4.flush();
+    assert.strictEqual(await st.get(x.id), null, 'ביקורת 3: נמחק בזמן השליחה — לא נשמר שוב'); }
+
+  // ---- ביקורת 6: ארגון בפריט — נשלח רק בארגון שלו; פריט של משתמש אחר יורד אחרי שבוע
+  { const st = W.memoryStore(); const got = [];
+    const qa = W.createQueue({store: st, send: async it => { got.push(it.id); return {status: 200, body: {ok: true}}; }, now: () => t, owner: 'u1', org: 1});
+    const a1 = await qa.add({case_id: 'fd_a', blob: new Blob(['a'])});
+    assert.strictEqual(a1.org, 1, 'ביקורת 6: org בפריט');
+    const qb = W.createQueue({store: st, send: async it => { got.push(it.id); return {status: 200, body: {ok: true}}; }, now: () => t, owner: 'u1', org: 2});
+    await qb.flush(); assert.deepStrictEqual(got, [], 'ביקורת 6: בארגון אחר — לא נשלח');
+    await qa.flush(); assert.deepStrictEqual(got, [a1.id], 'ביקורת 6: בארגון שלו — נשלח');
+    await st.put({id: 'up_old', owner: 'u9', org: 1, state: 'pending', created: t - 8 * 864e5, next: 0, tries: 0});
+    await st.put({id: 'up_new', owner: 'u9', org: 1, state: 'pending', created: t - 864e5, next: 0, tries: 0});
+    await qa.flush();
+    assert.ok(!(await st.get('up_old')) && (await st.get('up_new')), 'ביקורת 6: פריט של משתמש אחר יורד אחרי שבוע'); }
+
+  // ---- ביקורת 15: 200 בלי JSON (דף ההתחברות של השער) → ממתין, לא "נכשל"
+  { const q5 = W.createQueue({store: W.memoryStore(), send: async () => ({status: 200, body: {}}), now: () => t});
+    await q5.add({case_id: 'fd_a', blob: new Blob(['z'])}); await q5.flush();
+    const it5 = (await q5.list())[0];
+    assert.ok(it5.state === 'pending' && it5.message.includes('להתחבר מחדש'), 'ביקורת 15: 200 בלי JSON → ממתין'); }
+
+  // ---- ביקורת 14: שתי לשוניות — הנעילה מונעת שליחה כפולה במקביל
+  { const st = W.memoryStore(); let inFlight = 0, maxIn = 0, n = 0;
+    let chain = Promise.resolve();
+    const lock = fn => (chain = chain.then(fn, fn));   // כמו navigator.locks: אחד אחרי השני
+    const send = async () => { inFlight++; maxIn = Math.max(maxIn, inFlight); n++; await new Promise(r => setTimeout(r, 5)); inFlight--; return {status: 200, body: {ok: true}}; };
+    const tab1 = W.createQueue({store: st, send, now: () => t, lock}), tab2 = W.createQueue({store: st, send, now: () => t, lock});
+    await tab1.add({case_id: 'fd_a', blob: new Blob(['l'])});
+    await Promise.all([tab1.flush(), tab2.flush()]);
+    assert.ok(maxIn === 1 && n === 1, 'ביקורת 14: שתי לשוניות — שליחה אחת (' + n + ')'); }
+
+  // ---- ביקורת 2: סנכרון ברקע (service worker) — אותו תור, אותו upload_id, בשם המשתמש מה-meta
+  { const st = W.memoryStore(); let meta = null;
+    st.getMeta = async () => meta; st.putMeta = async m => { meta = m; };
+    const page = W.createQueue({store: st, send: async () => { throw new TypeError('offline'); }, now: () => t, owner: 'u1', org: 1});
+    const it = await page.add({case_id: 'fd_a', kind: 'grave_photo', name: 'קבר.jpg', blob: new Blob(['jpg'], {type: 'image/jpeg'}), taken_at: 1234});
+    await page.flush();   // אין רשת; המסך נסגר
+    class FD { constructor() { this.f = {}; } append(k, v) { this.f[k] = v; } }
+    const calls = [];
+    const fetchFn = async (url, o) => { calls.push({url, csrf: o.headers['X-CSRF-Token'], f: o.body.f});
+      return {status: calls.length === 1 ? 403 : 200, json: async () => calls.length === 1 ? {error: 'אימות בקשה נכשל'} : {ok: true, file: {link: 'x'}}}; };
+    assert.strictEqual(await W.backgroundSync({store: st, fetchFn, FormDataCtor: FD, now: () => t}), 0, 'בלי meta — לא שולח');
+    assert.strictEqual(calls.length, 0);
+    await st.putMeta({csrf: 'c1', owner: 'u1', org: 1});
+    assert.strictEqual(await W.backgroundSync({store: st, fetchFn, FormDataCtor: FD, now: () => t}), 1, 'ביקורת 2: CSRF שפג (403) → נשאר ממתין');
+    assert.strictEqual((await st.get(it.id)).state, 'pending');
+    assert.strictEqual(await W.backgroundSync({store: st, fetchFn, FormDataCtor: FD, now: () => t}), 0, 'ביקורת 2: נשלח ברקע');
+    assert.ok(calls.every(c => c.f.upload_id === it.id && c.csrf === 'c1' && c.url === 'api.php?action=field_upload'), 'ביקורת 2: אותו upload_id');
+    assert.ok(calls[1].f.taken_at === '1234' && calls[1].f.kind === 'grave_photo' && calls[1].f.case_id === 'fd_a', 'ביקורת 2/11: השדות, כולל taken_at');
+    assert.strictEqual((await st.get(it.id)).state, 'done', 'ביקורת 2: נשלח ✓'); }
+
   // מה חסר מהשטח
   assert.deepStrictEqual(W.needsText({needs: ['grave_photo', 'grave'], checks: {}}, F), ['📷 צילום קבר', '📍 מיקום קבר', F.TOTAL + ' בדיקות פתוחות']);
   console.log('  ✓ פרוסה 04 — W6 (הקטנה ו-GPS), התור (W3, W7, W8 אוטומטי)');
