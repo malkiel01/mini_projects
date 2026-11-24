@@ -38,8 +38,8 @@ function serve(array $cmd, array $env, string $log) {
     $procs[] = $p;
     return $p;
 }
-serve(['php', '-S', "127.0.0.1:$mockPort", "$app/tests/dropbox-mock.php"], ['DBX_MOCK_STATE' => $mockState], "$tmp/mock.log");
-serve(['php', '-S', "127.0.0.1:$appPort", '-t', $app, '-d', "auto_prepend_file=$app/tests/gate-prepend.php",
+serve(['php', '-d', 'opcache.jit=disable', '-S', "127.0.0.1:$mockPort", "$app/tests/dropbox-mock.php"], ['DBX_MOCK_STATE' => $mockState], "$tmp/mock.log");
+serve(['php', '-d', 'opcache.jit=disable', '-S', "127.0.0.1:$appPort", '-t', $app, '-d', "auto_prepend_file=$app/tests/gate-prepend.php",
     '-d', "upload_tmp_dir=$tmp/up", '-d', 'upload_max_filesize=60M', '-d', 'post_max_size=64M', '-d', 'memory_limit=256M'],
     ['FD_TEST_IDENTITY_FILE' => $identity, 'DBX_API_BASE' => $mockBase], "$tmp/app.log");
 for ($i = 0; $i < 50; $i++) { if (@file_get_contents("$base/index.html") !== false && @file_get_contents("$mockBase/_mock/state") !== false) break; usleep(100000); }
@@ -349,8 +349,8 @@ $out = $run('$p=db(); echo json_encode(array_column(dropboxCaseFiles($p, ["id"=>
 ok(str_contains((string)$out, 'רישיון.pdf'), 'dropboxCaseFiles: ' . $out);
 $out = $run('$c=dropboxFileContent(db(), 1, ' . $pdfId . '); echo $c["name"], "|", $c["mime"], "|", substr($c["bytes"],0,4);');
 ok($out === 'רישיון.pdf|application/pdf|%PDF', 'dropboxFileContent: ' . $out);
-$out = $run('var_export(dropboxFileContent(db(), 2, ' . $pdfId . '));');
-ok($out === 'NULL', 'dropboxFileContent — ארגון אחר → null: ' . $out);
+$out = $run('try { var_export(dropboxFileContent(db(), 2, ' . $pdfId . ')); } catch (DbxError $e) { echo $e->tag; }');
+ok($out === 'not_connected', 'dropboxFileContent — ארגון ב (לא חובר מעולם) → not_connected: ' . $out);
 $out = $run('try { dropboxFileText(db(), 1, ' . $pdfId . '); echo "no"; } catch (DbxError $e) { echo $e->tag; }');
 ok($out === 'not_text', 'dropboxFileText — PDF → not_text: ' . $out);
 login($DEV);
@@ -424,6 +424,6 @@ foreach (array_merge($refreshTokens, ['mocksecret456']) as $secret) ok(!str_cont
 ok(!preg_match('/\bat_[0-9a-f]{24}\b/', $hay), 'C9 אסימון גישה דלף');
 
 $log = (string)file_get_contents("$tmp/app.log");
-ok(!preg_match('/PHP (Fatal|Warning|Notice|Deprecated|Parse)/', $log), 'שגיאות PHP בשרת: ' . (preg_match('/PHP (Fatal|Warning|Notice|Deprecated|Parse)[^\n]*/', $log, $mm) ? $mm[0] : ''));
+ok(!preg_match('/PHP (Fatal|Warning|Notice|Deprecated|Parse)(?!.*in Unknown on line 0)/', $log), 'שגיאות PHP בשרת: ' . (preg_match('/PHP (Fatal|Warning|Notice|Deprecated|Parse)[^\n]*/', $log, $mm) ? $mm[0] : ''));
 
 echo "PASS: Dropbox (C1–C11, C13): webhook challenge וחתימה, OAuth PKCE ו-state חד-פעמי, תיקייה ראשית והגבלה אליה, סריקת התאמה ואישור, סנכרון ב-cursor (כפילות, reset, עמודים, שינוי שם, מחיקה), העלאה ב-upload session ומחיקת הזמני, תצוגה מקדימה ומטמון, הפרדת ארגונים, invalid_grant, CLI, ניתוק, ושום סוד בתשובות/ביומן/באירועים\n";

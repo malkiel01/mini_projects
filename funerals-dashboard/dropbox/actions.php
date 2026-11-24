@@ -485,8 +485,14 @@ function dropboxUploadToCase(PDO $pdo, int $orgId, array $case, string $tmp, str
     return $one('SELECT * FROM files WHERE dbx_id=?', [$meta['id']]);
 }
 
+/** ארגון שמעולם לא חובר (אין תיקייה ראשית) → DbxError('not_connected'). אחרי ניתוק — הרשימות נשארות (אפיון 3.1.3). */
+function dbxNeverConnected(PDO $pdo, int $orgId): void {
+    if ((string)(dbxOrg($pdo, $orgId)['root_id'] ?? '') === '') throw new DbxError('not_connected');
+}
+
 /** קבצי התיק (לא מחוקים), בצורה של case_files. $case — עם id ו-org_id (כמו מ-existing()). */
 function dropboxCaseFiles(PDO $pdo, array $case): array {
+    dbxNeverConnected($pdo, (int)$case['org_id']);
     $st = $pdo->prepare('SELECT * FROM files WHERE org_id=? AND case_id=? AND deleted=0 ORDER BY COALESCE(server_modified, created_at) DESC');
     $st->execute([(int)$case['org_id'], (string)$case['id']]);
     return array_map('dbxFileRow', $st->fetchAll());
@@ -497,6 +503,7 @@ function dropboxCaseFiles(PDO $pdo, array $case): array {
  * קובץ של ארגון אחר / נמחק / בלי תיק → null. גדול מ-$maxBytes → DbxError('too_large'). זורק DbxError גם כש-Dropbox לא מחובר.
  */
 function dropboxFileContent(PDO $pdo, int $orgId, int $fileId, int $maxBytes = 10485760): ?array {
+    dbxNeverConnected($pdo, $orgId);
     $st = $pdo->prepare('SELECT * FROM files WHERE id=? AND org_id=? AND deleted=0 AND case_id IS NOT NULL');
     $st->execute([$fileId, $orgId]);
     $f = $st->fetch();
@@ -518,6 +525,7 @@ function dropboxFileContent(PDO $pdo, int $orgId, int $fileId, int $maxBytes = 1
  * חילוץ טקסט מהם אינו של פרוסה 03 (06 שולחת את dropboxFileContent לספק ה-AI). לא קיים → null.
  */
 function dropboxFileText(PDO $pdo, int $orgId, int $fileId): ?string {
+    dbxNeverConnected($pdo, $orgId);
     $st = $pdo->prepare('SELECT name FROM files WHERE id=? AND org_id=? AND deleted=0');
     $st->execute([$fileId, $orgId]);
     $name = $st->fetchColumn();

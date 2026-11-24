@@ -29,6 +29,27 @@
   `formApplyChecks($new,$old,'api',$by)` (או `formSaveCase`) במקום מימוש משלו. לא יכולתי לענות ל-05 — send_message חסום בהרשאה.
 - 2026-11-24 — 01 מוזג (#1839, 8eb9a9f). `main` מוזג לענף 02 (הגרסה של `main` לכל קבצי 01 + ה-diff של 02 מעליה); `caseChangeNeeds`
   מקבל `normalize($old)` כמו ב-`main`. כל A ו-B1–B7 ירוקים. PR טיוטה ל-`main`.
+## 2026-11-24 — פרוסה 05 (API חיצוני), ענף `claude/funerals-dashboard-05-external-api`
+
+- נבנה בקבצים חדשים: `ext.php` (Bearer בלבד), `ext-lib.php` (טבלת הפעולות, אסימונים, הרשאות, ADAPTER ל-01/02/03),
+  `tokens.php` + `connect.html` + `assets/js/connect.js` (מסך "חיבור ל-ChatGPT", שלושה כפתורי העתקה),
+  `tools/build-ext.php` → `openapi.json` + `gpt-prompt.md`. בדיקות: `tests/ext.sh` (E1–E10), `tests/openapi-check.php`.
+- נגיעות בקבצים קיימים: `app.json` (public), `tests/run.sh` (public + קריאה ל-ext.sh), `index.html` (שורה אחת: 🤖), README.
+- 01/02/03 עוד לא בענף ראשי — ממתין למיזוג 01 ואז 02 ליישור (ראה handoff).
+
+## 2026-11-24 — 05: יישור מול 01 ו-02 (PR #1840, טיוטה)
+
+- מוזג main (01 #1839, 02 #1842). ext.php: can() מ-fd_ctx של האסימון, formSaveCase(via: api) + need(caseChangeNeeds()),
+  logRequest, resolveAccess במסך החיבור; `caseChangeNeeds()` הועבר ל-lib/access.php. tokens — לפי שם, בלי מספר גרסה.
+- run.sh המלא ירוק (01, 02, 05). נוספה בדיקה: בדיקה שאדם סגר — הצ'אט לא פותח מחדש.
+
+## 2026-11-24 — 05: ביקורת סבב 1 (team/reviews/05-external-api.md)
+
+- 🔴1, 🔴2, 🟡5 — כבר תוקנו ביישור (formSaveCase; run.sh/הוק/fixture; can() מהקשר האסימון בלבד).
+- 🟡3 בדיקה סגורה לא משתנה דרך API (גם לא ל"חסר"/"טרם נבדק"); ההצעה בהערות התיק. 🟡4 טיפוס שגוי → 400.
+- 🟡6 401 לא נרשם; 20 כושלים בדקה לכתובת → 429. 🟡7 beginTransaction של PDO — logRequest מבטל ורושם את הדחייה.
+- ⚪9 סינון סטטוס לפני החיתוך. ⚪10 ברירת מחדל 90 — נבדק. ⚪8 — נדחה עד ש-v2 של 03 ב-main (ראה הודעה לבקרה).
+- לכל סעיף בדיקה ב-tests/ext.sh; מוטציה ל-3/6/7 נכשלת כצפוי.
 
 ## 2026-11-24 — פרוסה 03 (Dropbox), ענף `claude/funerals-dashboard-03-dropbox`
 
