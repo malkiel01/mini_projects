@@ -256,3 +256,21 @@ select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; paddi
 .btn.sm { min-height: var(--tap); }
 .seg-tabs button { min-height: var(--tap); }
 #noorg p { margin: var(--s2) 0 0; }
+
+/* ===== פרוסה 02 — טופס חכם ===== */
+.seg-tabs.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.seg-tabs button { min-height: 44px; }
+.next-up { margin-bottom: var(--s2); }
+.next-btn { inline-size: 100%; min-height: 52px; justify-content: flex-start; gap: var(--s2); text-align: start; flex-wrap: wrap; }
+.next-btn .next-k { font-size: .78rem; opacity: .85; }
+.next-btn b { flex: 1; }
+.next-btn .chip { background: rgba(255, 255, 255, .2); color: inherit; border-color: transparent; }
+.done-msg { font-weight: 600; color: var(--ok); padding: var(--s2) 0; }
+.ck-info .src.prov { color: var(--ink); opacity: .8; }
+.ck-info .src.legacy { font-style: italic; color: var(--muted); }
+#caseTabs { margin: var(--s3) 0 0; }
+.hist { padding: var(--s2) var(--s3); display: grid; gap: 2px; }
+.hist-head { display: flex; align-items: center; gap: var(--s2); justify-content: space-between; }
+.hist .src { font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+.hist-ch { list-style: none; display: grid; gap: 2px; font-size: .85rem; overflow-wrap: anywhere; }
+#fNotes { min-block-size: 6em; }
