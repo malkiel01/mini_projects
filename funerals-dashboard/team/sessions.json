@@ -6,16 +6,6 @@
   },
   "code": [
     {
-      "session": "session_018g4NYD6tKx36K2GtksWvXW",
-      "branch": "claude/funerals-dashboard-03-dropbox",
-      "slice": "03"
-    },
-    {
-      "session": "session_018g4NYEkZkJeu8Y7WL7JS7a",
-      "branch": "claude/funerals-dashboard-05-external-api",
-      "slice": "05"
-    },
-    {
       "session": "session_018g4NYFpGmzP8ZDdxNpWJVb",
       "branch": "claude/funerals-dashboard-04-field",
       "slice": "04"
@@ -27,9 +17,10 @@
     }
   ],
   "control": {
-    "session": "session_018g4NYFvCTWcu2sJBJangFR",
+    "session": "session_018g4NYES4G3kVk57413GPnM",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_01VUaKANMqdEscU5LSbHmFmn"
+    "clock": "send_later כל 60 דקות (create_trigger נחסם)",
+    "previous": "session_018g4NYFvCTWcu2sJBJangFR"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -49,6 +40,16 @@
     {
       "session": "session_018g4NYE4eQofqbBdfWGEthU",
       "slice": "02",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYD6tKx36K2GtksWvXW",
+      "slice": "03",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEkZkJeu8Y7WL7JS7a",
+      "slice": "05",
       "state": "רדום"
     }
   ]
