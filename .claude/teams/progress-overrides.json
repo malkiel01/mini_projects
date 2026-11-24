@@ -1,0 +1,142 @@
+{
+  "_doc": "נכתב בידי מנהל הצוותים בכל סבב: מה שאי אפשר לקרוא מגיט (שעון דולק, בבנייה עכשיו). השאר — מהקבצים של כל צוות.",
+  "general_waiting": [],
+  "apps": {
+    "funerals-dashboard": {
+      "status": "active",
+      "status_note": "טורבו · שעון בכל שעה",
+      "progress_url": "https://claude.ai/artifact/H5rVZgqYnea8rybPsfzd53"
+    },
+    "appraisers": {
+      "status": "paused",
+      "status_note": "נעצר — מכסת Fable עד 27.11",
+      "waiting": [
+        {
+          "kind": "החלטה",
+          "id": "",
+          "text": "להמשיך על Opus, או לחכות עד שמכסת Fable תתאפס ב-27.11",
+          "status": "פרוסה 17 נעצרה באמצע"
+        }
+      ],
+      "now": "17 דוח — נעצר באמצע תיקון שלושה חוסמים"
+    },
+    "sforno": {
+      "status": "paused",
+      "status_note": "עד הודעה שלך",
+      "slices": [
+        {
+          "id": "01",
+          "title": "תשתית: מסד, כניסת מנהלים, יומן פעולות, מסך המפתח",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "02",
+          "title": "מנוע התוכן: כותרים, מהדורות, עורך ופרסום",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "03",
+          "title": "ייבוא: HTML, Word, EPUB, PDF וסריקות",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "04",
+          "title": "הקורא, הסידור והתהילים",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "05",
+          "title": "משתמשים רשומים, מידע אישי וסנכרון",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "06",
+          "title": "הורדות, גרסאות ו-PWA",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "07",
+          "title": "לוח עברי, זמני היום והלכה יומית",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "08",
+          "title": "תזכורות, ערוצים, ושבת וחג",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "09",
+          "title": "החנות: קטלוג WooCommerce",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "10",
+          "title": "ניהול תפעולי: דיווחים, מדדים, גיבויים",
+          "state": "ok",
+          "spec": true,
+          "status": "מוזג ונפרס"
+        },
+        {
+          "id": "11",
+          "title": "השקה: סאב-דומיין ובדיקות לפני הציבור",
+          "state": "run",
+          "spec": true,
+          "status": "חלק לא-חי באתר (#1803). השאר מחכה ל\"עוברים\" שלך"
+        }
+      ],
+      "board_note": "הלוח של הצוות לא עודכן מאז הפתיחה; הפרוסות כאן לפי team/STATE.md ו-docs/spec.",
+      "waiting": [
+        {
+          "kind": "החלטה",
+          "id": "",
+          "text": "\"עוברים\" — מעבר לסאב-דומיין sforno.mbe-plus.com. כדאי לשאול את הבקרה קודם מה זה מפעיל",
+          "status": ""
+        }
+      ]
+    },
+    "kol-maroko": {
+      "status": "paused",
+      "status_note": "עד הודעה שלך",
+      "questions": "off",
+      "questions_note": "השאלות של קול מרוקו מסומנות כנענו ב-team/decisions.md ולא בקובץ השאלות, ולכן לא נספרות כאן."
+    },
+    "trading-strategies": {
+      "status": "paused",
+      "status_note": "עד הודעה שלך"
+    },
+    "org-budget-proposals": {
+      "status": "paused",
+      "status_note": "עד הודעה שלך"
+    },
+    "grave-prices": {
+      "status": "paused",
+      "status_note": "עד הודעה שלך"
+    },
+    "platform": {
+      "status": "paused",
+      "status_note": "לא התחיל — מחכה ל\"תתחיל\""
+    },
+    "whatsapp-ai-scanner": {
+      "status": "paused",
+      "status_note": "עד הודעה שלך"
+    }
+  }
+}
