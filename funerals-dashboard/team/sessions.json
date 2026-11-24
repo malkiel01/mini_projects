@@ -19,6 +19,11 @@
       "session": "session_018g4NYD6tKx36K2GtksWvXW",
       "branch": "claude/funerals-dashboard-03-dropbox",
       "slice": "03"
+    },
+    {
+      "session": "session_018g4NYEkZkJeu8Y7WL7JS7a",
+      "branch": "claude/funerals-dashboard-05-external-api",
+      "slice": "05"
     }
   ],
   "control": {
