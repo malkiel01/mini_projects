@@ -23,9 +23,9 @@ $transcript = '';      // כל התשובות — לחיפוש סודות (C9)
 function cleanup(): void {
     global $procs, $tmp, $data;
     foreach ($procs as $p) { $s = proc_get_status($p); if ($s['running']) proc_terminate($p); proc_close($p); }
-    // data/ התחילה ריקה (נבדק למעלה) — מנקים כל מה שהבדיקה יצרה בה, חוץ מ-.htaccess
+    // data/ התחילה ריקה (נבדק למעלה) — מנקים כל מה שהבדיקה יצרה בה, חוץ מ-.htaccess ו-.gitignore
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($data, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
-    foreach ($it as $f) { if ($f->getFilename() === '.htaccess' && $f->getPath() === $data) continue; $f->isDir() ? @rmdir((string)$f) : @unlink((string)$f); }
+    foreach ($it as $f) { if (in_array($f->getFilename(), ['.htaccess', '.gitignore'], true) && $f->getPath() === $data) continue; $f->isDir() ? @rmdir((string)$f) : @unlink((string)$f); }
     if (!getenv('KEEP')) exec('rm -rf ' . escapeshellarg($tmp)); else fwrite(STDERR, "tmp: $tmp\n");
 }
 register_shutdown_function('cleanup');
@@ -114,7 +114,7 @@ pdo()->exec('DROP TABLE dbx_orgs; DROP TABLE dbx_folders; DROP TABLE case_folder
 pdo()->exec("INSERT INTO funerals(id,month,name,body,updated_at,org_id) VALUES('fd_v1case000001','2026-09','תיק ישן','{\"id\":\"fd_v1case000001\",\"month\":\"2026-09\",\"name\":\"תיק ישן\"}','2026-09-01',1)");
 $before = q('SELECT id, body FROM funerals ORDER BY id');
 login($DEV);
-ok((int)q1('PRAGMA user_version') === 2, 'v2: user_version=2');
+ok((int)q1('PRAGMA user_version') === 4, 'v2: user_version=4 (v2 של 03, ואחריו v3 של 04 ו-v4 של 06)');
 ok((int)q1("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('dbx_orgs','dbx_folders','case_folders','files')") === 4, 'v2: הטבלאות נוספו');
 ok(q('SELECT id, body FROM funerals ORDER BY id') === $before, 'v2: התיקים לא השתנו');
 ok(count(glob("$data/backup/funerals-*-v1.sqlite")) === 1, 'v2: גיבוי לפני הקפיצה');

@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 
 function backupDir(): string { return dataDir() . '/backup'; }
 
@@ -25,6 +25,8 @@ function migrate(PDO $pdo): void {
         try {
             if ($from < 1) migrateV1($pdo);
             if ($from < 2) migrateV2($pdo);
+            if ($from < 3) migrateV3($pdo);
+            if ($from < 4) migrateV4($pdo);
             $pdo->exec('PRAGMA user_version=' . SCHEMA_VERSION);
             $pdo->exec('COMMIT');
         } catch (Throwable $e) {
@@ -121,4 +123,40 @@ function migrateV2(PDO $pdo): void {
     // OAuth: state ממתין בשרת (לא ב-session), לפי hash, קשור ל-sub ולארגון, חד-פעמי, 10 דקות. ה-verifier מוצפן.
     $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_oauth (state_hash TEXT PRIMARY KEY, org_id INTEGER NOT NULL, sub TEXT NOT NULL,
         verifier_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at TEXT)');
+}
+
+/**
+ * v3 (פרוסה 04 — עובד שטח): field_uploads — מזהה חד-פעמי לכל העלאה מהשטח. status: pending (בשליחה) / done / failed;
+ * result — התשובה שהוחזרה, כדי שאותו מזהה יחזיר את אותו קובץ בלי לשלוח שוב.
+ */
+function migrateV3(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS field_uploads (
+        org_id INTEGER NOT NULL, upload_id TEXT NOT NULL, case_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT \'\',
+        status TEXT NOT NULL, result TEXT, error TEXT, user_id INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY(org_id, upload_id))');
+}
+
+/**
+ * v4 (פרוסה 06 — AI מובנה): הגדרות, מונה, שיחות, הצעות והצעות סוג לקובץ. אידמפוטנטית: בשרת שכבר הריץ את הגרסה
+ * הקודמת של 06 (טבלאות ב-CREATE IF NOT EXISTS ועמודות ב-ALTER עצל) — רק העמודות שחסרות נוספות, והנתונים נשארים.
+ */
+function migrateV4(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_settings (org_id INTEGER PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL,
+        monthly_cap INTEGER NOT NULL, auto_approve INTEGER NOT NULL DEFAULT 0, key_hint TEXT NOT NULL DEFAULT \'\', key_set_at TEXT,
+        key_check TEXT NOT NULL DEFAULT \'\', key_check_at TEXT, updated_at TEXT NOT NULL, token_cap INTEGER)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_usage (org_id INTEGER NOT NULL, month TEXT NOT NULL, chats INTEGER NOT NULL DEFAULT 0,
+        tokens INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (org_id, month))');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_threads (id TEXT PRIMARY KEY, org_id INTEGER NOT NULL, user_id INTEGER NOT NULL, case_id TEXT,
+        title TEXT NOT NULL DEFAULT \'\', messages TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, system TEXT)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_threads_case ON ai_threads(org_id, case_id, updated_at)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, org_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL, case_id TEXT, tool TEXT NOT NULL, input TEXT NOT NULL, card TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'pending\',
+        result TEXT, created_at TEXT NOT NULL, decided_at TEXT, base TEXT)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_proposals_thread ON ai_proposals(thread_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_file_kinds (org_id INTEGER NOT NULL, file_id INTEGER NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT \'\',
+        status TEXT NOT NULL DEFAULT \'pending\', created_at TEXT NOT NULL, decided_at TEXT, decided_by INTEGER, PRIMARY KEY (org_id, file_id))');
+    foreach ([['ai_settings', 'token_cap', 'INTEGER'], ['ai_usage', 'tokens', 'INTEGER NOT NULL DEFAULT 0'],
+        ['ai_threads', 'system', 'TEXT'], ['ai_proposals', 'base', 'TEXT']] as [$t, $c, $type]) {
+        if (!hasColumn($pdo, $t, $c)) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
+    }
 }

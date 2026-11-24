@@ -1,0 +1,36 @@
+/* פרוסה 06 — עוזר AI: חלון הצ'אט, כרטיסי הצעה, הגדרות. משתמש במשתני app.css. */
+#aiDialog .ai-form { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+@media (min-width: 600px) { #aiDialog { width: min(640px, 100vw); height: min(760px, 92dvh); } }
+.ai-body { display: flex; flex-direction: column; gap: var(--s2); }
+.ai-msg { max-width: 85%; padding: var(--s2) var(--s3); border-radius: var(--r); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.ai-msg.me { align-self: flex-start; background: var(--brand-soft); }
+.ai-msg.bot { align-self: flex-end; background: var(--bg); border: 1px solid var(--line); }
+.ai-note { margin: 0; font-size: .85rem; text-align: center; color: var(--muted); }
+.ai-note.err { color: var(--danger); }
+.ai-compose { flex: none; border-top: 1px solid var(--line); padding: var(--s2); padding-bottom: calc(var(--s2) + env(safe-area-inset-bottom)); background: var(--surface); }
+.ai-meta { font-size: .75rem; color: var(--muted); margin-bottom: 4px; }
+.ai-row { display: flex; gap: var(--s2); align-items: flex-end; }
+.ai-row textarea { padding-block: var(--s1); flex: 1; min-width: 0; resize: none; font: inherit; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
+.ai-card { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); background: var(--surface); }
+.ai-card h3 { font-size: .95rem; margin: 0 0 4px; }
+.ai-src { margin: 0 0 var(--s1); font-size: .8rem; }
+.ai-rows { display: grid; gap: 4px; }
+.ai-r { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s1); align-items: baseline; font-size: .875rem; }
+.ai-l { color: var(--muted); overflow-wrap: anywhere; }
+.ai-b { color: var(--muted); text-decoration: line-through; overflow-wrap: anywhere; }
+.ai-a { font-weight: 600; overflow-wrap: anywhere; }
+.ai-arrow { color: var(--muted); }
+.ai-warn { margin: var(--s1) 0 0; font-size: .8rem; color: var(--muted); }
+.ai-actions { display: flex; gap: var(--s2); margin-top: var(--s2); }
+.ai-actions .btn { flex: 1; }
+.ai-state { font-size: .85rem; }
+.ai-state.applied { color: var(--ok); }
+.ai-state.failed { color: var(--danger); }
+.ai-check { display: flex; gap: var(--s2); align-items: center; min-height: var(--tap); }
+.ai-check input { flex: none; inline-size: 22px; block-size: 22px; min-height: 0; padding: 0; }
+.ai-test { align-items: center; }
+.ai-test .btn { flex: none; }
+@media (max-width: 420px) { .ai-r { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); } .ai-l { grid-column: 1 / -1; } }
+.ai-kind { display: flex; align-items: center; gap: var(--s2); padding: 4px var(--s3) var(--s2); font-size: .85rem; }
+.ai-kind span { flex: 1; min-width: 0; }
+.ai-kind .btn { flex: none; min-width: var(--tap); }

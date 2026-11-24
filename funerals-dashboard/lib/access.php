@@ -39,12 +39,16 @@ function resolveAccess(array $pu): array {
     $st = $pdo->prepare('SELECT * FROM users WHERE sub = ?');
     $st->execute([$pu['sub']]);
     $user = $st->fetch() ?: null;
+    // כל סמן נסגר מיד: סמן פתוח מחזיק נעילת קריאה, וה-UPDATE שאחריו (שדרוג לכתיבה) נכשל מיד ב-"database is locked"
+    // כשבקשה אחרת כותבת באותו רגע — SQLite לא ממתין (busy_timeout) במצב שעלול להיות קיפאון. נמצא בבדיקת העלאות מקבילות.
+    $st->closeCursor();
     $actorSys = ['id' => null, 'actor' => 'system'];
     $verified = $pu['email'] !== '' && $pu['email_verified'];
     if ($user === null && $verified) {
         $st = $pdo->prepare('SELECT * FROM users WHERE email = ? AND sub IS NULL');
         $st->execute([$pu['email']]);
         $user = $st->fetch() ?: null;
+        $st->closeCursor();
         if ($user !== null) {
             $pdo->prepare('UPDATE users SET sub = ? WHERE id = ?')->execute([$pu['sub'], $user['id']]);
             recordEvent(null, null, ['id' => (int)$user['id'], 'actor' => $pu['actor']], 'system', 'user_linked', ['sub' => [null, $pu['sub']]]);
@@ -55,7 +59,9 @@ function resolveAccess(array $pu): array {
         if ($email !== null) {
             $st = $pdo->prepare('SELECT 1 FROM users WHERE email = ?');
             $st->execute([$email]);
-            if ($st->fetchColumn()) $email = null;   // המייל כבר מקושר ל-sub אחר — חשבון חדש בלי מייל, לא דורסים
+            $taken = $st->fetchColumn();
+            $st->closeCursor();
+            if ($taken) $email = null;   // המייל כבר מקושר ל-sub אחר — חשבון חדש בלי מייל, לא דורסים
         }
         $pdo->prepare('INSERT INTO users(sub, email, name, created_at, last_seen_at, active) VALUES (?,?,?,?,?,1)')
             ->execute([$pu['sub'], $email, $pu['name'], $now, $now]);

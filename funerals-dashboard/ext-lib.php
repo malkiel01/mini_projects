@@ -360,9 +360,11 @@ function extFail(int $status, string $msg): never { throw new ExtError($msg, $st
  * (extSetContext), ו-06 מקבל אותו מ-resolveAccess() של המשתמש המחובר. $in — הפרמטרים והגוף יחד.
  * $via — 'api' (צ'אט חיצוני) או 'ai' (AI מובנה): נכתב בכל בדיקה, ובשם ביומן ("(צ'אט)" / "(AI)").
  * ההרשאה — can() של 01 לפי הפעולה, ובכתיבה need(caseChangeNeeds()). כתיבה — formSaveCase() של 02.
+ * $guard (06, ✓ על הצעה) — נקרא בתוך הטרנזקציה, רגע לפני השמירה; זורק ExtError כדי לבטל (התיק השתנה מאז ההצעה).
+ * $dry (06, כרטיס הצעה) — כתיבה מלאה (ולידציה, הרשאה, formSaveCase) ואז ROLLBACK: אותה תשובה, ושום דבר לא נשמר.
  * מחזיר את התשובה; שגיאה — ExtError. (פונקציות הליבה — normalize(), existing(), need() — עונות בעצמן עם reply().)
  */
-function extDo(PDO $pdo, string $action, array $in, string $via = 'api'): array {
+function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $dry = false, ?callable $guard = null): array {
     if (!in_array($via, ['api', 'ai'], true)) throw new LogicException('extDo: via לא מוכר');
     $actions = extActions();
     if (!isset($actions[$action])) extFail(404, 'פעולה לא מוכרת. הפעולות: ' . implode(', ', array_keys($actions)));
@@ -501,9 +503,10 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api'): array 
                 if (mb_strlen($raw['notes']) > 1500) extFail(400, 'ההערות של התיק מלאות (1500 תווים). לקצר במסך התיק.');
             }
             $pdo->beginTransaction();   // של PDO — כדי ש-logRequest יבטל אותה אם הכתיבה נדחתה
+            if ($guard !== null) $guard();
             $saved = formSaveCase($pdo, $raw, $via, $actor, $orgId,
                 fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
-            $pdo->commit();
+            $dry ? $pdo->rollBack() : $pdo->commit();
             $out = ['fields' => [], 'checks' => [], 'note' => $line];
             $oldN = normalize($old, $orgId);   // אותם טיפוסים (100 מול 100.0) — כדי לא לדווח על שדה שלא השתנה
             foreach (array_keys(EXT_FIELDS) as $f) {
@@ -536,9 +539,10 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api'): array 
                 'time' => $p['time'] ?? '', 'origin' => $p['origin'] ?? '', 'team' => $p['team'] ?? '', 'grave' => $p['grave'] ?? '',
                 'notes' => $note === '' ? '' : '[' . date('d.m.Y') . '] ' . $actor['actor'] . ': ' . $note];
             $pdo->beginTransaction();   // של PDO — כדי ש-logRequest יבטל אותה אם הכתיבה נדחתה
+            if ($guard !== null) $guard();
             $saved = formSaveCase($pdo, $raw, $via, $actor, $orgId,
                 fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
-            $pdo->commit();
+            $dry ? $pdo->rollBack() : $pdo->commit();
             return ['ok' => true, 'message' => 'התיק נפתח.', 'case' => $saved, 'summary' => extSummary($saved)];
     }
     extFail(404, 'פעולה לא מוכרת');
