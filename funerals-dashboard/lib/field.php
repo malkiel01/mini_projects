@@ -1,0 +1,361 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * פרוסה 04 — עובד שטח בטלפון: מסך "היום", צילום קבר, שליחת קובץ ועדכון (אפיון 04).
+ * נטען מ-api.php בשתי שורות (fieldHandles / fieldAction), אחרי הזהות, ה-CSRF והארגון הפעיל. לא נקודת קצה: גישה ישירה → 404.
+ *
+ * - הרשאות — רק דרך can()/need() של lib/access.php: צפייה case.view, עדכון והעלאה case.track (שטח, משרד, מנהל).
+ * - עדכון — רק TRACK_FIELDS (בדיקות, הערה, מיקום קבר), ונשמר דרך formSaveCase(..., 'field', ...) של 02.
+ * - העלאה — דרך Dropbox של 03 (fieldDropboxUploader). מזהה חד-פעמי לכל העלאה (field_uploads): אותו מזהה פעמיים → קובץ אחד.
+ *   קובץ שסוגו מתאים לבדיקה → הבדיקה "לאימות" (document_present), via: field — לא מורידים בדיקה שאדם כבר סגר.
+ */
+if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
+
+const FIELD_ACTIONS = ['field_today', 'field_search', 'field_case', 'field_save', 'field_upload'];
+const FIELD_TZ = 'Asia/Jerusalem';
+const FIELD_MAX_FILE = 50 * 1024 * 1024;
+/** סוגי הקבצים שעובד שטח בוחר. check — הבדיקה שקובץ מהסוג הזה מעביר ל"לאימות". 'license' — הסוג שכבר בתיקים. */
+const FIELD_KINDS = [
+    'grave_photo'        => ['label' => 'צילום קבר', 'check' => null],
+    'license'            => ['label' => 'רישיון קבורה', 'check' => 'license_document'],
+    'identity'           => ['label' => 'מסמך זיהוי נפטר', 'check' => 'identity_document'],
+    'payment'            => ['label' => 'אסמכתת תשלום', 'check' => 'payment_evidence'],
+    'partner_identity'   => ['label' => 'זיהוי בן/בת זוג', 'check' => 'partner_identity'],
+    'grave_purchase'     => ['label' => 'רכישת קבר נוסף', 'check' => 'grave_purchase'],
+    'national_insurance' => ['label' => 'דיווח לביטוח לאומי', 'check' => 'national_insurance'],
+    'other'              => ['label' => 'אחר', 'check' => null],
+];
+/** ההודעה שהעובד רואה כש-Dropbox של הארגון לא מוכן (W7). */
+const FIELD_DBX_DOWN = 'Dropbox של הארגון לא מחובר — פנה למנהל';
+
+final class FieldUploadError extends RuntimeException {
+    public function __construct(public readonly int $status, public readonly string $tag, string $msg) { parent::__construct($msg); }
+}
+
+function fieldHandles(string $action): bool { return in_array($action, FIELD_ACTIONS, true); }
+
+function fieldSchema(PDO $pdo): void {
+    static $done = [];
+    $k = spl_object_id($pdo);
+    if (isset($done[$k])) return;
+    // מוסיפה בלבד. status: pending (בשליחה) / done / failed. result — מה שהוחזר ללקוח, כדי שאותו מזהה יחזיר אותו קובץ.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS field_uploads (
+        org_id INTEGER NOT NULL, upload_id TEXT NOT NULL, case_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT \'\',
+        status TEXT NOT NULL, result TEXT, error TEXT, user_id INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY(org_id, upload_id))');
+    $done[$k] = true;
+}
+
+/* ---------- היום ומחר, חיפוש ---------- */
+
+/** [היום, מחר] בשעון ישראל, YYYY-MM-DD. */
+function fieldDays(?DateTimeImmutable $now = null): array {
+    $now = ($now ?? new DateTimeImmutable('now'))->setTimezone(new DateTimeZone(FIELD_TZ));
+    return [$now->format('Y-m-d'), $now->modify('+1 day')->format('Y-m-d')];
+}
+
+/** מספר הקבצים ומי מהם צילום קבר, לתיקים — מטבלת files של 03 (אם עוד אין — אפס). */
+function fieldFileStats(PDO $pdo, int $orgId, array $caseIds): array {
+    $out = [];
+    foreach ($caseIds as $id) $out[$id] = ['files' => 0, 'grave_photo' => false];
+    if (!$caseIds || !formTableExists($pdo, 'files')) return $out;
+    $in = implode(',', array_fill(0, count($caseIds), '?'));
+    $st = $pdo->prepare("SELECT case_id, COUNT(*) AS n, MAX(kind = 'grave_photo') AS g FROM files
+        WHERE org_id = ? AND deleted = 0 AND case_id IN ($in) GROUP BY case_id");
+    $st->execute([$orgId, ...$caseIds]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $out[$r['case_id']] = ['files' => (int)$r['n'], 'grave_photo' => (bool)$r['g']];
+    return $out;
+}
+
+/** "מה חסר מהשטח": צילום קבר, מיקום קבר. הבדיקות הפתוחות מחושבות בדפדפן (form.js), מאותו גוף תיק. */
+function fieldNeeds(array $case, array $stats): array {
+    $need = [];
+    if (!$stats['grave_photo']) $need[] = 'grave_photo';
+    if (trim((string)($case['grave'] ?? '')) === '') $need[] = 'grave';
+    return $need;
+}
+
+/** תיק לרשימה: הגוף (בלי תשלומים — שטח לא צריך אותם במסך) + מה חסר. */
+function fieldCard(array $case, array $stats): array {
+    return ['id' => $case['id'], 'name' => (string)$case['name'], 'month' => (string)($case['month'] ?? ''),
+        'date' => (string)($case['date'] ?? ''), 'time' => (string)($case['time'] ?? ''),
+        'origin' => (string)($case['origin'] ?? ''), 'grave' => (string)($case['grave'] ?? ''),
+        'checks' => $case['checks'] ?? [], 'files' => $stats['files'], 'needs' => fieldNeeds($case, $stats)];
+}
+
+/** תיקי היום ומחר של הארגון, לפי תאריך ושעה (תיק בלי שעה — בסוף היום שלו). */
+function fieldToday(PDO $pdo, int $orgId, ?DateTimeImmutable $now = null): array {
+    [$today, $tomorrow] = fieldDays($now);
+    // תאריך הלוויה נמצא בגוף התיק (JSON). מסננים בשאילתה לפי החודשים הרלוונטיים, ובקוד לפי התאריך המדויק.
+    $months = array_values(array_unique([substr($today, 0, 7), substr($tomorrow, 0, 7)]));
+    $in = implode(',', array_fill(0, count($months), '?'));
+    $st = $pdo->prepare("SELECT body FROM funerals WHERE org_id = ? AND (month IN ($in) OR body LIKE ? OR body LIKE ?)");
+    $st->execute([$orgId, ...$months, '%"date":"' . $today . '"%', '%"date":"' . $tomorrow . '"%']);
+    $cases = [];
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $b) {
+        $c = json_decode((string)$b, true);
+        if (is_array($c) && in_array($c['date'] ?? '', [$today, $tomorrow], true)) $cases[$c['id']] = $c;
+    }
+    usort($cases, fn($a, $b) => [$a['date'], ($a['time'] ?? '') === '' ? '99:99' : $a['time'], $a['name']]
+        <=> [$b['date'], ($b['time'] ?? '') === '' ? '99:99' : $b['time'], $b['name']]);
+    $stats = fieldFileStats($pdo, $orgId, array_column($cases, 'id'));
+    return ['today' => $today, 'tomorrow' => $tomorrow,
+        'cases' => array_map(fn($c) => fieldCard($c, $stats[$c['id']]), $cases)];
+}
+
+/** חיפוש בשם, בכל החודשים של הארגון. עד 30, החדש קודם. */
+function fieldSearch(PDO $pdo, int $orgId, string $q): array {
+    $q = trim(preg_replace('/\s+/u', ' ', $q) ?? '');
+    if (mb_strlen($q) < 2) return [];
+    $st = $pdo->prepare('SELECT body FROM funerals WHERE org_id = ?');
+    $st->execute([$orgId]);
+    $hits = [];
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $b) {
+        $c = json_decode((string)$b, true);
+        if (is_array($c) && mb_stripos(preg_replace('/\s+/u', ' ', (string)($c['name'] ?? '')) ?? '', $q) !== false) $hits[] = $c;
+    }
+    usort($hits, fn($a, $b) => [$b['date'] ?? '', $b['time'] ?? ''] <=> [$a['date'] ?? '', $a['time'] ?? '']);
+    $hits = array_slice($hits, 0, 30);
+    $stats = fieldFileStats($pdo, $orgId, array_column($hits, 'id'));
+    return array_map(fn($c) => fieldCard($c, $stats[$c['id']]), $hits);
+}
+
+/** סוגי הקבצים לבחירה: הקבועים, ואחריהם כל סוג שכבר בתיק (documents[].kind) ולא ברשימה. */
+function fieldKinds(array $case): array {
+    $out = [];
+    foreach (FIELD_KINDS as $k => $d) $out[] = ['kind' => $k, 'label' => $d['label'], 'check' => $d['check']];
+    $known = array_keys(FIELD_KINDS);
+    foreach (($case['documents'] ?? []) as $doc) {
+        $k = cleanText($doc['kind'] ?? '', 80);
+        if ($k === '' || in_array($k, $known, true)) continue;
+        $known[] = $k;
+        array_splice($out, count($out) - 1, 0, [['kind' => $k, 'label' => $k, 'check' => null]]);   // לפני "אחר"
+    }
+    return $out;
+}
+
+/** הקבצים של התיק (מ-files של 03), החדש קודם. */
+function fieldCaseFiles(PDO $pdo, int $orgId, string $caseId): array {
+    if (!formTableExists($pdo, 'files')) return [];
+    $st = $pdo->prepare('SELECT id, name, kind, added_via, added_by, created_at FROM files WHERE org_id = ? AND case_id = ? AND deleted = 0 ORDER BY id DESC LIMIT 50');
+    $st->execute([$orgId, $caseId]);
+    return array_map(fn($r) => ['id' => (int)$r['id'], 'name' => $r['name'], 'kind' => $r['kind'], 'added_via' => $r['added_via'],
+        'added_by' => $r['added_by'], 'at' => $r['created_at'], 'link' => 'api.php?action=file_view&id=' . (int)$r['id']], $st->fetchAll(PDO::FETCH_ASSOC));
+}
+
+/* ---------- עדכון מהשטח ---------- */
+
+/**
+ * עדכון של עובד שטח: רק id + TRACK_FIELDS. כל שדה אחר בקלט → 403 (W5), גם אם ערכו זהה — שטח לא שולח אותו.
+ * השאר נלקח מהתיק השמור, והשמירה — formSaveCase(..., 'field', ...).
+ */
+function fieldSave(PDO $pdo, array $in, array $actor, int $orgId, ?callable $authorize = null): array {
+    foreach (array_keys($in) as $k) {
+        if ($k !== 'id' && !in_array($k, TRACK_FIELDS, true)) reply(403, ['error' => 'מהשטח אפשר לעדכן רק בדיקות, הערה ומיקום קבר']);
+    }
+    $id = (string)($in['id'] ?? '');
+    if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(400, ['error' => 'מזהה תיק אינו תקין']);
+    $old = existing($pdo, $id, $orgId);
+    if ($old === null) reply(404, ['error' => 'התיק לא נמצא']);
+    $raw = $old;
+    if (array_key_exists('notes', $in)) $raw['notes'] = $in['notes'];
+    if (array_key_exists('grave', $in)) $raw['grave'] = $in['grave'];
+    if (array_key_exists('checks', $in)) {
+        if (!is_array($in['checks'])) reply(400, ['error' => 'בדיקות לא תקינות']);
+        foreach ($in['checks'] as $key => $c) {
+            if (!is_string($key) || !is_array($c)) reply(400, ['error' => 'שדה בדיקה אינו תקין']);
+            $prev = is_array($old['checks'][$key] ?? null) ? $old['checks'][$key] : [];
+            $raw['checks'][$key] = ['status' => $c['status'] ?? ($prev['status'] ?? 'unknown'),
+                'value' => $c['value'] ?? ($prev['value'] ?? ''), 'note' => $c['note'] ?? ($prev['note'] ?? ''),
+                'source' => $prev['source'] ?? ''];
+        }
+    }
+    return formSaveCase($pdo, $raw, 'field', $actor, $orgId, $authorize);
+}
+
+/* ---------- העלאה ---------- */
+
+/** שם הקובץ בתיקייה: צילום קבר — "קבר <שם> <YYYY-MM-DD HHMM>.jpg"; אחר — השם המקורי (נקי). */
+function fieldFileName(string $kind, array $case, string $original, ?DateTimeImmutable $now = null): string {
+    if ($kind === 'grave_photo') {
+        $t = ($now ?? new DateTimeImmutable('now'))->setTimezone(new DateTimeZone(FIELD_TZ));
+        $name = trim(preg_replace('/[\\\\\/:*?"<>|\x00-\x1F]+/u', '_', (string)$case['name']) ?? '');
+        return 'קבר ' . $name . ' ' . $t->format('Y-m-d Hi') . '.jpg';
+    }
+    $n = cleanText(basename(str_replace('\\', '/', $original)), 200);
+    return $n !== '' ? $n : 'קובץ.bin';
+}
+
+function fieldUploadIdValid(string $id): bool { return (bool)preg_match('/^[A-Za-z0-9_-]{16,80}$/D', $id); }
+
+/**
+ * העלאה מהשטח, עם מזהה חד-פעמי. $uploader — fn(PDO, int org, array case, string tmp, string name, string kind, array actor): array
+ * שמחזירה ['file_id' => int|null, 'name' => string, 'link' => string|null], וזורקת FieldUploadError.
+ * מחזירה [status, body]. אותו upload_id שכבר הצליח → אותה תשובה, בלי לקרוא ל-uploader (W3).
+ */
+function fieldUpload(PDO $pdo, int $orgId, string $caseId, string $uploadId, string $kind, string $tmp, string $original,
+                     array $actor, callable $uploader, ?DateTimeImmutable $now = null): array {
+    fieldSchema($pdo);
+    if (!fieldUploadIdValid($uploadId)) return [400, ['error' => 'מזהה העלאה אינו תקין']];
+    if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $caseId)) return [400, ['error' => 'מזהה תיק אינו תקין']];
+    $kind = cleanText($kind, 80);
+    if ($kind === '') $kind = 'other';
+    $case = existing($pdo, $caseId, $orgId);
+    if ($case === null) return [404, ['error' => 'התיק לא נמצא']];
+    $nowS = gmdate('c');
+
+    // תופסים את המזהה בטרנזקציה קצרה: done → התשובה השמורה; pending טרי → "בשליחה"; אחרת — שלנו.
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $st = $pdo->prepare('SELECT * FROM field_uploads WHERE org_id = ? AND upload_id = ?');
+        $st->execute([$orgId, $uploadId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($row !== null && $row['case_id'] !== $caseId) { $pdo->exec('COMMIT'); return [409, ['error' => 'מזהה ההעלאה שייך לתיק אחר', 'code' => 'upload_id_conflict']]; }
+        if ($row !== null && $row['status'] === 'done') {
+            $pdo->exec('COMMIT');
+            return [200, ['ok' => true, 'duplicate' => true] + (json_decode((string)$row['result'], true) ?: [])];
+        }
+        if ($row !== null && $row['status'] === 'pending' && strtotime((string)$row['updated_at']) > time() - 120) {
+            $pdo->exec('COMMIT');
+            return [409, ['error' => 'הקובץ הזה כבר בשליחה', 'code' => 'in_progress']];
+        }
+        $pdo->prepare('INSERT INTO field_uploads(org_id, upload_id, case_id, kind, status, user_id, created_at, updated_at) VALUES (?,?,?,?,\'pending\',?,?,?)
+            ON CONFLICT(org_id, upload_id) DO UPDATE SET status = \'pending\', kind = excluded.kind, error = NULL, updated_at = excluded.updated_at')
+            ->execute([$orgId, $uploadId, $caseId, $kind, $actor['id'] ?? null, $nowS, $nowS]);
+        $pdo->exec('COMMIT');
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->exec('ROLLBACK');
+        throw $e;
+    }
+
+    $name = fieldFileName($kind, $case, $original, $now);
+    try {
+        $file = $uploader($pdo, $orgId, $case, $tmp, $name, $kind, $actor);
+    } catch (FieldUploadError $e) {
+        $pdo->prepare("UPDATE field_uploads SET status = 'failed', error = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
+            ->execute([$e->tag, gmdate('c'), $orgId, $uploadId]);
+        return [$e->status, ['error' => $e->getMessage(), 'code' => $e->tag]];
+    }
+
+    // שיוך לבדיקה (W4): קובץ מסוג שמתאים לבדיקה → "לאימות", אלא אם אדם כבר סגר אותה או שהיא כבר לאימות
+    $check = FIELD_KINDS[$kind]['check'] ?? null;
+    $checkResult = null;
+    if ($check !== null) {
+        $prev = $case['checks'][$check] ?? [];
+        $status = (string)($prev['status'] ?? 'unknown');
+        if (in_array($status, ['unknown', 'missing', 'unreadable'], true)) {
+            $raw = $case;
+            $raw['checks'][$check] = ['status' => 'document_present', 'value' => (string)($prev['value'] ?? ''),
+                'note' => trim((string)($prev['note'] ?? '') === '' ? 'נשלח מהשטח: ' . $file['name'] : (string)$prev['note']),
+                'source' => (string)($prev['source'] ?? '')];
+            formSaveCase($pdo, $raw, 'field', $actor, $orgId);
+            $checkResult = ['key' => $check, 'status' => 'document_present'];
+        } else {
+            $checkResult = ['key' => $check, 'status' => $status];
+        }
+    }
+    recordEvent($orgId, $caseId, $actor, 'ui', 'field_upload', ['file' => [null, $file['name']], 'kind' => [null, $kind],
+        'via' => [null, 'field'], 'upload_id' => [null, $uploadId]]);
+    $result = ['file' => $file, 'check' => $checkResult];
+    $pdo->prepare("UPDATE field_uploads SET status = 'done', result = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
+        ->execute([json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), gmdate('c'), $orgId, $uploadId]);
+    return [200, ['ok' => true, 'duplicate' => false] + $result];
+}
+
+/**
+ * ההעלאה ל-Dropbox דרך הקוד של פרוסה 03 (dropbox/lib.php): תיקיית התיק (נוצרת בהעלאה הראשונה), העלאה, שורה ב-files
+ * עם added_via = field ו-kind. כל עוד 03 לא בקוד — "Dropbox לא מחובר" (409), והקובץ נשאר בתור במכשיר.
+ */
+function fieldDropboxUploader(PDO $pdo, int $orgId, array $case, string $tmp, string $name, string $kind, array $actor): array {
+    $need = ['dbxReadyOrg', 'dbxUploadFile', 'dbxUpsertFile', 'dbxCreateCaseFolder', 'dbxLowerInRoot'];
+    foreach ($need as $fn) if (!function_exists($fn)) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
+    try {
+        $org = dbxReadyOrg($pdo, $orgId);
+        $st = $pdo->prepare('SELECT cf.dbx_folder_id, COALESCE(df.path, cf.dbx_path) AS path FROM case_folders cf
+            LEFT JOIN dbx_folders df ON df.org_id=cf.org_id AND df.dbx_id=cf.dbx_folder_id WHERE cf.org_id=? AND cf.case_id=?');
+        $st->execute([$orgId, $case['id']]);
+        $folder = $st->fetch();
+        $folderPath = $folder ? (string)$folder['path'] : dbxCreateCaseFolder($pdo, $org, $case, $actor)[1];
+        $meta = dbxUploadFile($pdo, $org, $folderPath, $tmp, $name);
+        if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new FieldUploadError(502, 'upload_result', 'ההעלאה ל-Dropbox נכשלה');
+        dbxUpsertFile($pdo, $orgId, $meta, 'field', (string)$actor['actor']);
+        $pdo->prepare("UPDATE files SET added_via = 'field', kind = ?, added_by = COALESCE(added_by, ?) WHERE dbx_id = ?")
+            ->execute([$kind, (string)$actor['actor'], $meta['id']]);
+        $row = $pdo->prepare('SELECT id, name FROM files WHERE dbx_id = ?');
+        $row->execute([$meta['id']]);
+        $f = $row->fetch();
+        return ['file_id' => $f ? (int)$f['id'] : null, 'name' => (string)($f['name'] ?? $meta['name']),
+            'link' => $f ? 'api.php?action=file_view&id=' . (int)$f['id'] : null];
+    } catch (FieldUploadError $e) {
+        throw $e;
+    } catch (Throwable $e) {
+        if (!is_a($e, 'DbxError')) throw $e;
+        $tag = (string)$e->tag;
+        if (in_array($tag, ['not_connected', 'no_root', 'reauth', 'no_app_key'], true)) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
+        if ($tag === 'network') throw new FieldUploadError(503, 'network', 'Dropbox לא זמין כרגע — הקובץ יישלח שוב');
+        if (str_contains($tag, 'insufficient_space')) throw new FieldUploadError(507, 'insufficient_space', 'אין מספיק מקום בחשבון ה-Dropbox — פנה למנהל');
+        throw new FieldUploadError(502, 'dropbox_error', 'ההעלאה ל-Dropbox נכשלה — נסה שוב');
+    }
+}
+
+/** סוגי קבצים: תמונה, PDF, מסמכי Office — לפי התוכן (finfo), ו-Office החדש (zip) רק עם סיומת מתאימה. בלי SVG/HTML. */
+function fieldAllowedFile(string $tmp, string $original): bool {
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file($tmp);
+    $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+    if (str_starts_with($mime, 'image/')) return $mime !== 'image/svg+xml';
+    if (in_array($mime, ['application/pdf', 'application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation'], true)) return true;
+    return in_array($mime, ['application/zip', 'application/octet-stream'], true) && in_array($ext, ['docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt'], true);
+}
+
+/* ---------- נקודות הקצה ---------- */
+
+function fieldAction(PDO $pdo, string $action, string $method, int $orgId, array $actor): never {
+    $id = (string)($_GET['id'] ?? '');
+    switch ($action) {
+        case 'field_today':
+            if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
+            need('case.view');
+            reply(200, ['ok' => true] + fieldToday($pdo, $orgId));
+        case 'field_search':
+            if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
+            need('case.view');
+            reply(200, ['ok' => true, 'cases' => fieldSearch($pdo, $orgId, cleanText($_GET['q'] ?? '', 80))]);
+        case 'field_case':
+            if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
+            need('case.view');
+            if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(400, ['error' => 'מזהה תיק אינו תקין']);
+            $case = existing($pdo, $id, $orgId);
+            if ($case === null) reply(404, ['error' => 'התיק לא נמצא']);
+            $stats = fieldFileStats($pdo, $orgId, [$id])[$id];
+            unset($case['payments']);
+            reply(200, ['ok' => true, 'case' => $case, 'needs' => fieldNeeds($case, $stats), 'kinds' => fieldKinds($case),
+                'files' => fieldCaseFiles($pdo, $orgId, $id), 'can_track' => can('case.track')]);
+        case 'field_save':
+            if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
+            need('case.track');
+            $item = fieldSave($pdo, body(), $actor, $orgId);
+            unset($item['payments']);
+            reply(200, ['ok' => true, 'record' => $item]);
+        case 'field_upload':
+            if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
+            need('case.track');
+            $f = $_FILES['file'] ?? null;
+            $tmp = is_array($f) && is_string($f['tmp_name'] ?? null) ? $f['tmp_name'] : '';
+            if ($tmp !== '') register_shutdown_function(static function () use ($tmp) { if (is_file($tmp)) @unlink($tmp); });
+            if (!is_array($f) || is_array($f['error'] ?? null)) reply(400, ['error' => 'נדרש קובץ אחד']);
+            if (in_array((int)$f['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) reply(413, ['error' => 'הקובץ גדול מהמותר בשרת']);
+            if ((int)$f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($tmp)) reply(400, ['error' => 'ההעלאה נכשלה']);
+            $size = (int)filesize($tmp);
+            if ($size <= 0) reply(400, ['error' => 'קובץ ריק']);
+            if ($size > FIELD_MAX_FILE) reply(413, ['error' => 'הקובץ גדול מ-50MB']);
+            if (!fieldAllowedFile($tmp, (string)($f['name'] ?? ''))) reply(415, ['error' => 'סוג קובץ לא נתמך (תמונה, PDF או מסמך Office)']);
+            [$status, $body] = fieldUpload($pdo, $orgId, (string)($_POST['case_id'] ?? ''), (string)($_POST['upload_id'] ?? ''),
+                (string)($_POST['kind'] ?? ''), $tmp, (string)($f['name'] ?? ''), $actor, 'fieldDropboxUploader');
+            reply($status, $body);
+    }
+    reply(404, ['error' => 'פעולה לא מוכרת']);
+}
