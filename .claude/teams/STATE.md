@@ -17,7 +17,7 @@
 | `org-budget-proposals` הצעות תקציב לארגונים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי. היה: פעיל — B1 מוזג #1635; B1.2 (אזעקות שווא בניצול) #1648; שעון — דקה 38 (`trig_018qY4uvqcdJKapxU9pU8kcu`, נוצר בידי מנהל הצוותים (4); הישן `trig_013qCk9g1qS7xKb8qLpQrDgX` כבוי) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2; קודם בקרה 1 `session_018g4NYFsGrFQCUGf3CgaSYk`) |
 | `grave-prices` מחירוני קברים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי; פרוסות 01–05 באתר; GP-02 עד GP-05 אצל הבעלים. היה: פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) PR #1666 בביקורת; שעון — דקה 53 (`trig_01Ecqo638xYguboqngvZbKWx`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
 | `sforno` ספורנו | פעיל — קוד ברצף עד סיום; 01–10 ב-main (10: #1799); 11 השקה — חלק לא-חי בלבד עד "עוברים"; cron אצל הבעלים — חוסם תזכורות; שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51) | `session_018g4NYFaERcGPs7d3j8QKsZ` (בקרה 3) |
-| `funerals-dashboard` ניהול לוויות חברה קדישא | פעיל — **טורבו**; כל 6 הפרוסות בשרת (פריסה 1883 success); ממתין לבדיקות הידניות FD-T1…T6; פתוח: פרוסת תיקונים ו-50MB; שעון `trig_01PYjng67oPYVSwpwmksWifo` (דקה 22) | `session_018g4NYDegWrLYkRkfQRRfVQ` (בקרה 3; קודם בקרה 2 `session_018g4NYES4G3kVk57413GPnM`) |
+| `funerals-dashboard` ניהול לוויות חברה קדישא | פעיל — **טורבו**; כל 6 הפרוסות בשרת (פריסה 1883 success); ממתין לבדיקות הידניות FD-T1…T6; פתוח: פרוסת תיקונים ו-50MB; שעון `trig_01FteeWPuFwKcA4ZoRitKQAU` (דקה 22) | `session_018g4NYDegWrLYkRkfQRRfVQ` (בקרה 3; קודם בקרה 2 `session_018g4NYES4G3kVk57413GPnM`) |
 
 ## ממתין לבעלים
 
