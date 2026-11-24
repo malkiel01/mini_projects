@@ -19,8 +19,7 @@
   "control": {
     "session": "session_018g4NYES4G3kVk57413GPnM",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "send_later כל 60 דקות (create_trigger נחסם)",
-    "previous": "session_018g4NYFvCTWcu2sJBJangFR"
+    "clock": "send_later כל 60 דקות (create_trigger נחסם)"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -50,6 +49,13 @@
     {
       "session": "session_018g4NYEkZkJeu8Y7WL7JS7a",
       "slice": "05",
+      "state": "רדום"
+    }
+  ],
+  "control_done": [
+    {
+      "session": "session_018g4NYFvCTWcu2sJBJangFR",
+      "role": "בקרה 1",
       "state": "רדום"
     }
   ]
