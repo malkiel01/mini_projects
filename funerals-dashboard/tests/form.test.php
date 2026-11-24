@@ -24,60 +24,45 @@ foreach (['ui' => true, 'field' => true, 'import' => true, 'dropbox' => false, '
     ok(finalAllowed($via) === $want, "finalAllowed($via)");
 }
 
-// ---- B1: שמירה מהממשק — by/via/at רק לבדיקה ששונתה; קלט עם by/via/at מתעלם מהם
-$pdo = mem();
-$first = formSaveCase($pdo, $base + ['checks' => [
-    'license_number' => ['status' => 'document_present', 'value' => '1'],
-    'hall_service' => ['status' => 'unknown', 'value' => '', 'note' => ''],
-]], 'ui', 'a@example.com');
-ok(($first['checks']['license_number']['via'] ?? '') === 'ui', 'B1: via=ui לבדיקה שנקבעה');
-ok(($first['checks']['license_number']['by'] ?? '') === 'a@example.com', 'B1: by מהשרת');
-ok(preg_match('/^\d{4}-\d\d-\d\dT/', $first['checks']['license_number']['at'] ?? '') === 1, 'B1: at');
-ok(!isset($first['checks']['hall_service']['via']), 'B1: בדיקה ריקה שלא נגעו בה — בלי מקור');
-$before = $first['checks']['license_number'];
-$second = formSaveCase($pdo, $base + ['checks' => [
-    'license_number' => ['status' => 'document_present', 'value' => '1', 'by' => 'hacker', 'via' => 'import', 'at' => '1999-01-01'],
-    'identity_document' => ['status' => 'verified', 'value' => 'ת"ז', 'by' => 'hacker', 'via' => 'ai', 'at' => '1999-01-01'],
-]], 'ui', 'b@example.com');
-ok($second['checks']['license_number'] === $before, 'B1: בדיקה שלא שונתה נשארה עם המקור הישן (וקלט by/via/at התעלם)');
-$c = $second['checks']['identity_document'];
-ok($c['status'] === 'verified' && $c['by'] === 'b@example.com' && $c['via'] === 'ui' && $c['at'] !== '1999-01-01', 'B1: קלט by/via/at לא נשמר');
-ok($c['source'] === 'עדכון ידני', 'B1: source "עדכון ידני" נשמר כמו קודם (הגנה מייבוא)');
-$stored = existing($pdo, $base['id']);
-ok(($stored['checks']['identity_document']['via'] ?? '') === 'ui', 'B1: נשמר במסד');
+$ac = fn(array $checks) => array_map(fn($c) => $c + ['status' => 'unknown', 'value' => '', 'source' => '', 'note' => ''], $checks);   // כמו אחרי normalize()
 
-// ---- B2: via=api שמסמנת verified → document_present, וההצעה ב-note
+// ---- B1: מהממשק — by/via/at רק לבדיקה ששונתה; by/via/at מהקלט לא נכנסים (normalize זורק אותם; כאן — לא מועתקים)
+$first = formApplyChecks($ac(['license_number' => ['status' => 'document_present', 'value' => '1'], 'hall_service' => []]), null, 'ui', 'a@example.com');
+ok(($first['license_number']['via'] ?? '') === 'ui' && $first['license_number']['by'] === 'a@example.com', 'B1: via=ui, by מהשרת');
+ok(preg_match('/^\d{4}-\d\d-\d\dT/', $first['license_number']['at'] ?? '') === 1, 'B1: at');
+ok(!isset($first['hall_service']['via']), 'B1: בדיקה ריקה שלא נגעו בה — בלי מקור');
+ok($first['license_number']['source'] === 'עדכון ידני', 'B1: source "עדכון ידני" כמו קודם (הגנה מייבוא חוזר)');
+$second = formApplyChecks($ac(['license_number' => ['status' => 'document_present', 'value' => '1'], 'identity_document' => ['status' => 'verified', 'value' => 'ת"ז']]),
+    $first, 'ui', 'b@example.com', '2026-11-24T10:00:00+00:00');
+ok($second['license_number'] === $first['license_number'], 'B1: בדיקה שלא שונתה — המקור הישן נשאר');
+ok($second['identity_document']['by'] === 'b@example.com' && $second['identity_document']['at'] === '2026-11-24T10:00:00+00:00', 'B1: רק השונה מקבל מקור חדש');
+$n = normalize(['month' => '2026-10', 'name' => 'x', 'checks' => ['a_b' => ['status' => 'verified', 'by' => 'h', 'via' => 'ai', 'at' => '1999']]]);
+ok(array_keys($n['checks']['a_b']) === ['status', 'value', 'source', 'note'], 'B1: normalize() זורק by/via/at מהקלט');
+
+// ---- B2: מקור אוטומטי שמסמן "הושלם" → document_present, וההצעה ב-note
 foreach (['api', 'ai', 'dropbox'] as $via) {
-    $pdo = mem();
-    $r = formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'verified', 'value' => '12345', 'note' => 'מהקובץ X']]], $via, 'gpt@example.com');
-    $c = $r['checks']['license_number'];
-    ok($c['status'] === 'document_present', "B2($via): נשמר document_present");
+    $c = formApplyChecks($ac(['license_number' => ['status' => 'verified', 'value' => '12345', 'note' => 'מהקובץ X']]), null, $via, 'gpt')['license_number'];
+    ok($c['status'] === 'document_present' && $c['via'] === $via, "B2($via): נשמר document_present");
     ok(str_contains($c['note'], 'מאומת') && str_contains($c['note'], '12345') && str_contains($c['note'], 'מהקובץ X'), "B2($via): הערך המוצע ב-note");
-    ok($c['via'] === $via, "B2($via): via נשמר");
-    $r = formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'not_applicable']]], $via, 'gpt');
-    ok($r['checks']['license_number']['status'] === 'document_present', "B2($via): not_applicable → לאימות");
-    $r = formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'missing']]], $via, 'gpt');
-    ok($r['checks']['license_number']['status'] === 'missing', "B2($via): סטטוס לא סופי נשמר כמו שהוא");
+    $c = formApplyChecks($ac(['k_k' => ['status' => 'not_applicable']]), null, $via, 'gpt')['k_k'];
+    ok($c['status'] === 'document_present', "B2($via): not_applicable → לאימות");
+    $c = formApplyChecks($ac(['k_k' => ['status' => 'missing']]), null, $via, 'gpt')['k_k'];
+    ok($c['status'] === 'missing', "B2($via): סטטוס לא סופי — כמו שהוא");
 }
-// מקור אוטומטי לא פותח מחדש בדיקה שאדם סגר
-$pdo = mem();
-formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'verified', 'value' => '111']]], 'ui', 'human');
-$r = formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'verified', 'value' => '222']]], 'api', 'gpt');
-$c = $r['checks']['license_number'];
-ok($c['status'] === 'verified' && $c['value'] === '111' && $c['by'] === 'human' && str_contains($c['note'], '222'), 'B2: אדם אישר — API לא דורס, ההצעה בהערה');
+// אדם כבר סגר — מקור אוטומטי לא פותח מחדש ולא מחליף ערך; ההצעה בהערה
+$human = formApplyChecks($ac(['license_number' => ['status' => 'verified', 'value' => '111']]), null, 'ui', 'human');
+$c = formApplyChecks($ac(['license_number' => ['status' => 'verified', 'value' => '222']]), $human, 'api', 'gpt')['license_number'];
+ok($c['status'] === 'verified' && $c['value'] === '111' && $c['by'] === 'human' && str_contains($c['note'], '222'), 'B2: אדם אישר — API לא דורס');
 
-// ---- B3: אותו מעבר בממשק או בייבוא → verified
-$pdo = mem();
-$r = formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'verified', 'value' => '1']]], 'ui', 'human');
-ok($r['checks']['license_number']['status'] === 'verified', 'B3: ui → verified');
-$r = formSaveCase($pdo, $base + ['checks' => ['license_number' => ['status' => 'verified', 'value' => '1']]], 'field', 'field-worker');
-ok($r['checks']['license_number']['status'] === 'verified', 'B3: field → verified');
-$c = formApplyChecks(['x_key' => ['status' => 'verified', 'value' => '9', 'source' => '', 'note' => '']], null, 'import', 'api');
-ok($c['x_key']['status'] === 'verified' && $c['x_key']['via'] === 'import' && $c['x_key']['by'] === 'api', 'B3: import → verified, via=import');
-// מקור לא מוכר — חריגה, לא שמירה שקטה
+// ---- B3: ממשק / שטח / ייבוא → verified
+foreach (['ui', 'field', 'import'] as $via) {
+    $c = formApplyChecks($ac(['k_k' => ['status' => 'verified', 'value' => '9']]), null, $via, 'x')['k_k'];
+    ok($c['status'] === 'verified' && $c['via'] === $via, "B3($via): verified");
+}
 $threw = false;
 try { formApplyChecks([], null, 'hacker', 'x'); } catch (InvalidArgumentException) { $threw = true; }
 ok($threw, 'via לא מוכר נדחה');
+ok(formEventSource('field') === 'ui' && formEventSource('ai') === 'api' && formEventSource('dropbox') === 'system' && formEventSource('import') === 'import', 'via → מקור אירוע של 01');
 
 // ---- B6: היסטוריה מ-events — 3 אחרונים בסדר הפוך, עם מקור; ארגון אחר → null (404)
 $pdo = mem(true);
@@ -87,37 +72,34 @@ $ins = $pdo->prepare('INSERT INTO events(org_id,case_id,at,actor,source,action,d
 $ins->execute([$base['id'], '2026-10-01T10:00:00Z', 'a', 'import', 'import', '{"name":["",  "א"]}']);
 $ins->execute([$base['id'], '2026-10-02T10:00:00Z', 'b', 'ui', 'save', '{"checks.license_number.status":["unknown","verified"]}']);
 $ins->execute([$base['id'], '2026-10-03T10:00:00Z', 'c', 'api', 'save', '{"notes":{"from":"","to":"הערה"}}']);
-$ins->execute([$base['id'], '2026-10-04T10:00:00Z', 'd', 'ui', 'save', '{"checks":{"hall_service":{"status":["unknown","missing"]}}}']);
+$ins->execute([$base['id'], '2026-10-04T10:00:00Z', 'd', 'ui', 'save', '{"checks.hall_service":[null,{"status":"missing","value":"","note":""}]}']);
 $ins->execute(['fd_other_case_000', '2026-10-05T10:00:00Z', 'z', 'ui', 'save', '{}']);
 $h = formHistory($pdo, $base['id'], 1);
 ok(is_array($h) && count($h) === 4, 'B6: 4 אירועים לתיק (ולא של תיק אחר)');
 ok(array_column(array_slice($h, 0, 3), 'actor') === ['d', 'c', 'b'], 'B6: שלושת האחרונים בסדר הפוך');
 ok(array_column(array_slice($h, 0, 3), 'source') === ['ui', 'api', 'ui'], 'B6: עם מקור');
-ok($h[0]['changes'] === [['field' => 'checks.hall_service.status', 'before' => 'unknown', 'after' => 'missing']], 'B6: diff מקונן');
+ok($h[0]['changes'] === [['field' => 'checks.hall_service.status', 'before' => null, 'after' => 'missing']], 'B6: diff של בדיקה (caseDiff של 01)');
 ok($h[1]['changes'] === [['field' => 'notes', 'before' => '', 'after' => 'הערה']], 'B6: diff from/to');
 ok($h[2]['changes'] === [['field' => 'checks.license_number.status', 'before' => 'unknown', 'after' => 'verified']], 'B6: diff [לפני,אחרי]');
+ok(formDiffChanges(['payments' => [[['amount' => 402]], [['amount' => 402.0]]], 'checks.x' => [null, ['status' => 'unknown', 'value' => '', 'note' => '']]]) === [], 'B6: בלי רעש (402 מול 402.0, בדיקה ריקה חדשה)');
 ok(formHistory($pdo, $base['id'], 2) === null, 'B6: תיק של ארגון אחר → null (404)');
 ok(formHistory($pdo, 'fd_no_such_case_0', 1) === null, 'B6: תיק שלא קיים → null');
 for ($i = 0; $i < 60; $i++) $ins->execute([$base['id'], '2026-11-01T00:00:00Z', 'n' . $i, 'ui', 'save', '{}']);
 ok(count(formHistory($pdo, $base['id'], 1)) === 50, 'B6: 50 אחרונים בלבד');
-// לפני 01: אין events — היסטוריה מ-audit, בלי לקרוס
+// בלי events — היסטוריה מ-audit, בלי לקרוס
 $pdo = mem();
-formSaveCase($pdo, $base, 'ui', 'human');
+$pdo->exec("INSERT INTO funerals VALUES ('{$base['id']}','2026-10','x','{}','now')");
+$pdo->exec("INSERT INTO audit(funeral_id,at,actor,action) VALUES ('{$base['id']}','2026-11-01','human','save')");
 $h = formHistory($pdo, $base['id'], null);
 ok(is_array($h) && count($h) === 1 && $h[0]['actor'] === 'human' && $h[0]['action'] === 'save', 'B6: בלי events — מ-audit');
 
-// ---- B7: 22 תיקים בצורה הישנה (בלי by/via/at) — נשמרים בלי שגיאה, בדיקה שלא נגעו בה נשארת "בלי מקור"
-$pdo = mem();
+// ---- B7: 22 תיקים בצורה הישנה (בלי by/via/at) — normalize עובר, ושמירה בלי שינוי לא מוסיפה מקור
 $legacy = json_decode((string)file_get_contents(__DIR__ . '/fixtures/legacy-cases.json'), true);
 ok(is_array($legacy) && count($legacy) === 22, 'B7: 22 תיקים בקובץ');
-foreach ($legacy as $i => $rec) {
-    $pdo->prepare('INSERT INTO funerals(id,month,name,body,updated_at) VALUES(?,?,?,?,?)')
-        ->execute([$rec['id'], $rec['month'], $rec['name'], json_encode($rec, JSON_UNESCAPED_UNICODE), 'old']);
-}
 foreach ($legacy as $rec) {
-    $r = formSaveCase($pdo, $rec, 'ui', 'human');       // שמירה בלי שינוי, כמו "שמירה" על תיק שנפתח
-    foreach ($r['checks'] as $k => $c) ok(!isset($c['via']), "B7: {$rec['id']}.$k — בלי שינוי, בלי מקור חדש");
-    ok(formHistory($pdo, $rec['id'], null) !== null, "B7: היסטוריה ל-{$rec['id']}");
+    $item = normalize($rec);
+    $checks = formApplyChecks($item['checks'], $rec['checks'], 'ui', 'human');
+    foreach ($checks as $k => $c) ok(!isset($c['via']), "B7: {$rec['id']}.$k — בלי שינוי, בלי מקור חדש");
 }
 
 if ($fails) { fwrite(STDERR, "form.test.php: $fails נכשלו\n"); exit(1); }

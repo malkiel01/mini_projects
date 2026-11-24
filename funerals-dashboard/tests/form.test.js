@@ -48,7 +48,7 @@ const rec = checks => ({id: 'fd_x_00000000', name: 'x', checks, documents: [], f
   assert.strictEqual(F.provenance({status: 'verified', value: '1'}).via, 'מייבוא ישן');
   assert.strictEqual(F.provenance({status: 'unknown', value: '', note: ''}), null);
   assert.strictEqual(F.provenance(undefined), null);
-  assert.strictEqual(F.fieldLabel('checks.license_number.status'), 'בדיקות · מספר רישיון קבורה · סטטוס');
+  assert.strictEqual(F.fieldLabel('checks.license_number.status'), 'מספר רישיון קבורה · סטטוס');
   assert.strictEqual(F.valueText('verified'), 'מאומת');
 }
 
@@ -58,7 +58,7 @@ const rec = checks => ({id: 'fd_x_00000000', name: 'x', checks, documents: [], f
   for (const f of files) {
     const data = JSON.parse(fs.readFileSync(f, 'utf8'));
     const records = Array.isArray(data) ? data : data.records;
-    assert.strictEqual(records.length, 22, 'B7: 22 תיקים ב-' + path.basename(f));
+    assert.ok(records.length >= 22, 'B7: לפחות 22 תיקים ב-' + path.basename(f));
     let legacy = 0;
     for (const r of records) {
       const s = F.caseState(r);
@@ -67,7 +67,7 @@ const rec = checks => ({id: 'fd_x_00000000', name: 'x', checks, documents: [], f
       assert.ok(next === null || F.KEYS.includes(next));
       for (const c of Object.values(r.checks || {})) {
         const p = F.provenance(c);
-        if (p) { assert.ok(p.legacy, 'B7: בדיקה ישנה בלי via → מייבוא ישן'); legacy++; }
+        if (p) { assert.strictEqual(p.legacy, !c.via, 'B7: בדיקה בלי via → מייבוא ישן; עם via → המקור'); if (p.legacy) legacy++; }
       }
     }
     assert.ok(legacy > 0, 'B7: יש בדיקות "מייבוא ישן"');

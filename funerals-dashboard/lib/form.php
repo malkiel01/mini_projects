@@ -85,14 +85,24 @@ function formApplyChecks(array $new, ?array $old, string $via, string $by, ?stri
 }
 
 /**
- * שמירת תיק — הדרך היחידה לכתוב תיק בודד, לכל מקור (ממשק, שטח, API, AI).
- * עושה מה ש-api.php עשה עד הפרוסה הזו (manual_fields) ומוסיפה את המקור לבדיקות.
- * מחזירה את התיק כפי שנשמר.
+ * מקור הבדיקה (via) → מקור האירוע ב-events (EVENT_SOURCES של 01: ui / import / api / system).
+ * שטח הוא אדם בממשק; Dropbox — סנכרון של המערכת; צ'אט חיצוני ו-AI — דרך ה-API.
  */
-function formSaveCase(PDO $pdo, array $raw, string $via, string $actor): array {
+function formEventSource(string $via): string {
+    return ['ui' => 'ui', 'field' => 'ui', 'import' => 'import', 'api' => 'api', 'ai' => 'api', 'dropbox' => 'system'][formViaValid($via)];
+}
+
+/**
+ * שמירת תיק — הדרך היחידה לכתוב תיק בודד, לכל מקור (ממשק, שטח, API, AI).
+ * עושה מה ש-api.php עשה עד הפרוסה הזו (manual_fields) ומוסיפה את המקור לבדיקות; store() של 01 שומר ורושם ב-events.
+ * $actor — ['id' => user id או null, 'actor' => מחרוזת] (ctx()['actor'] של 01). תיק של ארגון אחר → 404 (existing()).
+ * $authorize($old, $item) — בדיקת ההרשאה של הקורא (need(...)), לפני שנשמר דבר.
+ */
+function formSaveCase(PDO $pdo, array $raw, string $via, array $actor, int $orgId, ?callable $authorize = null): array {
     formViaValid($via);
-    $item = normalize($raw);
-    $old = existing($pdo, $item['id']);
+    $item = normalize($raw, $orgId);
+    $old = existing($pdo, $item['id'], $orgId);
+    if ($authorize !== null) $authorize($old, $item);
     if ($old !== null) {
         foreach (FORM_MANUAL_FIELDS as $field) {
             if (($item[$field] ?? null) !== ($old[$field] ?? null)) $item['manual_fields'][] = $field;
@@ -101,8 +111,8 @@ function formSaveCase(PDO $pdo, array $raw, string $via, string $actor): array {
     } else {
         $item['manual_fields'] = FORM_MANUAL_FIELDS;
     }
-    $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, $via, $actor);
-    store($pdo, $item, $actor, 'save');
+    $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, $via, (string)($actor['actor'] ?? ''));
+    store($pdo, $item, $old, $orgId, $actor, formEventSource($via), 'save');
     return $item;
 }
 
@@ -130,7 +140,19 @@ function formDiffChanges(mixed $diff, string $prefix = ''): array {
     foreach ($diff as $field => $v) {
         $name = $prefix === '' ? (string)$field : $prefix . '.' . $field;
         if (is_array($v) && array_is_list($v) && count($v) === 2) {
-            $out[] = ['field' => $name, 'before' => $v[0], 'after' => $v[1]];
+            [$b, $a] = $v;
+            // בדיקה (caseDiff של 01): [{status,value,note}, {status,value,note}] → שורה לכל תת-שדה שהשתנה
+            if ((is_array($b) || $b === null) && is_array($a) && !array_is_list($a)) {
+                foreach (array_unique(array_merge(array_keys($b ?? []), array_keys($a))) as $sub) {
+                    // בדיקה שלא הייתה בגוף התיק ונשמרה ריקה ("טרם נבדק") — לא שינוי
+                    $bv = $b[$sub] ?? ($sub === 'status' ? 'unknown' : '');
+                    if ($bv !== ($a[$sub] ?? '')) $out[] = ['field' => $name . '.' . $sub, 'before' => $b[$sub] ?? null, 'after' => $a[$sub] ?? null];
+                }
+                continue;
+            }
+            // השוואה רופפת: 402 ו-402.0 (סכום אחרי JSON), '' ו-null — אותו ערך
+            if ($b == $a) continue;
+            $out[] = ['field' => $name, 'before' => $b, 'after' => $a];
             continue;
         }
         if (is_array($v)) {
@@ -150,8 +172,8 @@ function formDiffChanges(mixed $diff, string $prefix = ''): array {
 
 /**
  * יומן התיק — 50 האחרונים, החדש קודם. null = אין תיק כזה (או שהוא של ארגון אחר) → 404 אצל הקורא.
- * $orgId — הארגון הפעיל (פרוסה 01); null = בלי סינון ארגון (לפני 01).
- * המקור: טבלת events של 01. כשאין אותה עדיין — טבלת audit הישנה (מי ומתי, בלי פרטי השינוי).
+ * $orgId — הארגון הפעיל (scope() של 01); null = בלי סינון ארגון (בדיקות יחידה בלבד).
+ * המקור: טבלת events של 01. כשאין אותה — טבלת audit הישנה (מי ומתי, בלי פרטי השינוי).
  */
 function formHistory(PDO $pdo, string $caseId, ?int $orgId, int $limit = 50): ?array {
     $limit = max(1, min(50, $limit));

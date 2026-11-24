@@ -65,7 +65,7 @@
 
   /** "checks.license_number.status" → "מספר רישיון קבורה · סטטוס" */
   function fieldLabel(path) {
-    return String(path || '').split('.').map(p => labels[p] || fieldLabels[p] || p).join(' · ');
+    return String(path || '').split('.').filter((p, i, a) => !(p === 'checks' && a.length > 1)).map(p => labels[p] || fieldLabels[p] || p).join(' · ');
   }
   function valueText(v) {
     if (v === null || v === undefined || v === '') return '—';

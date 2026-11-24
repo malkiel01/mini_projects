@@ -1,6 +1,14 @@
 # יומן — code
 
 
+## 2026-11-24 13:26 (נרשם בידי הבקרה)
+- פרוסה 00: dev/audit.md, PR ‏#1834 מוזג; העברה ב-PR ‏#1835. הצ'אט רדום.
+
+## 2026-11-24 — פרוסה 01 (תשתית), ענף `claude/funerals-dashboard-01-infra`
+- נבנה לפי `docs/spec/01-infrastructure.md`: מיגרציה v1 עם גיבוי, ארגונים/משתמשים/חברים/הזמנות, `can()`/`scope()`, `events`,
+  `req_log`, סודות, מסך מפתח, DevLoop (`FD-`), מפת דרכים, VERSION 1.0.0. `tests/run.sh` מכסה A1–A14, A16 (חלקית), A17.
+- ה-JS עבר מ-`index.html` ל-`assets/js/app.js` (audit ג.7).
+- נדרש מהבקרה: שורת `.devloop.json` (בתיאור ה-PR), ביקורת, מיזוג.
 ## 2026-11-24 — פרוסה 02 (טופס חכם), ענף `claude/funerals-dashboard-02-smart-form` — במקביל ל-01 (טורבו)
 - `lib/form.php` (חדש): `finalAllowed($via)`, `formApplyChecks()` (by/via/at לבדיקה ששונתה בלבד, אוטומטי → לאימות + הצעה ב-note,
   לא פותח מחדש בדיקה שאדם סגר), `formSaveCase()` (ה-save של api.php עבר לכאן), `formHistory()` (events של 01; עד אז — audit).
@@ -11,3 +19,7 @@
 - **פתוח ליישור אחרי 01:** `formHistoryAction($pdo,$method,null)` → הארגון הפעיל של 01 (404 לארגון אחר); מבנה `diff` ב-`events`
   (`formDiffChanges` סובלני ל-[לפני,אחרי] / from-to / מקונן); לוודא ש-`recordEvent` נקרא גם ב-`formSaveCase`.
 - ניסיון send_message לקוד 01 לתיאום — נחסם בהרשאה. מחכה להודעת הבקרה על מיזוג 01.
+- 2026-11-24 (המשך) — קוד 01 שלח את הממשק (PR #1839). יישור מוכן **מקומית** בענף `align-01` (מיזוג של ענף 01 + התאמה), לא נדחף עד ש-01
+  ממוזג ל-`main`: `formSaveCase($pdo,$raw,$via,$actor[],$orgId,$authorize)` מעל `store()`/`existing()` של 01; `formEventSource()` (field→ui,
+  ai→api, dropbox→system); `history` כ-case ב-api.php עם `need('case.view')` ו-`scope()`; ה-UI הועבר ל-`assets/js/app.js`; B1–B7 ב-`run.sh` של 01.
+  הערה ל-01: `caseDiff()` רושם `payments` כשינוי כש-402 מול 402.0 (השוואה קשיחה) — ההיסטוריה שלי מסננת, אבל ב-`events` זה רעש.

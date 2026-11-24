@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * קוד משותף ל-api.php (דפדפן, מאחורי השער) ול-ingest.php (מערכות חיצוניות, Bearer בלבד).
+ * ניהול לוויות חברה קדישא — קוד משותף ל-api.php (דפדפן, מאחורי השער) ול-ingest.php (מערכות חיצוניות, Bearer בלבד).
  * המסמכים עצמם נשארים ב-Dropbox; במסד נשמרים ממצאים וקישורים בלבד. אין לחשוף את data/ לדפדפן.
  * הקובץ אינו נקודת קצה: גישה ישירה אליו מחזירה 404.
  */
@@ -17,7 +17,19 @@ header('Referrer-Policy: no-referrer');
 header("Content-Security-Policy: default-src 'none'; frame-ancestors 'self'");
 ini_set('display_errors', '0');
 
+/** גרסת האפליקציה — מוצגת בתפריט המשתמש ובמסך המפתח. */
+const VERSION = '1.0.0';
+
+require_once __DIR__ . '/lib/schema.php';
+require_once __DIR__ . '/lib/events.php';
+require_once __DIR__ . '/lib/secrets.php';
+require_once __DIR__ . '/lib/access.php';
+require_once __DIR__ . '/lib/form.php';   // פרוסה 02 — הטופס החכם (מקור לבדיקה, finalAllowed, יומן התיק)
+
+function dataDir(): string { return __DIR__ . '/data'; }
+
 function reply(int $status, array $data): never {
+    if ($status >= 400) $GLOBALS['fd_err'] = (string)($data['error'] ?? '');
     http_response_code($status);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
@@ -72,14 +84,15 @@ function platformUser(): ?array {
     $email = is_string($id['email'] ?? null) && mb_strlen($id['email']) <= 200 && filter_var($id['email'], FILTER_VALIDATE_EMAIL)
         ? mb_strtolower($id['email']) : '';
     $name = mb_substr(trim((string)preg_replace('/\s+/u', ' ', is_string($id['name'] ?? null) ? $id['name'] : '')), 0, 120);
-    return ['sub' => (string)$id['sub'], 'name' => $name, 'email' => $email,
+    return ['sub' => (string)$id['sub'], 'name' => $name, 'email' => $email, 'platform_admin' => ($id['platform_admin'] ?? null) === true,
         'actor' => $email !== '' ? $email : ($name !== '' ? $name : 'platform:' . $id['sub'])];
 }
 function db(): PDO {
     static $pdo;
     if ($pdo instanceof PDO) return $pdo;
     try {
-        $pdo = new PDO('sqlite:' . __DIR__ . '/data/funerals.sqlite', null, null, [
+        if (!is_dir(dataDir()) && !@mkdir(dataDir(), 0700, true)) throw new RuntimeException('no data dir');
+        $pdo = new PDO('sqlite:' . dataDir() . '/funerals.sqlite', null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
@@ -87,10 +100,13 @@ function db(): PDO {
         $pdo->exec('CREATE TABLE IF NOT EXISTS funerals (id TEXT PRIMARY KEY, month TEXT NOT NULL, name TEXT NOT NULL, body TEXT NOT NULL, updated_at TEXT NOT NULL)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_funerals_month ON funerals(month)');
         $pdo->exec('CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, funeral_id TEXT NOT NULL, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL)');
-        return $pdo;
     } catch (Throwable $e) {
+        $pdo = null;
         reply(503, ['error' => 'מסד הנתונים אינו זמין. בדוק הרשאות כתיבה ותמיכה ב-SQLite.']);
     }
+    migrate($pdo);
+    secretKey();   // נוצר בבקשה הראשונה, אם אין
+    return $pdo;
 }
 function body(): array {
     if (strlen((string)($_SERVER['CONTENT_LENGTH'] ?? '')) > 0 && (int)$_SERVER['CONTENT_LENGTH'] > 1200000) {
@@ -118,13 +134,14 @@ function dropboxUrl(mixed $value): string {
         || isset($p['user']) || isset($p['pass'])) reply(400, ['error' => 'מותר לשמור קישורי HTTPS של Dropbox בלבד']);
     return $url;
 }
-function normalize(array $v): array {
+/** $orgId — לארגון 1 המזהה המחושב נשאר כמו קודם (ייבוא חוזר מזהה אותו תיק); בארגון אחר הארגון נכנס לגיבוב. */
+function normalize(array $v, int $orgId = 1): array {
     $month = validMonth(cleanText($v['month'] ?? '', 7));
     $name = cleanText($v['name'] ?? '', 160);
     if ($name === '') reply(400, ['error' => 'נדרש שם נפטר']);
     $id = cleanText($v['id'] ?? '', 100);
     if ($id !== '' && !preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(400, ['error' => 'מזהה תיק אינו תקין']);
-    if ($id === '') $id = 'fd_' . substr(hash('sha256', $month . '|' . $name . '|' . ($v['date'] ?? '')), 0, 24);
+    if ($id === '') $id = 'fd_' . substr(hash('sha256', ($orgId === 1 ? '' : 'org' . $orgId . '|') . $month . '|' . $name . '|' . ($v['date'] ?? '')), 0, 24);
     $date = cleanText($v['date'] ?? '', 10);
     if ($date !== '' && (!preg_match('/^\d{4}-\d\d-\d\d$/D', $date) || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4)))) reply(400, ['error' => 'תאריך לא תקין']);
     $time = cleanText($v['time'] ?? '', 5);
@@ -169,18 +186,24 @@ function normalize(array $v): array {
         'folder_url'=>dropboxUrl($v['folder_url'] ?? ''), 'documents'=>$docs, 'checks'=>$checks,
         'payments'=>$payments, 'manual_fields'=>array_values(array_unique($manual))];
 }
-function existing(PDO $pdo, string $id): ?array {
-    $st = $pdo->prepare('SELECT body FROM funerals WHERE id=?');
+/**
+ * התיק בארגון $orgId. תיק שקיים בארגון אחר → 404 (לא מגלים שהוא קיים, הכרעה ה5).
+ */
+function existing(PDO $pdo, string $id, int $orgId): ?array {
+    $st = $pdo->prepare('SELECT body, org_id FROM funerals WHERE id=?');
     $st->execute([$id]);
-    $json = $st->fetchColumn();
-    return $json === false ? null : json_decode((string)$json, true);
+    $row = $st->fetch();
+    if ($row === false) return null;
+    if ((int)$row['org_id'] !== $orgId) reply(404, ['error' => 'התיק לא נמצא']);
+    return json_decode((string)$row['body'], true);
 }
-function store(PDO $pdo, array $v, string $actor, string $action): void {
-    $st = $pdo->prepare('INSERT INTO funerals(id,month,name,body,updated_at) VALUES(?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET month=excluded.month,name=excluded.name,body=excluded.body,updated_at=excluded.updated_at');
-    $st->execute([$v['id'], $v['month'], $v['name'], json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), gmdate('c')]);
-    $st = $pdo->prepare('INSERT INTO audit(funeral_id,at,actor,action) VALUES(?,?,?,?)');
-    $st->execute([$v['id'], gmdate('c'), $actor, $action]);
+/** שומר תיק בארגון ורושם ב-events את מה שהשתנה. $old — התיק לפני השינוי (null = חדש). */
+function store(PDO $pdo, array $v, ?array $old, int $orgId, array $actor, string $source, string $action): void {
+    $st = $pdo->prepare('INSERT INTO funerals(id,month,name,body,updated_at,org_id) VALUES(?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET month=excluded.month,name=excluded.name,body=excluded.body,updated_at=excluded.updated_at WHERE funerals.org_id=excluded.org_id');
+    $st->execute([$v['id'], $v['month'], $v['name'], json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), gmdate('c'), $orgId]);
+    if ($st->rowCount() !== 1) reply(404, ['error' => 'התיק לא נמצא']);
+    recordEvent($orgId, $v['id'], $actor, $source, $old === null ? 'create' : $action, caseDiff($old, $v));
 }
 
 /** אסימון ה-API מהכותרת Authorization: Bearer — נבדק מול ה-hash שב-config. אין hash (טרם נוצר) → תמיד false. */
@@ -191,11 +214,11 @@ function bearerOk(array $cfg): bool {
     return $hash !== '' && str_starts_with($bearer, 'Bearer ') && strlen($bearer) > 7
         && hash_equals($hash, hash('sha256', substr($bearer, 7)));
 }
-function listMonth(PDO $pdo, string $action, string $method): never {
+function listMonth(PDO $pdo, string $action, string $method, int $orgId): never {
     if ($method !== 'GET') reply(405, ['error'=>'שיטה לא מורשית']);
     $month = validMonth((string)($_GET['month'] ?? ''));
-    $st = $pdo->prepare('SELECT body FROM funerals WHERE month=? ORDER BY name COLLATE NOCASE');
-    $st->execute([$month]);
+    $st = $pdo->prepare('SELECT body FROM funerals WHERE org_id=? AND month=? ORDER BY name COLLATE NOCASE');
+    $st->execute([$orgId, $month]);
     $items = array_map(static fn($row) => json_decode($row['body'], true), $st->fetchAll());
     if ($action === 'export') {
         header('Content-Disposition: attachment; filename="funerals-' . $month . '.json"');
@@ -203,18 +226,20 @@ function listMonth(PDO $pdo, string $action, string $method): never {
     }
     reply(200, ['month'=>$month, 'records'=>$items]);
 }
-function importRecords(PDO $pdo, string $method, string $actor): never {
+/** $source — 'import' (ingest.php) או 'ui' (ייבוא קובץ מהמסך). */
+function importRecords(PDO $pdo, string $method, int $orgId, array $actor, string $source): never {
     if ($method !== 'POST') reply(405, ['error'=>'שיטה לא מורשית']);
     $payload = body();
     $records = $payload['records'] ?? null;
     if (!is_array($records) || count($records) > 60) reply(400, ['error'=>'נדרשת רשימת רשומות (עד 60)']);
     $pdo->beginTransaction();
+    // reply() בתוך הלולאה (רשומה לא תקינה, תיק של ארגון אחר) יוצא מהתהליך — והטרנזקציה שלא נסגרה מתבטלת לבד
     try {
         $count = 0;
         foreach ($records as $raw) {
             if (!is_array($raw)) reply(400, ['error'=>'רשומה לא תקינה']);
-            $item = normalize($raw);
-            $old = existing($pdo,$item['id']);
+            $item = normalize($raw, $orgId);
+            $old = existing($pdo, $item['id'], $orgId);
             if ($old !== null) {
                 $item['manual_fields'] = $old['manual_fields'] ?? [];
                 foreach (['name','date','time','origin','team','grave','notes','folder_url','payments'] as $field) {
@@ -230,8 +255,8 @@ function importRecords(PDO $pdo, string $method, string $actor): never {
                     if (($c['source'] ?? '') === 'עדכון ידני' || ($c['status'] ?? '') === 'reported') $item['checks'][$key]=$c;
                 }
             }
-            $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, 'import', $actor);   // פרוסה 02: מקור לבדיקה
-            store($pdo,$item,$actor,'import');
+            $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, 'import', (string)($actor['actor'] ?? ''));   // פרוסה 02: מקור לבדיקה
+            store($pdo, $item, $old, $orgId, $actor, $source, 'import');
             $count++;
         }
         $pdo->commit();
@@ -241,5 +266,3 @@ function importRecords(PDO $pdo, string $method, string $actor): never {
         reply(500, ['error'=>'שמירת הנתונים נכשלה']);
     }
 }
-
-require __DIR__ . '/lib/form.php';   // פרוסה 02 — הטופס החכם (מקור לבדיקה, finalAllowed, יומן התיק)
