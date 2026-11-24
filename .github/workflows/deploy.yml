@@ -352,6 +352,7 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/funerals-dashboard/team/' \
             --exclude='/cyber-academy/team/' \
             --include='/cyber-academy/data/.htaccess' --exclude='/cyber-academy/data/*' \
             --exclude='/sforno/team/' \
