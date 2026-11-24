@@ -1,6 +1,6 @@
 ---
 name: app-team
-description: שיטת העבודה לבניית אפליקציה ב-mini_projects — צוות של ארבעה צ'אטים (בקרה, מטלות, אפיון, קוד) לכל אפליקציה, וסוכן מנהל אחד שמתעורר כל שעה ועובר על כל הצוותים. Use this whenever the owner wants to build a new app or to bring an existing app in mini_projects under the method — "תפתח פרויקט חדש", "תפתח צ'אטים לאפליקציה", "ארבעה צ'אטים", "צ'אט בקרה / מטלות / אפיון / קוד", "כמו שעשינו בשמאות", "תתאים את האפליקציה לשיטה"; when he asks to pause or resume an app ("תשהה", "תמשיך"), to run a task on another model ("מטלה X ב-Fable"), to reprioritize stages, or what all the teams are doing; when a chat in a team gets heavy and must be replaced; and when the hourly manager run fires. Supersedes app-build-trio and chat-dev-team in this repo. Only for apps inside mini_projects.
+description: שיטת העבודה לבניית אפליקציה ב-mini_projects — צוות של ארבעה צ'אטים (בקרה, מטלות, אפיון, קוד) לכל אפליקציה, וסוכן מנהל אחד שמתעורר כל שעתיים ועובר על כל הצוותים. Use this whenever the owner wants to build a new app or to bring an existing app in mini_projects under the method — "תפתח פרויקט חדש", "תפתח צ'אטים לאפליקציה", "ארבעה צ'אטים", "צ'אט בקרה / מטלות / אפיון / קוד", "כמו שעשינו בשמאות", "תתאים את האפליקציה לשיטה"; when he asks to pause or resume an app ("תשהה", "תמשיך"), to run a task on another model ("מטלה X ב-Fable"), to reprioritize stages, or what all the teams are doing; when a chat in a team gets heavy and must be replaced; and when the manager run (every two hours) fires. Supersedes app-build-trio and chat-dev-team in this repo. Only for apps inside mini_projects.
 ---
 
 # צוות לאפליקציה — השיטה
@@ -20,7 +20,7 @@ description: שיטת העבודה לבניית אפליקציה ב-mini_project
 | **אפיון** | רק הבקרה והקוד | האפיון המלא, פרוסות מימוש עם קריטריוני קבלה, והשאלות לבעלים — שהבקרה שואלת |
 | **קוד** | רק הבקרה והאפיון | הקוד והבדיקות. **צ'אט קוד חדש לכל פרוסה** |
 
-מעל כולם — **הסוכן המנהל** (`references/manager.md`): צ'אט קבוע, "מנהל הצוותים", ששעון מעיר כל שעה. הוא עובר על כל
+מעל כולם — **הסוכן המנהל** (`references/manager.md`): צ'אט קבוע, "מנהל הצוותים", ששעון מעיר כל שעתיים. הוא עובר על כל
 הצוותים בריפו, מעיר בקרה שנתקעה, אומר לה להחליף צ'אט שהתמלא, ושומר על המכסה הכוללת. הוא **לא כותב לגיט** — הוא קורא
 את `<app>/team/STATE.md` ושולח הודעות לבקרות, והן מבצעות וממזגות. רשימת הצוותים — `.claude/teams/STATE.md`.
 
@@ -64,7 +64,7 @@ description: שיטת העבודה לבניית אפליקציה ב-mini_project
 
 ## חוקים קבועים
 
-- **מכסה היא האילוץ האמיתי.** צ'אט קוד חדש לכל פרוסה; צ'אט שעבר כ-400K טוקנים מוחלף בנקודה נקייה — וכל צ'אט
+- **מכסה היא האילוץ האמיתי.** צ'אט קוד חדש לכל פרוסה; בקרה שעברה כ-150K טוקנים (שאר הצ'אטים — 400K) מוחלפת בנקודה נקייה, עם מסירה קצרה (מצב, פתוח, צעד הבא); הבקרה על Sonnet, קוד על Opus; שעון כל שעתיים, והבקרה מכבה אותו בסבב בלי שינוי — וכל צ'אט
   בודק את עצמו בתחילת כל תור, ובמיוחד בחזרה מהשהיה (קול מרוקו חזר לעבודה ב-744K); צ'אט
   שסיים נשאר רדום ולא מעירים אותו; מעט מיזוגים (כל מיזוג = פריסה מלאה), ומיזוג של מסמכים מצטרף למיזוג של קוד.
 - **נתונים:** כל תיקיית נתונים מוחרגת מהפריסה **לפני** שנכתב הקוד שכותב אליה. שום שינוי לא מוחק נתוני משתמשים.
