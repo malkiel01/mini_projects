@@ -112,6 +112,10 @@ if (str_starts_with($action, 'dev-') || $action === 'devloop-client-error') {
         ?? throw new FdError('פעולה לא מוכרת', 404));
 }
 
+/* ===== עובד שטח (פרוסה 04) — lib/field.php ===== */
+require_once __DIR__ . '/lib/field.php';
+if (fieldHandles($action)) fieldAction($pdo, $action, $method, $org, $actor);
+
 switch ($action) {
     /* ===== תיקים ===== */
     case 'list':

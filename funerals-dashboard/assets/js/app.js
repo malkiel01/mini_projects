@@ -74,6 +74,7 @@
     me = auth; csrf = auth.csrf; embedKey = auth.embed_key || '';
     $('signin').hidden = true; $('noorg').hidden = true; $('application').hidden = false;
     paintHeader();
+    window.dispatchEvent(new CustomEvent('fd:me', {detail: auth}));   // מסך עובד השטח (field.js, פרוסה 04)
     if (me.dev && typeof DevLoop !== 'undefined' && !begin.dl) {
       begin.dl = true;
       DevLoop.setup({

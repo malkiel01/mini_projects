@@ -77,6 +77,28 @@
 - נדרש מהבקרה: השורה `funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log` ב-`CRONS`.
 - 2026-11-24 14:21 — #1844 מוזג (f3064a0) אחרי סבב ביקורת אחד (🔴1 OAuth בלי session, 🔴2 files לפי ארגון, 🟡3–6, ⚪7–8 — כולם תוקנו עם בדיקה).
   handoff עודכן. צ'אט קוד 03 מסיים.
+## פרוסה 04 — עובד שטח (ענף `claude/funerals-dashboard-04-field`)
+
+- 2026-11-24 — נבנה בקבצים חדשים: `lib/field.php` (היום/מחר, חיפוש, תיק, עדכון `via: field`, העלאה עם `upload_id` בטבלה
+  `field_uploads`, שיוך סוג קובץ לבדיקה), `assets/js/field-core.js` (הקטנה ל-2,560, GPS נשמר, תור), `assets/js/field.js`,
+  `assets/css/field.css`. נגיעות בקבצים משותפים: `api.php` (+3 שורות), `assets/js/app.js` (+1: אירוע `fd:me`), `index.html` (+3), `run.sh`.
+- ההעלאה ל-Dropbox — מרכיבה את הפונקציות של 03 (`dbxReadyOrg`, `dbxCreateCaseFolder`, `dbxUploadFile`, `dbxLowerInRoot`,
+  `dbxUpsertFile`) מאחורי `function_exists`; עד המיזוג — 409 "לא מחובר". W2–W4 נבדקים עם העלאה מדומה.
+- **ניסיון send_message לקוד 03 לתיאום החתימה — נחסם בהרשאה.** לכן לא ביקשתי שינוי ב-03; ה-idempotency אצלי. אחרי מיזוג 03:
+  `git merge origin/main`, ובדיקה של `fieldDropboxUploader` מול `tests/dropbox-mock.php` (W2 עם קובץ אמיתי במדומה).
+- בדיקות: `tests/field.test.php`, `tests/field.test.js`, W1/W5/W7 ב-`run.sh` — כולן ירוקות. W8 — ידני בטלפון.
+- 2026-11-24 — 03 כבר מציע `dropboxUploadToCase($pdo,$orgId,$case,$tmp,$name,$actor,$via,$uploadId)` (בענף 03, 69dadac). עברתי אליו
+  (במקום להרכיב את הפונקציות הפנימיות). `tests/field-dropbox.test.php` — W2–W4, W7 מול המדומה של 03; מדלג כל עוד 03 לא בקוד.
+  **מיזוג ניסיון מקומי עם ענף 03 (לא נדחף): כל run.sh ירוק, כולל C1–C13 ו-W מול המדומה.** התנגשויות צפויות במיזוג: `index.html`
+  (שורת ה-CSS), `tests/run.sh` (רשימת `php -l` והסוף), `team/log/code.md` — כולן הוספה משני הצדדים.
+  נמצא ותוקן: `kill "$pid"` עם `pid=0` (אחרי בלוק 03) שולח SIGTERM לכל הקבוצה — אצלי רק אם השרת רץ.
+- 2026-11-24 — ביקורת סבב 1 (`team/reviews/04-field.md`): 🔴1 — ההעלאה קוראת את התיק מחדש אחרי ה-uploader בתוך `BEGIN IMMEDIATE`
+  ומשנה רק `checks[$check]` (בדיקה: עריכת שם/תשלום/הערה באמצע שורדת). 🔴2 — `sw.js` עם Background Sync בלבד (אותו `fd_field`
+  ו-`upload_id`, meta: csrf/משתמש/ארגון), נבדק גם בדפדפן אמיתי (Playwright + CDP `dispatchSyncEvent` אחרי סגירת הדף → השרת קיבל).
+  🟡3 ביטול בזמן flush (קריאה מהמחסן לפני ואחרי שליחה); 🟡4 התיק נקבע לפני ההקטנה; 🟡5 חלון "בשליחה" 15 דק'; 🟡6 org בפריט +
+  ניקוי פריטים של משתמש אחר אחרי שבוע + תור מחדש בהחלפת ארגון; 🟡7 `dbxAllowedUpload` של 03 + צילום קבר רק תמונה; 🟡8 `field_uploads`
+  → מיגרציה v3 (06 עוד על 2 — **מי שממוזג אחרי צריך v4**). ⚪9 org_id ב-UPDATE; ⚪10 אירוע אחד למזהה, `kind` מהרשימה, user_id;
+  ⚪11 `taken_at`; ⚪12 README; ⚪14 `navigator.locks`; ⚪15 200 בלי JSON → ממתין.
 - 2026-11-24 — **יישור ל-05 (מוזג, #1840):** `main` מוזג לענף. 05 בנה שכבה משותפת משלו — `extDo($pdo, $action, $in, $via)` שזורק `ExtError` —
   והכלים של 06 עברו אליה (ה-patch של extRun נמחק). תוספת אחת ל-05: `extDo(..., bool $dry = false)` — `rollBack` במקום `commit` בשתי
   הכתיבות, לכרטיס ההצעה. השגיאות של פונקציות הליבה (`reply()`) נלכדות ב-`FdReply`, כך שגם הן חוזרות לספק. F1–F7 ירוקים בענף.
