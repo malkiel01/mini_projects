@@ -1,11 +1,13 @@
 {
   "id": "funerals-dashboard",
-  "name": "דשבורד לוויות וחוסרים",
+  "name": "ניהול לוויות חברה קדישא",
   "icon": "🕯️",
-  "description": "ניהול ממצאי לוויות, מסמכי זיהוי ותשלומים; קישורים מוגבלים ל-Dropbox וייצוא JSON",
+  "description": "ניהול תיקי לוויות: מה חסר בכל תיק, מסמכים ותשלומים, וקבצים מ-Dropbox",
   "category": "daily",
   "entry": "index.html",
   "restricted": true,
   "gate": true,
-  "public": ["ingest.php"]
+  "public": [
+    "ingest.php"
+  ]
 }
