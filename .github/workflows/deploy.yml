@@ -510,6 +510,7 @@ jobs:
           CRONS: |
             trading-strategies-alerts|*/15 * * * *|trading-strategies/bin/alerts-cron.php|trading-strategies/data/alerts-cron.log
             claude-tasks-studio|* * * * *|claude-tasks/bin/studio-cron.php|claude-tasks/data/studio-cron.log
+            funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
           REMOTE=$(cat <<'EOS'
