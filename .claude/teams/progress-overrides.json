@@ -138,5 +138,43 @@
       "status": "paused",
       "status_note": "עד הודעה שלך"
     }
+  },
+  "manager": {
+    "_doc": "מנהל הצוותים כותב בכל סבב: שעונים מ-list_triggers (enabled, recurring), צ'אטים פעילים מ-list_sessions. שעון ישראל.",
+    "updated": "24.11.2026, 18:40 (שעון ישראל)",
+    "quota": "באזהרה — מגבלה שבועית",
+    "clocks": [
+      {
+        "app": "funerals-dashboard",
+        "when": "כל שעה, דקה 22",
+        "next": "19:22",
+        "id": "trig_01FteeWPuFwKcA4ZoRitKQAU"
+      },
+      {
+        "app": "manager",
+        "label": "מנהל הצוותים",
+        "when": "כל שעה, דקה 13",
+        "next": "19:13",
+        "role": "עובר על כל הצוותים ומעדכן את הדף הזה",
+        "id": "trig_016wU15GJpyQAkCeTbJ6QkU5"
+      }
+    ],
+    "running": [
+      {
+        "app": "funerals-dashboard",
+        "title": "קוד 08 — תיקונים ופרויקט ChatGPT",
+        "state": "עובד"
+      },
+      {
+        "app": "funerals-dashboard",
+        "title": "קוד 09 — שרת MCP + OAuth",
+        "state": "עובד"
+      },
+      {
+        "app": "funerals-dashboard",
+        "title": "בקרה (3)",
+        "state": "מחכה לאישור שלך"
+      }
+    ]
   }
 }

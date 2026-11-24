@@ -220,7 +220,7 @@ def main():
     data.sort(key=lambda d: (order.get(d['status'], 2), d['name']))
     now = dt.datetime.now(dt.timezone.utc).strftime('%d.%m.%Y, %H:%M UTC')
     with open(OUT, 'w', encoding='utf-8') as f:
-        f.write(render(data, now, ovr.get('general_waiting', [])))
+        f.write(render(data, now, ovr.get('general_waiting', []), ovr.get('manager', {})))
     print(f'{OUT}: {len(data)} צוותים')
 
 
@@ -283,8 +283,50 @@ def slice_html(s):
             f'<span class="pill {PILL[s["state"]][0]}">{PILL[s["state"]][1]}</span></li>')
 
 
-def render(data, now, general):
-    opts, panels = [], []
+def manager_panel(data, m):
+    """מסך הניהול: אילו שעונים פעילים, ומה רץ עכשיו. הנתונים — מ-progress-overrides.json ("manager"),
+    שמנהל הצוותים כותב בכל סבב מ-list_triggers ו-list_sessions (הבונה עצמו לא ניגש ל-API)."""
+    clocks = m.get('clocks', [])
+    running = m.get('running', [])
+    by_app = {}
+    for c in clocks:
+        by_app.setdefault(c.get('app', ''), []).append(c)
+    names = {d['id']: d['name'] for d in data}
+    rows = []
+    for d in data:
+        cs = by_app.get(d['id'], [])
+        dev = bool(cs)
+        run = [r for r in running if r.get('app') == d['id']]
+        clock = '<br>'.join(f'{esc(c.get("when", ""))}<span class="foot"> · הבא {esc(c.get("next", ""))}</span>' for c in cs) or '—'
+        chats = '<br>'.join(f'{esc(r.get("title", ""))} <span class="pill {"run" if r.get("state") == "עובד" else "wait"}">{esc(r.get("state", ""))}</span>' for r in run) or '<span class="foot">אין</span>'
+        rows.append((0 if dev else 1, d['name'],
+                     f'<tr{"" if dev else " class=idle"}><td><b>{esc(d["name"])}</b></td>'
+                     f'<td><span class="pill {"ok" if dev else "wait"}">{"בפיתוח" if dev else "לא בפיתוח"}</span></td>'
+                     f'<td>{clock}</td><td>{chats}</td></tr>'))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    others = [c for c in clocks if c.get('app') not in names]
+    other_rows = ''.join(f'<tr><td><b>{esc(c.get("label", c.get("app", "")))}</b></td><td><span class="pill ok">פעיל</span></td>'
+                         f'<td>{esc(c.get("when", ""))}<span class="foot"> · הבא {esc(c.get("next", ""))}</span></td><td>{esc(c.get("role", ""))}</td></tr>'
+                         for c in others)
+    active = sum(1 for r in rows if r[0] == 0)
+    q = m.get('quota', '')
+    return f'''<article class="app" data-app="manager">
+<header class="hero">
+<div class="eyebrow"><span class="pill ok">מסך ניהול · מנהל הצוותים</span></div>
+<h1>מה בפיתוח עכשיו</h1>
+<p class="lead">אפליקציה עם שעון פעיל — בפיתוח: הבקרה שלה מתעוררת כל שעה ומקדמת עבודה. בלי שעון — מושהית, ושום צ'אט שלה לא עובד עד שמעירים.</p>
+<div class="stats"><div class="stat ok"><b>{active}</b><span>בפיתוח</span></div><div class="stat"><b>{len(rows) - active}</b><span>לא בפיתוח</span></div><div class="stat run"><b>{len(running)}</b><span>צ'אטים פעילים</span></div></div>
+{f'<p class="foot">מכסת החשבון: <b>{esc(q)}</b></p>' if q else ''}
+</header>
+<section><h2>אפליקציות ושעונים</h2>
+<div class="tbl"><table><thead><tr><th>אפליקציה</th><th>מצב</th><th>שעון</th><th>צ'אטים פעילים</th></tr></thead><tbody>{''.join(r[2] for r in rows)}</tbody></table></div></section>
+{f'<section><h2>שעונים נוספים</h2><div class="tbl oth"><table><thead><tr><th>מה</th><th>מצב</th><th>מתי</th><th>תפקיד</th></tr></thead><tbody>{other_rows}</tbody></table></div></section>' if other_rows else ''}
+<p class="foot">נבדק {esc(m.get('updated', 'אין נתון'))} — בכל סבב שעתי, מהשעונים והצ'אטים בחשבון.</p>
+</article>'''
+
+
+def render(data, now, general, manager=None):
+    opts, panels = ['<option value="manager">🛠️ ניהול — מה בפיתוח</option>'], [manager_panel(data, manager or {})]
     for i, d in enumerate(data):
         total = d['total']
         active = d['status'] == 'active'
@@ -299,7 +341,7 @@ def render(data, now, general):
         desc = app_desc(d['id'])
         status_line = st_txt + (' · ' + d['status_note'] if d['status_note'] else '')
         now_lbl = 'בבנייה עכשיו' if active else 'נעצר ב'
-        parts = [f'<article class="app" data-app="{esc(d["id"])}"{"" if i == 0 else " hidden"}>',
+        parts = [f'<article class="app" data-app="{esc(d["id"])}" hidden>',
                  '<header class="hero">',
                  f'<div class="eyebrow"><span class="pill {"ok" if active else "wait"}">{esc(status_line)}</span></div>',
                  f'<h1>{esc(d["name"])}</h1>']
@@ -359,6 +401,17 @@ body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:1
 .top select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:22px 48px;display:flex;flex-direction:column;gap:28px}
 .app{display:flex;flex-direction:column;gap:28px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:2px}
+.stat b{font-family:var(--f-display);font-size:28px;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:13px;color:var(--muted)}
+.stat.ok b{color:var(--ok)} .stat.run b{color:var(--run)}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.tbl table{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th,.tbl td{padding:10px 12px;text-align:right;vertical-align:top;border-bottom:1px solid var(--line)}
+.tbl th{font-size:12px;color:var(--muted);font-weight:500}
+.tbl tr:last-child td{border-bottom:0}
+@media (max-width:520px){.tbl thead{display:none}.tbl tr{display:block;padding:10px 12px;border-bottom:1px solid var(--line)}.tbl td{display:block;border:0;padding:2px 0}.tbl td:nth-child(n+3)::before{color:var(--muted);font-size:12px;display:block}.tbl td:nth-child(3)::before{content:"שעון"}.tbl td:nth-child(4)::before{content:"צ'אטים פעילים"}.oth td:nth-child(3)::before{content:"מתי"}.oth td:nth-child(4)::before{content:"תפקיד"}.tbl tr.idle{display:flex;justify-content:space-between;align-items:center;gap:8px}.tbl tr.idle td:nth-child(n+3){display:none}}
 .app[hidden]{display:none}
 .task details{font-size:13.5px;color:var(--muted)}
 .task summary{cursor:pointer;color:var(--accent);font-size:13px;width:max-content}
