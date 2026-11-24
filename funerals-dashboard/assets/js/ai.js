@@ -13,7 +13,7 @@
     if (data !== null) { opts.headers['Content-Type'] = 'application/json'; opts.headers['X-CSRF-Token'] = csrf; opts.body = JSON.stringify(data); }
     const res = await fetch('api.php?' + new URLSearchParams({action, ...params}), opts);
     const body = await res.json().catch(() => ({error: 'תגובת שרת לא תקינה'}));
-    if (!res.ok) { const e = new Error(body.error || 'שגיאה בבקשה'); e.status = res.status; throw e; }
+    if (!res.ok) { const e = new Error(body.error || 'שגיאה בבקשה'); e.status = res.status; e.body = body; throw e; }
     return body;
   }
 
@@ -48,6 +48,7 @@
   function card(p) {
     const c = node('section', 'ai-card'); c.dataset.id = p.id;
     c.append(node('h3', '', p.card.title || 'הצעת עדכון'));
+    if (p.card.from_file) c.append(node('p', 'ai-warn', '⚠️ מבוסס על קובץ שהעוזר קרא — לבדוק מול המסמך לפני אישור.'));
     if (p.card.source) { const src = node('p', 'muted ai-src', 'מקור: '); const b = node('bdi', '', p.card.source); b.dir = 'auto'; src.append(b); c.append(src); }
     const t = node('div', 'ai-rows');
     (p.card.rows || []).forEach(r => {
@@ -64,9 +65,11 @@
   }
   function paintCard(c, foot, p) {
     foot.replaceChildren();
-    const label = {applied: '✓ נשמר — לאימות במשרד', rejected: '✗ נדחה', failed: '⛔ לא נשמר' + (p.message ? ': ' + p.message : ''), deciding: '…'}[p.status];
-    if (p.status !== 'pending') { foot.append(node('span', 'ai-state ' + p.status, label || p.status)); return; }
-    const yes = node('button', 'btn primary sm', '✓ אישור'); yes.type = 'button';
+    const label = {applied: '✓ נשמר — לאימות במשרד', rejected: '✗ נדחה', deciding: '…',
+      stale: '⚠️ התיק השתנה מאז ההצעה — לא נשמר. אפשר לבקש הצעה חדשה.'}[p.status];
+    if (p.status === 'failed') foot.append(node('span', 'ai-state failed', '⛔ לא נשמר' + (p.message ? ': ' + p.message : '') + ' · '));
+    if (p.status !== 'pending' && p.status !== 'failed') { foot.append(node('span', 'ai-state ' + p.status, label || p.status)); return; }
+    const yes = node('button', 'btn primary sm', p.status === 'failed' ? '↻ לנסות שוב' : '✓ אישור'); yes.type = 'button';
     const no = node('button', 'btn ghost sm', '✗ דחייה'); no.type = 'button';
     const decide = async approve => {
       yes.disabled = no.disabled = true;
@@ -75,7 +78,10 @@
         if (r.status >= 400 && r.result && r.result.error) r.proposal.message = r.result.error;
         paintCard(c, foot, r.proposal);
         if (approve && r.proposal.status === 'applied') document.dispatchEvent(new CustomEvent('fd:changed', {detail: {id: p.case_id}}));
-      } catch (e) { yes.disabled = no.disabled = false; note(e.message, 'err'); }
+      } catch (e) {
+        if (e.status === 409 && e.body && e.body.proposal) { paintCard(c, foot, e.body.proposal); return; }
+        yes.disabled = no.disabled = false; note(e.message, 'err');
+      }
     };
     yes.addEventListener('click', () => decide(true)); no.addEventListener('click', () => decide(false));
     foot.append(yes, no);
@@ -226,15 +232,24 @@
     key.setAttribute('aria-label', 'מפתח API');
     const kf = node('div', 'fields'); kf.append(lab('מפתח', key, true)); g.append(kf);
     const test = node('button', 'btn ghost sm', 'בדיקת מפתח'); test.type = 'button'; test.disabled = !s.has_key;
+    const del = node('button', 'btn ghost sm danger', 'הסרת המפתח'); del.type = 'button'; del.hidden = !s.has_key;
     const testOut = node('span', 'muted');
-    const tr = node('div', 'row-btns ai-test'); tr.append(test, testOut); g.append(tr);
+    const tr = node('div', 'row-btns ai-test'); tr.append(test, del, testOut); g.append(tr);
+    del.addEventListener('click', async () => {
+      if (!confirm('להסיר את המפתח? העוזר יפסיק לעבוד עד שיוגדר מפתח חדש.')) return;
+      try { await api('ai_key_remove', {}); await paintSettings(); } catch (e) { testOut.textContent = e.message; }
+    });
 
     g.append(node('h3', '', 'שימוש'));
     const cap = node('input'); cap.type = 'number'; cap.min = '0'; cap.max = '100000'; cap.value = s.monthly_cap; cap.inputMode = 'numeric';
     const cf = node('div', 'fields two'); cf.append(lab('תקרה חודשית (שיחות)', cap), node('div', 'f', '')); cf.lastChild.append(node('span', '', 'החודש'), node('b', '', `${s.used} מתוך ${s.monthly_cap}`));
     g.append(cf);
+    const tcap = node('input'); tcap.type = 'number'; tcap.min = '0'; tcap.step = '100000'; tcap.value = s.token_cap; tcap.inputMode = 'numeric';
+    const tf = node('div', 'fields two'); tf.append(lab('תקרת טוקנים בחודש', tcap), node('div', 'f', ''));
+    tf.lastChild.append(node('span', '', 'החודש'), node('b', '', `${Number(s.tokens).toLocaleString('he-IL')} מתוך ${Number(s.token_cap).toLocaleString('he-IL')}`));
+    g.append(tf);
     const auto = node('input'); auto.type = 'checkbox'; auto.checked = s.auto_approve;
-    const al = node('label', 'ai-check'); al.append(auto, node('span', '', 'אישור אוטומטי — לשמור הצעות בלי ✓ (עדיין "לאימות", לא "אומת")'));
+    const al = node('label', 'ai-check'); al.append(auto, node('span', '', 'אישור אוטומטי — לשמור הצעות בלי ✓ (עדיין "לאימות", לא "אומת"). הצעה שמבוססת על קובץ — תמיד בכרטיס.'));
     g.append(al);
     if (!s.tools_ready) g.append(node('p', 'hint', 'העוזר עוד לא מחובר לתיקים — ממתין לחיבור ה-API החיצוני.'));
     const save = node('button', 'btn primary', 'שמירה'); save.type = 'button';
@@ -244,7 +259,7 @@
     save.addEventListener('click', async () => {
       save.disabled = true;
       try {
-        await api('ai_settings_save', {provider: prov.value, model: model.value, monthly_cap: Number(cap.value), auto_approve: auto.checked, key: key.value.trim()});
+        await api('ai_settings_save', {provider: prov.value, model: model.value, monthly_cap: Number(cap.value), auto_approve: auto.checked, token_cap: Number(tcap.value), key: key.value.trim()});
         key.value = ''; await paintSettings();
       } catch (e) { save.disabled = false; testOut.textContent = e.message; }
     });

@@ -87,3 +87,9 @@
   ו-20MB לשיחה) מעל `dropboxFileContent()`; ו-§2.3 — הצעת סוג לקובץ חדש בלי סוג (structured output, פעם אחת לקובץ, `ai_file_kinds`), ✓ →
   `files.kind` + הבדיקה המתאימה "לאימות" דרך `extDo` (via: ai). נגיעות: `dropbox.js` (`data-file-id` + אירוע `fd:files`), `app.js` (`fd:changed`
   → טעינה מחדש של תיק פתוח, כדי ש"שמירה" לא תדרוס שינוי שאושר מהעוזר). בדיקות: `ai.sh` מול Dropbox המדומה של 03 (`ai-dbx-fixture.php`).
+- 2026-11-24 — **ביקורת 06 סבב 1 (בקרה 2, על e37dae4):** 🔴1 הצעה ישנה — hash של השדות/הבדיקות שבהצעה (`ai_proposals.base`), ✓ אחרי שינוי →
+  409 `stale`; 🟡2 tool_use פתוח נסגר ב-tool_result is_error; 🟡3 הקובץ לא נשמר ב-`ai_threads` (סימון) + `drop_block` + הודעת מערכת קפואה
+  לשיחה; 🟡4 תקרת טוקנים חודשית (`ai_usage.tokens`, `ai_settings.token_cap`) + `cache_control`; 🟡5 `session_write_close()`; 🟡6 ✓ לא מאפס
+  טופס עם שינויים; ⚪7 לפי ההכרעה; ⚪8 הסרת מפתח; ⚪9 `#[\SensitiveParameter]`; ⚪10 תשובה מהסבב האחרון; ⚪11 `deciding` תקוע / `failed` →
+  ניסיון חוזר; ⚪12 שורת `running` לפני הקריאה; ⚪13 README. עמודות חדשות ב-ALTER אידמפוטנטי (בלי מספר גרסה — v3/v4 לא נגעו).
+  בדיקות חדשות ב-`ai.sh`: R1, R2, R3, אין base64, ⚪7, תקרת טוקנים, הסרת מפתח.

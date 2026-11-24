@@ -9,7 +9,7 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/lib.php';
 
-const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test', 'ai_chat', 'ai_thread', 'ai_decide', 'ai_file_kinds', 'ai_file_kind_decide'];
+const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test', 'ai_chat', 'ai_thread', 'ai_decide', 'ai_file_kinds', 'ai_file_kind_decide', 'ai_key_remove'];
 
 function aiHandles(string $action): bool { return in_array($action, AI_ACTIONS, true); }
 
@@ -17,6 +17,9 @@ function aiAction(PDO $pdo, string $action, string $method): never {
     aiSchema($pdo);
     $org = scope();
     $c = ctx();
+    // ה-session (CSRF, ארגון פעיל) כבר נקרא ב-api.php. משחררים את הנעילה שלו לפני קריאה לספק, שעשויה לקחת דקות —
+    // אחרת כל בקשה אחרת של המשתמש נתקעת עד שהעוזר עונה (ביקורת 06 🟡5)
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
     $want = fn(string $m) => $method === $m ? null : reply(405, ['error' => 'שיטה לא מורשית']);
     try {
         switch ($action) {
@@ -25,6 +28,7 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 need('case.view');
                 $s = aiSettings($pdo, $org);
                 reply(200, ['has_key' => aiKey($org) !== null, 'used' => aiUsed($pdo, $org), 'cap' => $s['monthly_cap'],
+                    'tokens' => aiTokensUsed($pdo, $org), 'token_cap' => $s['token_cap'],
                     'model' => $s['model'], 'can_manage' => can('members.manage'), 'tools_ready' => aiToolsReady(),
                     'auto_approve' => $s['auto_approve']]);
 
@@ -45,10 +49,12 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 if (!isset(AI_PROVIDERS[$provider]['models'][$model])) reply(400, ['error' => 'מודל לא מוכר. הרשימה: ' . implode(', ', array_keys(AI_PROVIDERS[$provider]['models']))]);
                 $cap = (int)($in['monthly_cap'] ?? $s['monthly_cap']);
                 if ($cap < 0 || $cap > 100000) reply(400, ['error' => 'תקרה חודשית: 0 עד 100,000']);
-                $s['provider'] = $provider; $s['model'] = $model; $s['monthly_cap'] = $cap;
+                $tcap = (int)($in['token_cap'] ?? $s['token_cap']);
+                if ($tcap < 0 || $tcap > 1000000000) reply(400, ['error' => 'תקרת טוקנים: 0 עד 1,000,000,000']);
+                $s['provider'] = $provider; $s['model'] = $model; $s['monthly_cap'] = $cap; $s['token_cap'] = $tcap;
                 if (array_key_exists('auto_approve', $in)) $s['auto_approve'] = (bool)$in['auto_approve'];
                 $diff = [];
-                foreach (['provider', 'model', 'monthly_cap', 'auto_approve'] as $k) if ($was[$k] !== $s[$k]) $diff[$k] = [$was[$k], $s[$k]];
+                foreach (['provider', 'model', 'monthly_cap', 'token_cap', 'auto_approve'] as $k) if ($was[$k] !== $s[$k]) $diff[$k] = [$was[$k], $s[$k]];
                 $key = trim((string)($in['key'] ?? ''));
                 if ($key !== '') {
                     if (strlen($key) < 20 || strlen($key) > 300 || preg_match('/\s/', $key)) reply(400, ['error' => 'המפתח לא נראה תקין (בלי רווחים, 20–300 תווים)']);
@@ -58,6 +64,17 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 }
                 aiSettingsSave($pdo, $org, $s);
                 if ($diff) recordEvent($org, null, $c['actor'], 'ui', 'ai_settings', $diff);
+                reply(200, aiPublicSettings($pdo, $org));
+
+            case 'ai_key_remove':
+                // הסרת המפתח לבקשת המנהל (ביקורת 06 ⚪8). העוזר מפסיק לעבוד עד שמוגדר מפתח חדש.
+                $want('POST');
+                need('members.manage');
+                $pdo->prepare("DELETE FROM secrets WHERE name = 'ai_key' AND org_id = ?")->execute([$org]);
+                $s = aiSettings($pdo, $org);
+                $s['key_hint'] = ''; $s['key_set_at'] = null; $s['key_check'] = ''; $s['key_check_at'] = null;
+                aiSettingsSave($pdo, $org, $s);
+                recordEvent($org, null, $c['actor'], 'ui', 'ai_settings', ['key' => ['מוגדר', 'הוסר']]);
                 reply(200, aiPublicSettings($pdo, $org));
 
             case 'ai_key_test':
@@ -127,7 +144,9 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 $want('POST');
                 need('case.view');
                 $in = body();
-                reply(200, aiDecide($pdo, (int)($in['id'] ?? 0), !empty($in['approve'])));
+                $r = aiDecide($pdo, (int)($in['id'] ?? 0), !empty($in['approve']));
+                if (!empty($r['stale'])) reply(409, ['error' => 'התיק השתנה מאז ההצעה — לא נשמר. אפשר לבקש בצ\'אט הצעה חדשה.', 'code' => 'stale'] + $r);
+                reply(200, $r);
         }
     } catch (AiError $e) {
         $code = $e->getCode();

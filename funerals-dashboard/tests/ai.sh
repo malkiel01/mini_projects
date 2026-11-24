@@ -207,6 +207,69 @@ caseBody "$DCASE" | php -r '$c=json_decode(stream_get_contents(STDIN),true)["che
 code="$(post field ai_file_kind_decide "{\"file\":$FID,\"approve\":true}")"; test "$code" = 409 || fail "§2.3 ✓ פעמיים ($code)"
 ok "§2.3 — קובץ חדש בלי סוג: הצעה (structured output, פעם אחת לקובץ); ✓ → files.kind + הבדיקה \"לאימות\" via ai"
 
+# ===== ביקורת 06 סבב 1 =====
+setcase(){ # $1 id, $2 קוד PHP שמשנה את $c (התיק) — "אדם" שעורך את התיק בינתיים
+  php -r '$p=new PDO("sqlite:".$argv[1]); $st=$p->prepare("SELECT body FROM funerals WHERE id=?"); $st->execute([$argv[2]]); $c=json_decode($st->fetchColumn(),true);
+    eval($argv[3]); $p->prepare("UPDATE funerals SET body=? WHERE id=?")->execute([json_encode($c,JSON_UNESCAPED_UNICODE),$argv[2]]);' "$DB" "$1" "$2"; }
+# R1: הצעה למיקום קבר, אדם משנה אותו בינתיים, ✓ → 409 stale, ומה שהאדם כתב נשאר
+queue "[$(tool case_update "{\"id\":\"$CASE\",\"fields\":{\"grave\":\"חלקה מהעוזר\"}}"),$(text 'הצעתי')]"
+post admin ai_chat "{\"text\":\"קבר\",\"case_id\":\"$CASE\"}" >/dev/null; P="$(j proposals.0.id)"
+setcase "$CASE" '$c["grave"]="חלקה של אדם";'
+code="$(post admin ai_decide "{\"id\":$P,\"approve\":true}")"; test "$code" = 409 && test "$(j code)" = stale && test "$(j proposal.status)" = stale || fail "R1 ($code)"
+caseBody "$CASE" | grep -q 'חלקה של אדם' || fail "R1 העריכה של האדם נדרסה"
+# R2: הצעת תשלומים, המשרד מוסיף 777 בינתיים, ✓ → 409, ה-777 נשאר
+queue "[$(tool case_update "{\"id\":\"$CASE\",\"fields\":{\"payments\":[{\"amount\":100,\"purpose\":\"קבר\"}]}}"),$(text 'הצעתי')]"
+post admin ai_chat "{\"text\":\"תשלום\",\"case_id\":\"$CASE\"}" >/dev/null; P="$(j proposals.0.id)"
+setcase "$CASE" '$c["payments"][]=["amount"=>777,"purpose"=>"משרד","reference"=>"","source"=>""];'
+code="$(post admin ai_decide "{\"id\":$P,\"approve\":true}")"; test "$code" = 409 || fail "R2 ($code)"
+caseBody "$CASE" | grep -q '777' || fail "R2 התשלום של המשרד נמחק"
+# והצעה שהשדות שלה לא השתנו — עדיין נשמרת (שינוי בשדה אחר לא חוסם)
+queue "[$(tool case_update "{\"id\":\"$CASE\",\"fields\":{\"team\":\"צוות ב\"}}"),$(text 'הצעתי')]"
+post admin ai_chat "{\"text\":\"צוות\",\"case_id\":\"$CASE\"}" >/dev/null; P="$(j proposals.0.id)"
+setcase "$CASE" '$c["origin"]="מקום אחר";'
+code="$(post admin ai_decide "{\"id\":$P,\"approve\":true}")"; test "$code" = 200 && test "$(j proposal.status)" = applied || fail "R1/R2 שינוי בשדה אחר חסם ($code)"
+ok "R1, R2 — ✓ על הצעה ששדותיה השתנו → 409 stale, העריכה של האדם נשארת; שינוי בשדה אחר לא חוסם"
+
+# R3: יותר מ-8 סבבי כלים — כל tool_use נסגר ב-tool_result, והשיחה ממשיכה
+q="["; for i in $(seq 1 10); do q="$q$(tool case "{\"id\":\"$CASE\"}"),"; done; queue "${q%,}]"
+post admin ai_chat "{\"text\":\"לולאה\",\"case_id\":\"$CASE\"}" >/dev/null; T="$(j thread)"; grep -q 'יותר מדי צעדים' "$tmp/out" || fail "R3 הודעת עצירה"
+sql "SELECT messages FROM ai_threads WHERE id='$T'" | php -r '$m=json_decode(stream_get_contents(STDIN),true); $open=[];
+  foreach($m as $x){ if(!is_array($x["content"])) continue; foreach($x["content"] as $b){ if(($b["type"]??"")==="tool_use") $open[$b["id"]]=1; if(($b["type"]??"")==="tool_result") unset($open[$b["tool_use_id"]]); } }
+  exit($open===[] && end($m)["role"]==="user" ? 0 : 1);' || fail "R3 נשאר tool_use בלי tool_result"
+queue "[$(text 'ממשיכים')]"
+post admin ai_chat "{\"text\":\"הלאה\",\"thread\":\"$T\"}" >/dev/null; test "$(j reply)" = 'ממשיכים' || fail "R3 השיחה לא ממשיכה"
+ok "R3 — עצירה אחרי 8 סבבים: כל tool_use נסגר (is_error), והשיחה ממשיכה"
+
+# 🟡3: הקובץ לא נשמר בשיחה; הבקשה הבאה שולחת סימון במקומו, עם drop_block
+queue "[$(tool file_view "{\"file\":$FID}"),$(text 'קראתי')]"
+post admin ai_chat "{\"text\":\"תקרא\",\"case_id\":\"$DCASE\"}" >/dev/null; T="$(j thread)"
+test "$(sql "SELECT COUNT(*) FROM ai_threads WHERE messages LIKE '%JVBERi%' OR messages LIKE '%\"document\"%' OR messages LIKE '%base64%'")" = 0 || fail "🟡3 base64 נשמר ב-ai_threads"
+queue "[$(text 'זוכר')]"
+post admin ai_chat "{\"text\":\"ומה עכשיו\",\"thread\":\"$T\"}" >/dev/null
+lastreq | php -r '$r=json_decode(stream_get_contents(STDIN),true); $j=json_encode($r["body"]["messages"],JSON_UNESCAPED_UNICODE);
+  exit(!str_contains($j,"JVBERi") && str_contains($j,"קובץ נקרא בסבב קודם") && ($r["body"]["thinking"]["block_binding"]["prefix_mismatch_behavior"]??"")==="drop_block"
+    && str_contains($r["beta"],"thinking-binding-controls-2026-08-01") && ($r["body"]["cache_control"]["type"]??"")==="ephemeral" ? 0 : 1);' || fail "🟡3 הבקשה הבאה: סימון במקום הקובץ, drop_block, cache_control"
+ok "🟡3 — אין base64 ב-ai_threads; בבקשה הבאה סימון במקום הקובץ, drop_block ו-cache_control"
+
+# ⚪7: באישור אוטומטי — כתיבה בסבב שבו נקרא קובץ נשארת כרטיס
+post admin ai_settings_save '{"auto_approve":true}' >/dev/null
+queue "[$(tool file_view "{\"file\":$FID}"),$(tool case_update "{\"id\":\"$DCASE\",\"fields\":{\"team\":\"מהקובץ\"}}"),$(text 'הצעתי')]"
+post admin ai_chat "{\"text\":\"תמלא מהקובץ\",\"case_id\":\"$DCASE\"}" >/dev/null
+test "$(j proposals.0.status)" = pending && test "$(j proposals.0.card.from_file)" = true || fail "⚪7 כתיבה אחרי קריאת קובץ נשמרה בלי כרטיס"
+post admin ai_settings_save '{"auto_approve":false}' >/dev/null
+ok "⚪7 — סבב שבו נקרא קובץ: כתיבה תמיד ככרטיס (גם באישור אוטומטי), עם אזהרה"
+
+# 🟡4: תקרת טוקנים — מעבר → הודעה, בלי קריאה לספק
+test "$(sql "SELECT tokens FROM ai_usage WHERE org_id=1")" -gt 0 || fail "🟡4 הטוקנים לא נצברים"
+post admin ai_settings_save '{"token_cap":1}' >/dev/null; n="$(calls)"
+code="$(post admin ai_chat '{"text":"שלום"}')"; test "$(j code)" = cap && test "$(calls)" = "$n" || fail "🟡4 תקרת טוקנים ($code)"
+post admin ai_settings_save '{"token_cap":10000000}' >/dev/null
+ok "🟡4 — טוקנים נצברים לחודש ולארגון; מעבר לתקרה → הודעה, בלי קריאה לספק"
+
+# ⚪8: הסרת מפתח
+post admin ai_key_remove '{}' >/dev/null; test "$(j has_key)" = false && test "$(sql "SELECT COUNT(*) FROM secrets WHERE name='ai_key'")" = 0 || fail "⚪8 הסרת מפתח"
+ok "⚪8 — הסרת מפתח (רק מנהל), ונרשם ב-events"
+
 head -n 4 "$M/requests.jsonl" | tail -n 1 | grep -q '"version":"2023-06-01"' || fail "anthropic-version"
 ! grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -v 'in Unknown on line 0' | head; fail "שגיאות PHP בשרת"; }
-echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה; §2.2.2 קובץ לספק; §2.3 הצעת סוג"
+echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה; §2.2.2 קובץ לספק; §2.3 הצעת סוג; ביקורת: R1–R3, בלי base64, ⚪7, תקרת טוקנים"

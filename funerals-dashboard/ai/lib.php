@@ -32,6 +32,12 @@ const AI_PROVIDERS = [
 /** מודלים שמקבלים fallbacks בצד השרת (כשהספק דוחה בקשה מסיבות בטיחות — מודל חלופי עונה). */
 const AI_FALLBACK_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-2'];
 const AI_DEFAULT_CAP = 500;
+/** תקרת טוקנים חודשית לארגון (קלט + פלט, כולל מטמון) — מעבר → עצירה לפני הקריאה הבאה לספק. */
+const AI_DEFAULT_TOKEN_CAP = 10000000;
+/** במקום קובץ שנשלח לספק — הטקסט שנשמר בשיחה (התוכן עצמו לא נשמר; הקבצים נשארים ב-Dropbox). */
+const AI_FILE_MARK = '[קובץ נקרא בסבב קודם — התוכן לא נשמר בשיחה. לקריאה חוזרת: file_view]';
+/** ההצעה "בטיפול" יותר מזה (נפילה באמצע ✓) — חוזרת להמתנה. */
+const AI_DECIDING_STALE_SEC = 120;
 const AI_THREAD_DAYS = 30;
 const AI_MAX_TOOL_ROUNDS = 8;
 const AI_MAX_MESSAGE = 4000;
@@ -70,6 +76,11 @@ function aiSchema(PDO $pdo): void {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_proposals_thread ON ai_proposals(thread_id)');
     $pdo->exec('CREATE TABLE IF NOT EXISTS ai_file_kinds (org_id INTEGER NOT NULL, file_id INTEGER NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT \'\',
         status TEXT NOT NULL DEFAULT \'pending\', created_at TEXT NOT NULL, decided_at TEXT, decided_by INTEGER, PRIMARY KEY (org_id, file_id))');
+    // עמודות שנוספו אחרי הגרסה הראשונה של הטבלאות — ALTER רק כשחסרות (בלי מספר גרסה: לא מתנגש במיגרציות v3/v4 של פרוסות אחרות)
+    foreach ([['ai_settings', 'token_cap', 'INTEGER'], ['ai_usage', 'tokens', 'INTEGER NOT NULL DEFAULT 0'],
+        ['ai_threads', 'system', 'TEXT'], ['ai_proposals', 'base', 'TEXT']] as [$t, $c, $type]) {
+        if (!formColumnExists($pdo, $t, $c)) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
+    }
     $ok = true;
 }
 
@@ -83,16 +94,17 @@ function aiSettings(PDO $pdo, int $orgId): array {
     $models = AI_PROVIDERS[$provider]['models'];
     return ['provider' => $provider, 'model' => isset($models[$r['model'] ?? '']) ? $r['model'] : array_key_first($models),
         'monthly_cap' => (int)($r['monthly_cap'] ?? AI_DEFAULT_CAP), 'auto_approve' => (int)($r['auto_approve'] ?? 0) === 1,
+        'token_cap' => (int)($r['token_cap'] ?? AI_DEFAULT_TOKEN_CAP),
         'key_hint' => (string)($r['key_hint'] ?? ''), 'key_set_at' => $r['key_set_at'] ?? null,
         'key_check' => (string)($r['key_check'] ?? ''), 'key_check_at' => $r['key_check_at'] ?? null];
 }
 function aiSettingsSave(PDO $pdo, int $orgId, array $s): void {
-    $pdo->prepare('INSERT INTO ai_settings(org_id, provider, model, monthly_cap, auto_approve, key_hint, key_set_at, key_check, key_check_at, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET provider=excluded.provider, model=excluded.model,
+    $pdo->prepare('INSERT INTO ai_settings(org_id, provider, model, monthly_cap, auto_approve, key_hint, key_set_at, key_check, key_check_at, updated_at, token_cap)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET provider=excluded.provider, model=excluded.model,
         monthly_cap=excluded.monthly_cap, auto_approve=excluded.auto_approve, key_hint=excluded.key_hint, key_set_at=excluded.key_set_at,
-        key_check=excluded.key_check, key_check_at=excluded.key_check_at, updated_at=excluded.updated_at')
+        key_check=excluded.key_check, key_check_at=excluded.key_check_at, updated_at=excluded.updated_at, token_cap=excluded.token_cap')
         ->execute([$orgId, $s['provider'], $s['model'], $s['monthly_cap'], $s['auto_approve'] ? 1 : 0, $s['key_hint'], $s['key_set_at'],
-            $s['key_check'], $s['key_check_at'], gmdate('c')]);
+            $s['key_check'], $s['key_check_at'], gmdate('c'), $s['token_cap']]);
 }
 function aiKey(int $orgId): ?string {
     $k = secretGet('ai_key', $orgId);
@@ -108,6 +120,7 @@ function aiPublicSettings(PDO $pdo, int $orgId): array {
     foreach (AI_PROVIDERS as $id => $p) $providers[] = ['id' => $id, 'name' => $p['name'],
         'models' => array_map(fn($m, $n) => ['id' => $m, 'name' => $n], array_keys($p['models']), $p['models'])];
     return ['provider' => $s['provider'], 'model' => $s['model'], 'monthly_cap' => $s['monthly_cap'], 'auto_approve' => $s['auto_approve'],
+        'token_cap' => $s['token_cap'], 'tokens' => aiTokensUsed($pdo, $orgId),
         'has_key' => aiKey($orgId) !== null, 'key_hint' => $s['key_hint'], 'key_set_at' => $s['key_set_at'],
         'key_check' => $s['key_check'], 'key_check_at' => $s['key_check_at'],
         'used' => aiUsed($pdo, $orgId), 'month' => gmdate('Y-m'), 'providers' => $providers, 'tools_ready' => aiToolsReady()];
@@ -129,6 +142,24 @@ function aiTakeQuota(PDO $pdo, int $orgId, int $cap): bool {
     return $st->rowCount() === 1;
 }
 
+function aiTokensUsed(PDO $pdo, int $orgId): int {
+    $st = $pdo->prepare('SELECT tokens FROM ai_usage WHERE org_id = ? AND month = ?');
+    $st->execute([$orgId, gmdate('Y-m')]);
+    return (int)$st->fetchColumn();
+}
+/** צבירת הטוקנים של תשובה (usage) לחודש ולארגון. */
+function aiAddTokens(PDO $pdo, int $orgId, ?object $usage): void {
+    if ($usage === null) return;
+    $n = (int)($usage->input_tokens ?? 0) + (int)($usage->output_tokens ?? 0)
+        + (int)($usage->cache_creation_input_tokens ?? 0) + (int)($usage->cache_read_input_tokens ?? 0);
+    $month = gmdate('Y-m');
+    $pdo->prepare('INSERT OR IGNORE INTO ai_usage(org_id, month, chats) VALUES (?,?,0)')->execute([$orgId, $month]);
+    $pdo->prepare('UPDATE ai_usage SET tokens = tokens + ? WHERE org_id = ? AND month = ?')->execute([$n, $orgId, $month]);
+}
+function aiTokenCapMessage(int $cap): string {
+    return 'הארגון הגיע לתקרת השימוש החודשית (' . number_format($cap) . ' טוקנים). מנהל הארגון יכול להגדיל אותה ב-⚙️ הגדרות ← בינה מלאכותית.';
+}
+
 // ───────────────────────── הספק ─────────────────────────
 
 /** כתובת הספק. AI_API_BASE — בסביבת הבדיקה בלבד, ורק 127.0.0.1: גם אם יוגדר בשרת בטעות, המפתח לא יוצא החוצה. */
@@ -142,9 +173,12 @@ function aiBase(string $provider): string {
  * קריאה אחת ל-Messages API. מחזיר [status, json-object|null]. אין מפתח בשום הודעת שגיאה (מוחלף ב-***).
  * התוכן נשמר כאובייקטים (stdClass) — כך בלוקים שחוזרים לספק (thinking, tool_use עם input ריק) נשלחים בדיוק כמו שהגיעו.
  */
-function aiHttp(string $provider, string $key, array $payload, int $timeout = 120): array {
+function aiHttp(string $provider, #[\SensitiveParameter] string $key, array $payload, int $timeout = 120): array {
     $headers = ['content-type: application/json', 'anthropic-version: 2023-06-01', 'x-api-key: ' . $key];
-    if (isset($payload['fallbacks'])) $headers[] = 'anthropic-beta: server-side-fallback-2026-07-01';
+    $betas = [];
+    if (isset($payload['fallbacks'])) $betas[] = 'server-side-fallback-2026-07-01';
+    if (isset($payload['thinking']['block_binding'])) $betas[] = 'thinking-binding-controls-2026-08-01';
+    if ($betas) $headers[] = 'anthropic-beta: ' . implode(',', $betas);
     $ch = curl_init(aiBase($provider) . '/v1/messages');
     curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $headers,
         CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -158,7 +192,7 @@ function aiHttp(string $provider, string $key, array $payload, int $timeout = 12
     return [$status, is_object($json) ? $json : null];
 }
 /** הודעת שגיאה של הספק, בעברית, בלי המפתח. */
-function aiProviderError(int $status, ?object $j, string $key): string {
+function aiProviderError(int $status, ?object $j, #[\SensitiveParameter] string $key): string {
     $msg = str_replace($key, '***', (string)($j->error->message ?? ''));
     $type = (string)($j->error->type ?? '');
     if ($status === 401 || $type === 'authentication_error') return 'המפתח לא תקין. מנהל הארגון מחליף אותו ב-⚙️ הגדרות ← בינה מלאכותית.';
@@ -173,7 +207,7 @@ function aiNoCredit(int $status, string $msg): bool {
 }
 
 /** "בדיקת מפתח": קריאה קטנה. תשובה: ok / invalid / no_credit / error. */
-function aiKeyTest(string $provider, string $model, string $key): array {
+function aiKeyTest(string $provider, string $model, #[\SensitiveParameter] string $key): array {
     try {
         [$status, $j] = aiHttp($provider, $key, ['model' => $model, 'max_tokens' => 32,
             'output_config' => ['effort' => 'low'], 'messages' => [['role' => 'user', 'content' => 'ping']]], 30);
@@ -302,14 +336,15 @@ function aiRunTool(PDO $pdo, array $thread, array $settings, string $name, array
     }
     [$st, $data] = aiExt($pdo, $name, $clean, true);
     if ($st >= 400) return [aiToolJson($data + ['status' => $st, 'saved' => false]), true, null];
-    $card = aiCard($pdo, $name, $input, $data, $orgId);
-    if ($settings['auto_approve']) {
+    $card = aiCard($pdo, $name, $input, $data, $orgId) + ['from_file' => !empty($settings['from_file'])];
+    // הכרעת הבקרה (ביקורת 06 ⚪7): בסבב שבו נקרא קובץ — כתיבה תמיד ככרטיס, גם באישור אוטומטי (קובץ יכול להכיל הוראות)
+    if ($settings['auto_approve'] && empty($settings['from_file'])) {
         [$st2, $data2] = aiExt($pdo, $name, $clean, false);
         $pid = aiProposalAdd($pdo, $thread, $name, $clean, $card, $st2 < 400 ? 'applied' : 'failed', $data2);
         return [aiToolJson(['status' => $st2 < 400 ? 'saved' : 'failed', 'auto_approved' => true] + $data2), $st2 >= 400,
             aiProposalGet($pdo, $pid, $orgId)];
     }
-    $pid = aiProposalAdd($pdo, $thread, $name, $clean, $card, 'pending', null);
+    $pid = aiProposalAdd($pdo, $thread, $name, $clean, $card, 'pending', null, aiCaseBase($pdo, $name, $clean, $orgId));
     return [aiToolJson(['status' => 'proposed', 'proposal_id' => $pid, 'saved' => false,
         'message' => 'ההצעה הוצגה למשתמש עם ✓ / ✗. שום דבר לא נשמר עד שיאשר. לא לומר שנשמר.',
         'would_save' => $data['saved'] ?? null, 'converted' => $data['converted'] ?? []]), false, aiProposalGet($pdo, $pid, $orgId)];
@@ -359,7 +394,10 @@ function aiFilesUsed(array $thread): array {
         if ($m->role !== 'user' || !is_array($m->content)) continue;
         foreach ($m->content as $b) {
             if (($b->type ?? '') !== 'tool_result' || !is_array($b->content ?? null)) continue;
-            foreach ($b->content as $c) if (in_array($c->type ?? '', ['image', 'document'], true)) { $n++; $bytes += (int)(strlen((string)($c->source->data ?? '')) * 3 / 4); }
+            foreach ($b->content as $c) {
+                if (in_array($c->type ?? '', ['image', 'document'], true)) { $n++; $bytes += (int)(strlen((string)($c->source->data ?? '')) * 3 / 4); }
+                elseif (($c->type ?? '') === 'text' && ($c->text ?? '') === AI_FILE_MARK) $n++;   // נשלח בבקשה קודמת (התוכן לא נשמר)
+            }
         }
     }
     return [$n, $bytes];
@@ -395,9 +433,21 @@ function aiSuggestKind(PDO $pdo, int $orgId, array $file): ?array {
     $key = aiKey($orgId);
     if ($key === null) return null;
     $s = aiSettings($pdo, $orgId);
+    if (aiTokensUsed($pdo, $orgId) >= $s['token_cap']) return null;
+    // תופסים את הקובץ לפני הקריאה לספק — שתי פתיחות מקבילות לא שולחות אותו פעמיים (ביקורת 06 ⚪12)
+    $claim = $pdo->prepare("INSERT OR IGNORE INTO ai_file_kinds(org_id, file_id, kind, reason, status, created_at) VALUES (?,?,'','','running',?)");
+    $claim->execute([$orgId, (int)$file['id'], gmdate('c')]);
+    if ($claim->rowCount() !== 1) return null;
+    $fail = function () use ($pdo, $orgId, $file): null {
+        $pdo->prepare("UPDATE ai_file_kinds SET status = 'failed' WHERE org_id = ? AND file_id = ? AND status = 'running'")->execute([$orgId, (int)$file['id']]);
+        return null;
+    };
     [$block, , $e] = aiFileBlock($pdo, $orgId, (int)$file['id']);
-    if ($block === null || $e !== null) return null;
-    if (!aiTakeQuota($pdo, $orgId, $s['monthly_cap'])) return null;
+    if ($block === null || $e !== null) return $fail();
+    if (!aiTakeQuota($pdo, $orgId, $s['monthly_cap'])) {
+        $pdo->prepare("DELETE FROM ai_file_kinds WHERE org_id = ? AND file_id = ? AND status = 'running'")->execute([$orgId, (int)$file['id']]);   // יוצע בחודש הבא
+        return null;
+    }
     $kinds = array_merge(AI_DOC_CHECKS, ['other']);
     $list = implode("\n", array_map(fn($k) => "- $k: " . aiKindLabel($k), $kinds));
     $payload = ['model' => $s['model'], 'max_tokens' => 2000, 'output_config' => ['effort' => 'low', 'format' => ['type' => 'json_schema', 'schema' => [
@@ -410,16 +460,17 @@ function aiSuggestKind(PDO $pdo, int $orgId, array $file): ?array {
     try {
         [$status, $j] = aiHttp($s['provider'], $key, $payload, 60);
     } catch (AiError $e) {
-        return null;
+        return $fail();
     }
-    if ($status !== 200 || $j === null || ($j->stop_reason ?? '') === 'refusal') return null;
+    if ($j !== null) aiAddTokens($pdo, $orgId, $j->usage ?? null);
+    if ($status !== 200 || $j === null || ($j->stop_reason ?? '') === 'refusal') return $fail();
     $text = '';
     foreach (($j->content ?? []) as $b) if (($b->type ?? '') === 'text') $text .= $b->text;
     $out = json_decode($text, true);
-    if (!is_array($out) || !in_array($out['kind'] ?? '', $kinds, true)) return null;
+    if (!is_array($out) || !in_array($out['kind'] ?? '', $kinds, true)) return $fail();
     $row = ['kind' => $out['kind'], 'reason' => mb_substr(cleanText($out['reason'] ?? '', 300), 0, 300)];
-    $pdo->prepare('INSERT OR IGNORE INTO ai_file_kinds(org_id, file_id, kind, reason, status, created_at) VALUES (?,?,?,?,?,?)')
-        ->execute([$orgId, (int)$file['id'], $row['kind'], $row['reason'], 'pending', gmdate('c')]);
+    $pdo->prepare("UPDATE ai_file_kinds SET kind = ?, reason = ?, status = 'pending' WHERE org_id = ? AND file_id = ? AND status = 'running'")
+        ->execute([$row['kind'], $row['reason'], $orgId, (int)$file['id']]);
     return $row;
 }
 
@@ -453,7 +504,7 @@ function aiCaseKinds(PDO $pdo, array $case): array {
                 if ($sug !== null) $have[$id] = $sug + ['status' => 'pending'];
             }
         }
-        if (isset($have[$id]) && ($have[$id]['status'] === 'pending' || (string)$f['kind'] === '')) {
+        if (isset($have[$id]) && $have[$id]['status'] === 'pending') {
             $k = (string)$have[$id]['kind'];
             $out[$id] = ['kind' => $k, 'label' => aiKindLabel($k), 'check' => in_array($k, AI_DOC_CHECKS, true) ? $k : null,
                 'reason' => (string)$have[$id]['reason'], 'status' => (string)$have[$id]['status']];
@@ -499,12 +550,30 @@ function aiDecideKind(PDO $pdo, int $fileId, bool $approve): array {
 
 // ───────────────────────── הצעות ─────────────────────────
 
-function aiProposalAdd(PDO $pdo, array $thread, string $tool, array $input, array $card, string $status, ?array $result): int {
-    $pdo->prepare('INSERT INTO ai_proposals(thread_id, org_id, user_id, case_id, tool, input, card, status, result, created_at, decided_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)')->execute([$thread['id'], $thread['org_id'], $thread['user_id'], $card['case_id'], $tool,
+function aiProposalAdd(PDO $pdo, array $thread, string $tool, array $input, array $card, string $status, ?array $result, ?string $base = null): int {
+    $pdo->prepare('INSERT INTO ai_proposals(thread_id, org_id, user_id, case_id, tool, input, card, status, result, created_at, decided_at, base)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$thread['id'], $thread['org_id'], $thread['user_id'], $card['case_id'], $tool,
         json_encode($input, JSON_UNESCAPED_UNICODE), json_encode($card, JSON_UNESCAPED_UNICODE), $status,
-        $result === null ? null : json_encode($result, JSON_UNESCAPED_UNICODE), gmdate('c'), $status === 'pending' ? null : gmdate('c')]);
+        $result === null ? null : json_encode($result, JSON_UNESCAPED_UNICODE), gmdate('c'), $status === 'pending' ? null : gmdate('c'), $base]);
     return (int)$pdo->lastInsertId();
+}
+/**
+ * "גרסת" התיק מול ההצעה (ביקורת 06 🔴1): hash של השדות והבדיקות שההצעה נוגעת בהם, כפי שהם בתיק עכשיו.
+ * ✓ על הצעה שהשדות שלה השתנו מאז — נדחה (stale), כדי לא לדרוס עריכה של אדם. לתיק חדש (case_create) — אין.
+ */
+function aiCaseBase(PDO $pdo, string $tool, array $input, int $orgId): ?string {
+    if ($tool !== 'case_update') return null;
+    $id = (string)($input['id'] ?? '');
+    $case = preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id) ? existing($pdo, $id, $orgId) : null;
+    if ($case === null) return hash('sha256', 'missing');
+    $parts = [];
+    foreach (array_keys(is_array($input['fields'] ?? null) ? $input['fields'] : []) as $f) $parts['f.' . $f] = $case[$f] ?? null;
+    foreach (array_keys(is_array($input['checks'] ?? null) ? $input['checks'] : []) as $k) {
+        $c = $case['checks'][$k] ?? [];
+        $parts['c.' . $k] = [(string)($c['status'] ?? 'unknown'), (string)($c['value'] ?? ''), (string)($c['note'] ?? '')];
+    }
+    ksort($parts);
+    return hash('sha256', json_encode($parts, JSON_UNESCAPED_UNICODE));
 }
 function aiProposalGet(PDO $pdo, int $id, int $orgId): ?array {
     $st = $pdo->prepare('SELECT * FROM ai_proposals WHERE id = ? AND org_id = ?');
@@ -522,10 +591,10 @@ function aiDecide(PDO $pdo, int $id, bool $approve): array {
     $orgId = (int)$c['org']['id'];
     $p = aiProposalGet($pdo, $id, $orgId);
     if ($p === null || $p['user_id'] !== (int)$c['user']['id']) throw new AiError('ההצעה לא נמצאה', 404);
-    if ($p['status'] !== 'pending') throw new AiError('ההצעה כבר טופלה', 409);
-    // תופסים את ההצעה לפני הכתיבה — שתי לחיצות לא כותבות פעמיים
-    $st = $pdo->prepare("UPDATE ai_proposals SET status = 'deciding' WHERE id = ? AND status = 'pending'");
-    $st->execute([$id]);
+    // תופסים את ההצעה לפני הכתיבה — שתי לחיצות לא כותבות פעמיים. "נכשלה" — אפשר לנסות שוב; "בטיפול" תקוע (נפילה באמצע) — חוזר.
+    $st = $pdo->prepare("UPDATE ai_proposals SET status = 'deciding', decided_at = ? WHERE id = ?
+        AND (status IN ('pending', 'failed') OR (status = 'deciding' AND decided_at < ?))");
+    $st->execute([gmdate('c'), $id, gmdate('c', time() - AI_DECIDING_STALE_SEC)]);
     if ($st->rowCount() !== 1) throw new AiError('ההצעה כבר טופלה', 409);
     if (!$approve) {
         $pdo->prepare("UPDATE ai_proposals SET status = 'rejected', decided_at = ? WHERE id = ?")->execute([gmdate('c'), $id]);
@@ -534,6 +603,15 @@ function aiDecide(PDO $pdo, int $id, bool $approve): array {
     if (!aiToolsReady()) {
         $pdo->prepare("UPDATE ai_proposals SET status = 'pending' WHERE id = ?")->execute([$id]);
         throw new AiError('ה-API החיצוני (פרוסה 05) עוד לא מותקן', 501);
+    }
+    // התיק השתנה מאז ההצעה (בשדות שהיא נוגעת בהם) — לא דורסים: ההצעה ישנה, ומבקשים חדשה בצ'אט
+    $st = $pdo->prepare('SELECT base FROM ai_proposals WHERE id = ?');
+    $st->execute([$id]);
+    $base = $st->fetchColumn();
+    if (is_string($base) && $base !== '' && $base !== aiCaseBase($pdo, $p['tool'], $p['input'], $orgId)) {
+        $pdo->prepare("UPDATE ai_proposals SET status = 'stale', result = ?, decided_at = ? WHERE id = ?")
+            ->execute([json_encode(['message' => 'התיק השתנה מאז ההצעה'], JSON_UNESCAPED_UNICODE), gmdate('c'), $id]);
+        return ['stale' => true, 'proposal' => aiProposalGet($pdo, $id, $orgId)];
     }
     [$status, $data] = aiExt($pdo, $p['tool'], $p['input'], false);
     $pdo->prepare('UPDATE ai_proposals SET status = ?, result = ?, decided_at = ? WHERE id = ?')
@@ -545,7 +623,7 @@ function aiDecide(PDO $pdo, int $id, bool $approve): array {
 
 function aiThreadNew(PDO $pdo, int $orgId, int $userId, ?string $caseId): array {
     $t = ['id' => 'ait_' . bin2hex(random_bytes(12)), 'org_id' => $orgId, 'user_id' => $userId, 'case_id' => $caseId, 'title' => '',
-        'messages' => [], 'created_at' => gmdate('c'), 'updated_at' => gmdate('c')];
+        'messages' => [], 'system' => '', 'created_at' => gmdate('c'), 'updated_at' => gmdate('c')];
     $pdo->prepare('INSERT INTO ai_threads(id, org_id, user_id, case_id, title, messages, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
         ->execute([$t['id'], $orgId, $userId, $caseId, '', '[]', $t['created_at'], $t['updated_at']]);
     return $t;
@@ -557,13 +635,33 @@ function aiThreadGet(PDO $pdo, string $id, int $orgId, int $userId): ?array {
     $r = $st->fetch();
     if (!$r) return null;
     $r['messages'] = json_decode((string)$r['messages'], false) ?: [];
+    $r['system'] = (string)($r['system'] ?? '');
     $r['org_id'] = (int)$r['org_id'];
     $r['user_id'] = (int)$r['user_id'];
     return $r;
 }
 function aiThreadSave(PDO $pdo, array $t): void {
-    $pdo->prepare('UPDATE ai_threads SET title = ?, messages = ?, updated_at = ? WHERE id = ?')
-        ->execute([$t['title'], json_encode($t['messages'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE), gmdate('c'), $t['id']]);
+    $pdo->prepare('UPDATE ai_threads SET title = ?, messages = ?, system = ?, updated_at = ? WHERE id = ?')
+        ->execute([$t['title'], json_encode(aiStripFiles($t['messages']), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+            $t['system'] ?? '', gmdate('c'), $t['id']]);
+}
+/**
+ * הקבצים שנשלחו לספק (image / document בתוך tool_result) לא נשמרים בשיחה — במקומם AI_FILE_MARK (ביקורת 06 🟡3).
+ * זו עריכה של היסטוריה, ולכן כל בקשה לספק שולחת prefix_mismatch_behavior: drop_block — בלוקי thinking שאחריה נזרקים
+ * (בלי חיוב) במקום שגיאה 400 בחשבונות שנאכפים.
+ */
+function aiStripFiles(array $messages): array {
+    $out = json_decode(json_encode($messages)) ?: [];
+    foreach ($out as $m) {
+        if (($m->role ?? '') !== 'user' || !is_array($m->content ?? null)) continue;
+        foreach ($m->content as $b) {
+            if (($b->type ?? '') !== 'tool_result' || !is_array($b->content ?? null)) continue;
+            foreach ($b->content as $i => $c) {
+                if (in_array($c->type ?? '', ['image', 'document'], true)) $b->content[$i] = (object)['type' => 'text', 'text' => AI_FILE_MARK];
+            }
+        }
+    }
+    return $out;
 }
 /** שיחות ישנות מ-30 יום — נמחקות (האפיון 06 §2.2.4). אלה שיחות צ'אט, לא נתוני תיקים. */
 function aiPurge(PDO $pdo): void {
@@ -624,6 +722,7 @@ function aiChat(PDO $pdo, array $thread, string $text): array {
     $s = aiSettings($pdo, $orgId);
     $key = aiKey($orgId);
     if ($key === null) return ['ok' => false, 'code' => 'no_key', 'message' => 'לא הוגדר מפתח — פנה למנהל'];
+    if (aiTokensUsed($pdo, $orgId) >= $s['token_cap']) return ['ok' => false, 'code' => 'cap', 'message' => aiTokenCapMessage($s['token_cap'])];
     if (!aiTakeQuota($pdo, $orgId, $s['monthly_cap'])) {
         return ['ok' => false, 'code' => 'cap', 'message' => 'הגעתם לתקרה החודשית של הארגון (' . $s['monthly_cap']
             . ' שיחות). מנהל הארגון יכול להגדיל אותה ב-⚙️ הגדרות ← בינה מלאכותית.'];
@@ -633,31 +732,40 @@ function aiChat(PDO $pdo, array $thread, string $text): array {
         $case = existing($pdo, (string)$thread['case_id'], $orgId);
         if ($case === null) throw new AiError('התיק לא נמצא', 404);
     }
+    // הודעת המערכת נקבעת פעם אחת לשיחה ונשמרת: שינוי שלה באמצע שובר את המטמון ואת בלוקי ה-thinking של ההמשך
+    if (($thread['system'] ?? '') === '') $thread['system'] = aiSystemPrompt($thread, $case);
     // הכרעות על הצעות מאז ההודעה הקודמת — כדי שהעוזר ידע מה נשמר ומה נדחה
-    $st = $pdo->prepare("SELECT id, status FROM ai_proposals WHERE thread_id = ? AND status IN ('applied','rejected','failed') AND decided_at >= ?");
+    $st = $pdo->prepare("SELECT id, status FROM ai_proposals WHERE thread_id = ? AND status IN ('applied','rejected','failed','stale') AND decided_at >= ?");
     $st->execute([$thread['id'], $thread['updated_at']]);
-    $notes = array_map(fn($r) => '#' . $r['id'] . ' ' . ['applied' => 'אושרה ונשמרה', 'rejected' => 'נדחתה', 'failed' => 'נכשלה בשמירה'][$r['status']], $st->fetchAll());
+    $names = ['applied' => 'אושרה ונשמרה', 'rejected' => 'נדחתה', 'failed' => 'נכשלה בשמירה', 'stale' => 'לא נשמרה — התיק השתנה מאז'];
+    $notes = array_map(fn($r) => '#' . $r['id'] . ' ' . $names[$r['status']], $st->fetchAll());
     $content = ($notes ? '[מערכת: הכרעות על הצעות — ' . implode(', ', $notes) . "]\n" : '') . $text;
     $thread['messages'][] = (object)['role' => 'user', 'content' => $content];
     if ($thread['title'] === '') $thread['title'] = mb_substr($text, 0, 80);
 
-    $payload = ['model' => $s['model'], 'max_tokens' => 16000, 'system' => aiSystemPrompt($thread, $case),
-        'output_config' => ['effort' => 'medium']];
+    $payload = ['model' => $s['model'], 'max_tokens' => 16000, 'system' => $thread['system'],
+        // drop_block: אחרי שקובץ הוחלף בטקסט בהיסטוריה (aiStripFiles), בלוקי thinking שאחריו נזרקים במקום 400
+        'thinking' => ['type' => 'adaptive', 'block_binding' => ['prefix_mismatch_behavior' => 'drop_block']],
+        'output_config' => ['effort' => 'medium'], 'cache_control' => ['type' => 'ephemeral']];
     $tools = aiToolDefs();
     if ($tools) $payload['tools'] = $tools;
     if (in_array($s['model'], AI_FALLBACK_MODELS, true)) $payload['fallbacks'] = 'default';
 
     $proposals = [];
     $reply = '';
+    $fileRead = false;
     for ($round = 0; ; $round++) {
+        if ($round > 0 && aiTokensUsed($pdo, $orgId) >= $s['token_cap']) { $reply = aiTokenCapMessage($s['token_cap']); break; }
         $payload['messages'] = $thread['messages'];
         [$status, $j] = aiHttp($s['provider'], $key, $payload);
         if ($status !== 200 || $j === null) {
             aiThreadSave($pdo, $thread);
             throw new AiError(aiProviderError($status, $j, $key), 502);
         }
+        aiAddTokens($pdo, $orgId, $j->usage ?? null);
         $thread['messages'][] = (object)['role' => 'assistant', 'content' => $j->content ?? []];
         $stop = (string)($j->stop_reason ?? '');
+        $reply = '';   // התשובה — הטקסט של הסבב האחרון בלבד
         foreach (($j->content ?? []) as $b) if (($b->type ?? '') === 'text') $reply .= ($reply === '' ? '' : "\n") . $b->text;
         if ($stop === 'refusal') { $reply = $reply !== '' ? $reply : 'הספק סירב לענות על הבקשה הזו. לנסח אחרת.'; break; }
         if ($stop !== 'tool_use') break;
@@ -666,13 +774,24 @@ function aiChat(PDO $pdo, array $thread, string $text): array {
         foreach ($j->content as $b) {
             if (($b->type ?? '') !== 'tool_use') continue;
             $input = json_decode(json_encode($b->input ?? new stdClass()), true) ?: [];
-            [$res, $isErr, $prop] = aiRunTool($pdo, $thread, $s, (string)$b->name, $input);
+            $name = (string)$b->name;
+            [$res, $isErr, $prop] = aiRunTool($pdo, $thread, $s + ['from_file' => $fileRead], $name, $input);
+            if (in_array($name, ['file_view', 'file_text'], true) && !$isErr) $fileRead = true;
             if ($prop !== null) $proposals[] = $prop;
             $r = ['type' => 'tool_result', 'tool_use_id' => $b->id, 'content' => $res];
             if ($isErr) $r['is_error'] = true;
             $results[] = (object)$r;
         }
         $thread['messages'][] = (object)['role' => 'user', 'content' => $results];
+    }
+    // tool_use שנשאר בלי tool_result (עצירה אחרי AI_MAX_TOOL_ROUNDS, max_tokens, תקרה) — סוגרים בשגיאה, אחרת השיחה שבורה
+    $last = end($thread['messages']);
+    if ($last && $last->role === 'assistant' && is_array($last->content)) {
+        $open = [];
+        foreach ($last->content as $b) if (($b->type ?? '') === 'tool_use') {
+            $open[] = (object)['type' => 'tool_result', 'tool_use_id' => $b->id, 'is_error' => true, 'content' => 'לא הורץ — העוזר עצר לפני הכלי.'];
+        }
+        if ($open) $thread['messages'][] = (object)['role' => 'user', 'content' => $open];
     }
     aiThreadSave($pdo, $thread);
     return ['ok' => true, 'thread' => $thread['id'], 'reply' => $reply, 'proposals' => $proposals, 'used' => aiUsed($pdo, $orgId),
