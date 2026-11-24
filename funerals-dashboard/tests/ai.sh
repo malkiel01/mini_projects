@@ -72,20 +72,20 @@ code="$(post field ai_settings_save "{\"key\":\"$KEY\"}")"; test "$code" = 403 |
 code="$(get field ai_settings)"; test "$code" = 403 || fail "F1 שטח רואה הגדרות ($code)"
 code="$(post admin ai_settings_save "{\"key\":\"$KEY\",\"model\":\"claude-opus-5-5\"}")"; test "$code" = 200 || fail "F1 שמירה ($code)"
 test "$(j key_hint)" = Zq9W && test "$(j has_key)" = true || fail "F1 key_hint"
-! grep -qF "$KEY" "$tmp/out" || fail "F1 המפתח בתשובה"
-! grep -qF "${KEY:12}" "$tmp/out" || fail "F1 חלק מהמפתח בתשובה"
+! grep -qF -e "$KEY" "$tmp/out" || fail "F1 המפתח בתשובה"
+! grep -qF -e "${KEY:13}" "$tmp/out" || fail "F1 חלק מהמפתח בתשובה"
 code="$(get admin ai_settings)"; test "$code" = 200 && test "$(j model)" = claude-opus-5-5 && test "$(j monthly_cap)" = 500 || fail "F1 ai_settings / ברירות מחדל"
-! grep -qF "$KEY" "$tmp/out" || fail "F1 המפתח ב-ai_settings"
+! grep -qF -e "$KEY" "$tmp/out" || fail "F1 המפתח ב-ai_settings"
 # בדיקת מפתח: תקין / לא תקין / אין יתרה
 queue "[$(text pong),{\"status\":401,\"body\":{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}},{\"status\":400,\"body\":{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API.\"}}}]"
 post admin ai_key_test '{}' >/dev/null; test "$(j result)" = ok || fail "F1 בדיקת מפתח: תקין"
 lastreq | grep -q '"key_ok":true' || fail "F1 המפתח שנשלח לספק אינו המפתח שנשמר"
 post admin ai_key_test '{}' >/dev/null; test "$(j result)" = invalid || fail "F1 בדיקת מפתח: לא תקין"
 post admin ai_key_test '{}' >/dev/null; test "$(j result)" = no_credit || fail "F1 בדיקת מפתח: אין יתרה"
-! grep -qF "$KEY" "$tmp/out" || fail "F1 המפתח בתשובת בדיקה"
+! grep -qF -e "$KEY" "$tmp/out" || fail "F1 המפתח בתשובת בדיקה"
 test "$(sql "SELECT COUNT(*) FROM secrets WHERE name='ai_key' AND org_id=1 AND value_enc LIKE 'v1:%'")" = 1 || fail "F1 לא מוצפן ב-secrets"
-! grep -raqF "$KEY" "$D" || fail "F1 המפתח גלוי בקובץ תחת data/"
-! grep -qF "$KEY" "$tmp/server.log" || fail "F1 המפתח ביומן השרת"
+! grep -raqF -e "$KEY" "$D" || fail "F1 המפתח גלוי בקובץ תחת data/"
+! grep -qF -e "$KEY" "$tmp/server.log" || fail "F1 המפתח ביומן השרת"
 test "$(sql "SELECT COUNT(*) FROM req_log WHERE error LIKE '%Zq9W%'")" = 0 || fail "F1 ביומן הבקשות"
 test "$(sql "SELECT COUNT(*) FROM events WHERE action='ai_settings' AND diff NOT LIKE '%Zq9W%'")" -ge 1 || fail "F1 events (שינוי נרשם, בלי המפתח)"
 test "$(calls)" = 3 || fail "F1 מספר קריאות לספק"
@@ -120,7 +120,7 @@ else
   P="$(j proposals.0.id)"
   j proposals.0.card.rows | grep -q '12345' || fail "F3 לפני ← אחרי"
   test "$(caseBody "$CASE")" = "$before" && test "$(events)" = "$ev0" || fail "F3 נכתב למסד לפני ✓"
-  lastreq | grep -q '"status":"proposed"' || fail "F3 הספק לא קיבל 'הוצע'"
+  lastreq | php -r '$r=json_decode(stream_get_contents(STDIN),true); $m=end($r["body"]["messages"]); $t=json_decode($m["content"][0]["content"],true); exit(($t["status"]??"")==="proposed" && ($t["saved"]??null)===false ? 0 : 1);' || fail "F3 הספק לא קיבל 'הוצע'"
   ok "F3 — כלי כתיבה → כרטיס (לפני ← אחרי, מקור), שום שינוי במסד ובאירועים עד ✓"
 
   # F4: ✓ על הצעה עם verified → "לאימות", via: ai, שורה ב-events
@@ -173,4 +173,4 @@ fi
 
 head -n 4 "$M/requests.jsonl" | tail -n 1 | grep -q '"version":"2023-06-01"' || fail "anthropic-version"
 ! grep -qE 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | head; fail "שגיאות PHP בשרת"; }
-echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה"
+if grep -q "function extRun" "$APP/ext-lib.php" 2>/dev/null; then echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה"; else echo "PASS (06): F1, F2, F7 (F3–F6 ממתינים ל-extRun של 05)"; fi

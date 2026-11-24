@@ -17,6 +17,8 @@ declare(strict_types=1);
  * הטבלאות — CREATE IF NOT EXISTS, בלי מספר גרסה (כמו 05), כדי לא להתנגש במיגרציות של פרוסות אחרות.
  */
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
+// הפעולות של ext.php (05) — מקור הכלים. אין את הקובץ (05 עוד לא מוזגה) → אין כלים, והצ'אט אומר זאת.
+if (is_file(__DIR__ . '/../ext-lib.php')) require_once __DIR__ . '/../ext-lib.php';
 
 /** הספקים והמודלים. המבנה מאפשר להוסיף ספק; היום — Claude בלבד (ש4). הראשון ברשימה = ברירת המחדל. */
 const AI_PROVIDERS = [

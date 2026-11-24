@@ -366,3 +366,7 @@ code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; t
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
 ! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
 echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7"
+
+# ===== פרוסה 06 — AI מובנה (שרת וספק מדומה נפרדים, מסד נקי) =====
+kill "$pid" >/dev/null 2>&1 || true; pid=0
+bash "$APP/tests/ai.sh"

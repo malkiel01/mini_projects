@@ -29,3 +29,15 @@
   `formApplyChecks($new,$old,'api',$by)` (או `formSaveCase`) במקום מימוש משלו. לא יכולתי לענות ל-05 — send_message חסום בהרשאה.
 - 2026-11-24 — 01 מוזג (#1839, 8eb9a9f). `main` מוזג לענף 02 (הגרסה של `main` לכל קבצי 01 + ה-diff של 02 מעליה); `caseChangeNeeds`
   מקבל `normalize($old)` כמו ב-`main`. כל A ו-B1–B7 ירוקים. PR טיוטה ל-`main`.
+
+## 2026-11-24 — פרוסה 06 (AI מובנה), ענף `claude/funerals-dashboard-06-ai` — במקביל ל-03 ו-05 (טורבו)
+- חדש: `ai/lib.php`, `ai/actions.php`, `assets/js/ai.js`, `assets/css/ai.css`, `tests/ai.sh` (+ mock, fixture). נגיעות: `api.php` (2 שורות),
+  `lib.php` (`FdReply` + מצב לכידה ב-`reply()`), `index.html` (2 שורות), `app.js` (שורת `fd:case` — זהה לזו של 03), `run.sh` (שורת ai.sh).
+- **השכבה המשותפת עם 05 — `extRun($pdo, $m, $action, $query, $body, $via, $dry)` ב-`ext-lib.php`:** גוף ה-switch של `ext.php` עובר
+  לפונקציה (`$_GET`→`$query`, `body()`→`$body`, `extActor($m)`→`ctx()['actor']['actor']`, `formSaveCase(..., $via)`, `COMMIT`→`$dry ? ROLLBACK : COMMIT`),
+  ובדיקת `extCan` עוברת פנימה. ה-patch המוכן: `tests/patches/extrun-05.patch` (מול ענף 05 כפי שהוא היום). נבדק בעץ אינטגרציה (main+05+06+patch):
+  E1–E10 של 05 ירוקים, F1–F7 ירוקים.
+- ניסיון `send_message` לקוד 05 לתיאום השכבה — **נחסם בהרשאה**. לכן: אחרי ש-05 תמוזג, אני מחיל את ה-patch בענף 06 (יישור), ומוחק אותו.
+- **מבקש מ-03:** פונקציה שמחזירה תוכן קובץ לספק — `dropboxFileContent(PDO $pdo, int $orgId, string $fileId, int $maxBytes): ?array` →
+  `['mime' => ..., 'data' => bytes, 'name' => ...]`, בהרשאה של ctx (case.view, קובץ של הארגון). עד אז — §2.2.2 (קובץ לספק) ו-§2.3 (הצעת סוג) לא נבנו.
+- הכרעה טכנית: "שיחה" במונה = הודעה של משתמש (לא שרשור) — חוסם עלות גם בשרשור ארוך. ספק ב-HTTP ישיר (אין composer בשרת).
