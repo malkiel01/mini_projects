@@ -126,6 +126,10 @@
   `index.html#import` / `#ai`. P2 — `extProjectPrompt()` → `gpt-project-prompt.md` דרך `build-ext.php` (נבדק ב-`--check`), `tokens.php` מחזיר
   `project_prompt`. P3 — `importSimilar()` / `similarName()` ב-`lib.php`: 409 `similar` עד בחירה (`resolve`), ingest → לעדכן. P4 — `diffSame()`
   ב-`caseDiff`. P5 — `[data-more]` + ⋯ ב-≤420px. בדיקות: `tests/fixes08.test.php` (P2, P4, parseImport) וקטע "פרוסה 08" ב-`run.sh` (P3, P4 ב-HTTP).
+- 2026-11-24 — #1865 מוזג (e1e9d2a), ביקורת עובר. **המשך 08** (אותו ענף, `main` מוזג אליו): ההנחיות לפרויקט עם מה שטוב בנוסח מנהל
+  הצוותים (טבלה לפני ה-JSON, `source` = שם הקובץ, JSON רק לפי בקשה, `unreadable` + מה נראה) וכלל מפורש: `notes` ו-`payments` מלאים
+  (הקיים + החדש) או בכלל לא — הייבוא מחליף אותם. ⚪1 — ה-docblock של `importRecords` במקום. ⚪2 — שתי רשומות חדשות דומות באותו קובץ → 400
+  `duplicate`. ⚪3 (צילומים בשרת) — לא נגעתי; `deploy.yml` של הבקרה.
 - 2026-11-24 — **פרוסה 09 (MCP + OAuth), ענף `claude/funerals-dashboard-09-mcp`.** `mcp.php` + `mcp-lib.php` + `oauth/` (metadata, register,
   authorize מאחורי השער, token, revoke) + `.htaccess` (`/mcp`, `.well-known/*`) + `assets/css/oauth.css`. הכלים = `extActions()`/`extDo()`;
   שינוי יחיד ב-`ext-lib.php`: שם הלקוח בשם ביומן (`ctx()['client']`). `tokens.php`: `mcp_url`, `connections`, `disconnect`. `connect.html`
