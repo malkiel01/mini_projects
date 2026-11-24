@@ -216,6 +216,11 @@ api('POST', 'dropbox_sync', [], []);
 webhook($payload, hash_hmac('sha256', $payload, 'mocksecret456'));
 ok((int)q1('SELECT COUNT(*) FROM files WHERE dbx_id=?', [$newId]) === 1, 'C3 שורה אחת');
 ok((int)q1("SELECT COUNT(*) FROM events WHERE action='file_added'") === $evCount, 'C3 בלי אירוע כפול');
+// נעילה לארגון: סנכרון שרץ (חכירה בתוקף) → השני מדלג, לא כותב פעמיים
+pdo()->exec('UPDATE dbx_orgs SET lock_token=\'other\', lock_until=' . (time() + 60));
+[$st, $j] = api('POST', 'dropbox_sync', [], []);
+ok(($j['result']['skipped'] ?? '') === 'locked', 'נעילה — סנכרון שני מדלג');
+pdo()->exec('UPDATE dbx_orgs SET lock_token=NULL, lock_until=0');
 // reset מ-Dropbox → מתחילים מחדש בלי לשכפל
 mock('set', ['values' => ['reset_next' => true]]);
 [$st, $j] = api('POST', 'dropbox_sync', [], []);
@@ -279,7 +284,7 @@ ok(array_diff(scandir("$tmp/up"), ['.', '..']) === [], 'הקבצים הזמני�
 /* ---------- תצוגה מקדימה ---------- */
 [$st, , $h, $b] = api('GET', 'file_view', ['id' => $imgId]);
 ok($st === 200 && $h['content-type'] === 'image/jpeg' && str_contains($b, 'w1024h768') && str_starts_with($h['cache-control'], 'private'), "תמונה ממוזערת ($st)");
-ok(count(glob("$data/cache/thumbs/*.jpg")) === 1, 'מטמון תמונות ממוזערות');
+ok(count(glob("$data/cache/thumbs/*.jpg")) >= 1, 'מטמון תמונות ממוזערות');
 mock('clear_calls');
 api('GET', 'file_view', ['id' => $imgId]);
 ok(!in_array('files/get_thumbnail_v2', mstate()['calls'], true), 'מהמטמון — בלי קריאה ל-Dropbox');

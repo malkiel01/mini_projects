@@ -7,6 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <title>דשבורד לוויות וחוסרים</title>
 <link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/dropbox.css">
 </head>
 <body>
 <div id="signin" class="center" hidden>
@@ -24,6 +25,7 @@
     <div class="titles"><h1>🕯️ לוויות וחוסרים</h1><div class="sub" id="topSub">בקרת מסמכים ותשלומים</div></div>
     <button class="icon-btn" id="importBtn" aria-label="ייבוא ממצאים (JSON)" title="ייבוא ממצאים">📥</button>
     <button class="icon-btn" id="exportBtn" aria-label="ייצוא החודש (JSON)" title="ייצוא החודש">📤</button>
+    <button class="icon-btn" id="dbxBtn" aria-label="Dropbox" title="Dropbox">☁️</button>
     <button class="icon-btn" id="tokenBtn" aria-label="יצירת אסימון API" title="יצירת אסימון API">🔑</button>
     <button class="icon-btn" id="logoutBtn" aria-label="יציאה" title="יציאה">⎋</button>
     <input id="importFile" type="file" accept=".json,application/json" hidden>
@@ -80,6 +82,11 @@
         <div id="documents" class="list"></div>
       </section>
 
+      <section class="group" aria-labelledby="gFiles">
+        <h3 id="gFiles">קבצים ב-Dropbox</h3>
+        <div id="dbxFiles"></div>
+      </section>
+
       <section class="group" aria-labelledby="gPay">
         <div class="group-head"><h3 id="gPay">אסמכתאות תשלום</h3><button type="button" class="btn ghost sm" id="addPayment"><span aria-hidden="true">+</span> תשלום</button></div>
         <div id="payments" class="list"></div>
@@ -126,6 +133,16 @@
       <div id="preview"></div>
       <p class="hint">אם Dropbox חוסמת תצוגה מוטמעת — לפתוח בקישור המקורי.</p>
     </div>
+  </form>
+</dialog>
+
+<dialog id="dbxDialog" aria-labelledby="dbxTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="dbxTitle">Dropbox</h2>
+    </header>
+    <div class="sheet-body" id="dbxBody"></div>
   </form>
 </dialog>
 
@@ -194,6 +211,7 @@
       $('signin').hidden = true; $('application').hidden = false;
       if (!$('month').value) $('month').value = defaultMonth();
       await load();
+      document.dispatchEvent(new Event('fd:ready'));
     } catch (e) { showSignin(e.message); }
   }
   async function load() {
@@ -271,6 +289,7 @@
     $('editorTitle').textContent = current.name || 'תיק חדש';
     for (const [field, id] of Object.entries(fields)) $(id).value = current[field] || '';
     renderSummary(); renderChecks(); renderPayments(); renderDocuments();
+    document.dispatchEvent(new CustomEvent('fd:case', {detail: {id: current.id || ''}}));   // קבצי Dropbox (assets/js/dropbox.js)
     if (!$('editDialog').open) $('editDialog').showModal();
     grow($('fNotes'));
     $('editDialog').querySelector('.sheet-body').scrollTop = 0;
@@ -474,8 +493,10 @@
       showSignin('יצאת מהדשבורד. "כניסה מחדש" תחבר אותך שוב לפי ההרשאה בפלטפורמה.'); }
     catch(e) { toast(e.message, true); }
   });
+  window.FD = {request, toast, csrf: () => csrf};   // לשימוש assets/js/dropbox.js
   begin();
 })();
 </script>
+<script src="assets/js/dropbox.js"></script>
 </body>
 </html>

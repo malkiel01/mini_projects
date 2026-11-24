@@ -12,6 +12,7 @@ php -r '$a=json_decode(file_get_contents("funerals-dashboard/app.json"),true); i
 php platform/check-apps.php
 php -r '$h=file_get_contents("funerals-dashboard/index.html"); if (!preg_match("~<script>\s*(.*?)\s*</script>~s", $h, $m)) exit(1); file_put_contents($argv[1],$m[1]); if (preg_match("~type=\"password\"|id=\"username\"|password_hash|\x27login\x27~", $h)) { fwrite(STDERR,"index.html: נשארו שדות כניסה בסיסמה\n"); exit(1); }' "$tmp/ui.js"
 node --check "$tmp/ui.js"
+node --check funerals-dashboard/assets/js/dropbox.js
 # פרמטרים לא נדבקים לשם הפעולה (request('list&month=…') קודד ל-action אחד → "פעולה לא מוכרת")
 ! grep -qE "request\('[a-z_]+&" funerals-dashboard/index.html || fail "index.html מדביק פרמטרים לשם הפעולה"
 test -f funerals-dashboard/assets/css/app.css || fail "חסר assets/css/app.css"
