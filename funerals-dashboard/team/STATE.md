@@ -68,9 +68,10 @@
 
 ## מעבר לבקרה 3
 
+- **פריסה 1884 (#1862) success.**
 - ✅ **בקרה 3 פעילה:** `session_018g4NYDegWrLYkRkfQRRfVQ` (2026-11-24 15:25); שעון חדש `trig_01FteeWPuFwKcA4ZoRitKQAU` (דקה 22); הישן `trig_01PYjng67oPYVSwpwmksWifo` כובה בידי המנהל.
 - **שעון:** `trig_01PYjng67oPYVSwpwmksWifo` מעיר את בקרה 2 — המנהל מעביר/יוצר לבקרה 3 ומכבה את הישן.
 - **מחכה:** תשובות הבעלים ל-FD-T1…T6 (דרך המטלות). כשמשהו נכשל בבדיקה ידנית — להעיר את צ'אט הקוד של אותה פרוסה (`sessions.json`, `code_done`).
 - **פרוסת תיקונים (07-fix):** `payments` ב-`caseDiff` (402 מול 402.0), כותרת צפופה בטלפון — לפתוח צ'אט קוד (דרך המנהל, עומק שושלת).
-- **50MB:** לכתוב בקשה ב-`.claude/teams/requests/` לשורת `upload_max_filesize`/`post_max_size` ב-`.user.ini` שהשער בונה.
+- ✅ **50MB:** נכתבה `.claude/teams/requests/app-upload-limit.md` (16:25) — ממתין להכרעת הפלטפורמה. היה: לכתוב בקשה ב-`.claude/teams/requests/` לשורת `upload_max_filesize`/`post_max_size` ב-`.user.ini` שהשער בונה.
 - **לקח:** סמן SQLite פתוח (`fetch` בלי `closeCursor`) לפני כתיבה → "database is locked" מול כותב מקביל. לבדוק בכל ביקורת.
