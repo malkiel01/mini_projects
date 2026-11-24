@@ -23,7 +23,7 @@
 - `tokens.php`: `resolveAccess()` — הארגון הפעיל של 01. מפתח בלי תפקיד בארגון לא יוצר אסימון (אין תפקיד לתת לו).
 - טבלת `tokens` — `extEnsureSchema()` לפי שם ואידמפוטנטית, **בלי** מספר גרסה — כדי לא להתנגש במיגרציה של 03 (הצעת הבקרה).
 
-**כש-03 תמוזג:** השמות `dropboxCaseFiles($pdo, $case)` / `dropboxFileText($pdo, $orgId, $fileId)` — לבדוק מול 03 (שאלתי, טרם נענה).
+**03:** files/file_text מיושרות לחתימות של 03 (#1844): `dropbox/actions.php` נטען לפי צורך, `dropboxFileText(int)`, DbxError → 422/501/413/502. נבדק בתחליף (`tests/ext-dbx.php`, מדלג כש-03 קיימת). אחרי מיזוג 03 — להריץ שוב.
 **PATH_INFO:** OpenAPI משתמש ב-`ext.php/<action>`; `?action=` נתמך גם. אם לא עובד בשרת (E11) — `ext/<action>.php` או rewrite.
 
 **לפרוסה 06 (AI):** הפעולות הן `extDo(PDO $pdo, string $action, array $in, string $via = 'api'): array` ב-`ext-lib.php`.

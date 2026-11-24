@@ -9,7 +9,7 @@ wipe(){ find "$D/data" -mindepth 1 ! -name .htaccess -exec rm -rf {} + 2>/dev/nu
 cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; wipe; rm -rf "$tmp"; }
 trap cleanup EXIT
 fail(){ echo "FAIL (05): $*"; [ -f "$tmp/out" ] && head -c 600 "$tmp/out" && echo; exit 1; }
-for f in ext.php ext-lib.php tokens.php tools/build-ext.php tests/ext-fixture.php tests/openapi-check.php tests/ext-ai.php tests/ext-ai2.php; do php -l "$D/$f" >/dev/null || fail "php -l $f"; done
+for f in ext.php ext-lib.php tokens.php tools/build-ext.php tests/ext-fixture.php tests/openapi-check.php tests/ext-ai.php tests/ext-ai2.php tests/ext-dbx.php; do php -l "$D/$f" >/dev/null || fail "php -l $f"; done
 php -r '$h=file_get_contents($argv[1]); if (!preg_match("~<script src=\"assets/js/connect.js\"~", $h)) exit(1);' $D/connect.html || fail "connect.html בלי connect.js"
 node --check $D/assets/js/connect.js
 php $D/tools/build-ext.php --check || fail "openapi.json / gpt-prompt.md לא נוצרו מהקוד"   # E8 (מקור אחד)
@@ -154,6 +154,7 @@ fx sql "SELECT actor FROM events WHERE source='api' AND actor LIKE 'עובד ש�
 # extDo() עם via 'ai' (ה-AI של 06): אותו כלל, via ai, "(AI)" ביומן; שגיאות — ExtError עם סטטוס
 php $D/tests/ext-ai.php || fail "extDo ai"
 php $D/tests/ext-ai2.php || fail "extDo ai שגיאות"
+php $D/tests/ext-dbx.php || fail "files / file_text מול 03"
 
 # E5: משתמש שהושבת / הורד בתפקיד — מיד
 fx role 7 field

@@ -99,7 +99,7 @@ function extActions(): array {
         'files' => ['method' => 'GET', 'perm' => 'view', 'query' => [$id],
             'he' => 'קבצי התיק מ-Dropbox', 'en' => 'Case files from Dropbox'],
         'file_text' => ['method' => 'GET', 'perm' => 'view',
-            'query' => [['name' => 'file', 'required' => true, 'description' => 'מזהה הקובץ (מ-files) / File id']],
+            'query' => [['name' => 'file', 'required' => true, 'description' => 'מזהה הקובץ — מספר, מ-files / File id (integer) from files']],
             'he' => 'הטקסט של קובץ (PDF עם שכבת טקסט), עד 200KB', 'en' => 'Text of a file (PDF with a text layer), up to 200KB'],
         'prompt' => ['method' => 'GET', 'perm' => 'view', 'query' => [],
             'he' => 'ההנחיות לצ\'אט (טקסט)', 'en' => 'Instructions for the chat (text)'],
@@ -136,8 +136,30 @@ function extSetContext(array $m): void {
         'actor' => ['id' => (int)$m['user_id'], 'actor' => extActor($m)], 'dev' => false, 'active' => true,
         'orgs' => [$org], 'org' => $org, 'role' => $m['role']];
 }
-/** קבצי תיק וטקסט של קובץ — רק כשהפונקציות של 03 קיימות. */
-function extDropboxReady(string $fn): bool { return function_exists($fn); }
+/** קבצי תיק וטקסט של קובץ — רק כשהפונקציות של 03 (dropbox/actions.php) קיימות. */
+function extDropboxReady(string $fn): bool {
+    if (!function_exists($fn) && is_file(__DIR__ . '/dropbox/actions.php')) require_once __DIR__ . '/dropbox/actions.php';
+    return function_exists($fn);
+}
+/** שגיאה של 03 (DbxError, לפי tag) → [סטטוס, הודעה בעברית לצ'אט]. */
+function extDropboxError(Throwable $e): array {
+    $tag = (string)($e->tag ?? '');
+    return match ($tag) {
+        'not_text' => [422, 'אין לקובץ הזה טקסט שאפשר לקרוא (PDF, תמונה או Office). לבקש מהמשתמש לבדוק אותו בעצמו.'],
+        'not_connected', 'reauth', 'no_root' => [501, 'Dropbox לא מחובר לארגון (או שהחיבור פג). מנהל הארגון מחבר מחדש בהגדרות.'],
+        'too_large' => [413, 'הקובץ גדול מדי לקריאה.'],
+        default => [502, 'Dropbox לא ענה כרגע. לנסות שוב מאוחר יותר.'],
+    };
+}
+/** קבצי התיק מ-03: [רשימה, null] או [null, הסבר]. ההרשאה (case.view + תיק של הארגון) נבדקה לפני. */
+function extCaseFiles(PDO $pdo, array $case, int $orgId): array {
+    if (!extDropboxReady('dropboxCaseFiles')) return [null, 'Dropbox עוד לא חובר'];
+    try {
+        return [dropboxCaseFiles($pdo, $case + ['org_id' => $orgId]), null];
+    } catch (Throwable $e) {
+        return [null, extDropboxError($e)[1]];
+    }
+}
 
 // ───────────────────────── אסימונים ─────────────────────────
 
@@ -406,19 +428,28 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api'): array 
                 $ch = $c['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => ''];
                 $checks[] = ['key' => $k, 'name' => $label, 'status_name' => EXT_STATUSES[$ch['status'] ?? 'unknown'] ?? ''] + $ch;
             }
-            $files = extDropboxReady('dropboxCaseFiles') ? dropboxCaseFiles($pdo, $c) : null;
+            [$files, $filesNote] = extCaseFiles($pdo, $c, $orgId);
             return ['case' => $c, 'summary' => extSummary($c), 'checks' => $checks, 'files' => $files,
-                'files_note' => $files === null ? 'Dropbox עוד לא חובר' : null, 'events' => $events];
+                'files_note' => $filesNote, 'events' => $events];
 
         case 'files':
             if (!extDropboxReady('dropboxCaseFiles')) extFail(501, 'Dropbox עוד לא חובר');
             $c = extCase($pdo, $orgId, (string)($in['id'] ?? ''));
-            return ['id' => $c['id'], 'files' => dropboxCaseFiles($pdo, $c)];
+            [$files, $filesNote] = extCaseFiles($pdo, $c, $orgId);
+            if ($files === null) extFail(502, (string)$filesNote);
+            return ['id' => $c['id'], 'files' => $files];
 
         case 'file_text':
             if (!extDropboxReady('dropboxFileText')) extFail(501, 'Dropbox עוד לא חובר');
-            $text = dropboxFileText($pdo, $orgId, cleanText($in['file'] ?? '', 300));
-            return ['file' => $in['file'] ?? '', 'text' => mb_strcut((string)$text, 0, 200 * 1024)];
+            $fileId = filter_var($in['file'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($fileId === false) extFail(400, 'file — מזהה הקובץ (מספר) מ-files');
+            try {
+                $text = dropboxFileText($pdo, $orgId, $fileId);   // 03: קובץ של ארגון אחר / לא קיים → null
+            } catch (Throwable $e) {
+                extFail(...extDropboxError($e));
+            }
+            if ($text === null) extFail(404, 'קובץ לא נמצא. מזהים — מ-files.');
+            return ['file' => $fileId, 'text' => mb_strcut($text, 0, 200 * 1024)];
 
         case 'case_update':
             // הכתיבה — formSaveCase() של 02 עם via: api: "הושלם" רק באדם, ובדיקה שאדם כבר סגר לא נפתחת מחדש.

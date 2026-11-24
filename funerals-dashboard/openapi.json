@@ -704,7 +704,7 @@
                         "name": "file",
                         "in": "query",
                         "required": true,
-                        "description": "מזהה הקובץ (מ-files) / File id",
+                        "description": "מזהה הקובץ — מספר, מ-files / File id (integer) from files",
                         "schema": {
                             "type": "string"
                         }
