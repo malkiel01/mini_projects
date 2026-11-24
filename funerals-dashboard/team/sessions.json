@@ -1,7 +1,28 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "spec": {"session": "session_018g4NYGZwaqPT5QwjkAVwnQ", "branch": "claude/funerals-dashboard-spec"},
-  "code": {"session": "session_018g4NYFGKA7qcwhkzsMNRXu", "branch": "claude/funerals-dashboard-audit", "slice": "00"},
-  "control": {"session": "session_018g4NYFvCTWcu2sJBJangFR", "branch": "claude/funerals-dashboard-control", "clock": "trig_01VUaKANMqdEscU5LSbHmFmn"},
-  "tasks": {"session": "session_018g4NYFi7CQiJ79smzSeDjd", "branch": "claude/funerals-dashboard-tasks"}
+  "spec": {
+    "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
+    "branch": "claude/funerals-dashboard-spec"
+  },
+  "code": {
+    "session": "session_018g4NYGdJzhAAfEVxcVrjGM",
+    "branch": "claude/funerals-dashboard-01-infra",
+    "slice": "01"
+  },
+  "control": {
+    "session": "session_018g4NYFvCTWcu2sJBJangFR",
+    "branch": "claude/funerals-dashboard-control",
+    "clock": "trig_01VUaKANMqdEscU5LSbHmFmn"
+  },
+  "tasks": {
+    "session": "session_018g4NYFi7CQiJ79smzSeDjd",
+    "branch": "claude/funerals-dashboard-tasks"
+  },
+  "code_done": [
+    {
+      "session": "session_018g4NYFGKA7qcwhkzsMNRXu",
+      "slice": "00",
+      "state": "רדום"
+    }
+  ]
 }
