@@ -14,7 +14,7 @@ declare(strict_types=1);
  * - **תקרה חודשית** — נבדקת לפני כל קריאה לספק; מעבר → הודעה, בלי קריאה.
  *
  * הספק — Anthropic Messages API ב-HTTP ישיר (curl): בשרת אין composer, ואין SDK רשמי שאפשר לפרוס בלי התקנה.
- * הטבלאות — CREATE IF NOT EXISTS, בלי מספר גרסה (כמו 05), כדי לא להתנגש במיגרציות של פרוסות אחרות.
+ * הטבלאות — מיגרציה v4 ב-lib/schema.php.
  */
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 // הפעולות של ext.php (05) — מקור הכלים. אין את הקובץ (05 עוד לא מוזגה) → אין כלים, והצ'אט אומר זאת.
@@ -59,30 +59,7 @@ const AI_KIND_PER_OPEN = 2;
 
 final class AiError extends RuntimeException {}
 
-function aiSchema(PDO $pdo): void {
-    static $ok = false;
-    if ($ok) return;
-    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_settings (org_id INTEGER PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL,
-        monthly_cap INTEGER NOT NULL, auto_approve INTEGER NOT NULL DEFAULT 0, key_hint TEXT NOT NULL DEFAULT \'\', key_set_at TEXT,
-        key_check TEXT NOT NULL DEFAULT \'\', key_check_at TEXT, updated_at TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_usage (org_id INTEGER NOT NULL, month TEXT NOT NULL, chats INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (org_id, month))');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_threads (id TEXT PRIMARY KEY, org_id INTEGER NOT NULL, user_id INTEGER NOT NULL, case_id TEXT,
-        title TEXT NOT NULL DEFAULT \'\', messages TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_threads_case ON ai_threads(org_id, case_id, updated_at)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, org_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL, case_id TEXT, tool TEXT NOT NULL, input TEXT NOT NULL, card TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'pending\',
-        result TEXT, created_at TEXT NOT NULL, decided_at TEXT)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_proposals_thread ON ai_proposals(thread_id)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_file_kinds (org_id INTEGER NOT NULL, file_id INTEGER NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL DEFAULT \'\',
-        status TEXT NOT NULL DEFAULT \'pending\', created_at TEXT NOT NULL, decided_at TEXT, decided_by INTEGER, PRIMARY KEY (org_id, file_id))');
-    // עמודות שנוספו אחרי הגרסה הראשונה של הטבלאות — ALTER רק כשחסרות (בלי מספר גרסה: לא מתנגש במיגרציות v3/v4 של פרוסות אחרות)
-    foreach ([['ai_settings', 'token_cap', 'INTEGER'], ['ai_usage', 'tokens', 'INTEGER NOT NULL DEFAULT 0'],
-        ['ai_threads', 'system', 'TEXT'], ['ai_proposals', 'base', 'TEXT']] as [$t, $c, $type]) {
-        if (!formColumnExists($pdo, $t, $c)) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
-    }
-    $ok = true;
-}
+// הטבלאות — מיגרציה v4 ב-lib/schema.php (רצה ב-db()).
 
 // ───────────────────────── הגדרות ─────────────────────────
 
@@ -263,10 +240,10 @@ function aiToolDefs(): array {
  * שגיאת פעולה — ExtError; פונקציות הליבה (normalize, existing, need) עונות ב-reply() — כאן במצב לכידה (FdReply), כדי שהשגיאה
  * תחזור לספק כ-tool_result ולא תסיים את בקשת הצ'אט. טרנזקציה שנשארה פתוחה (שגיאה באמצע) — מתבטלת.
  */
-function aiExt(PDO $pdo, string $action, array $input, bool $dry): array {
+function aiExt(PDO $pdo, string $action, array $input, bool $dry, ?callable $guard = null): array {
     $GLOBALS['fd_reply_capture'] = true;
     try {
-        return [200, extDo($pdo, $action, $input, 'ai', $dry)];
+        return [200, extDo($pdo, $action, $input, 'ai', $dry, $guard)];
     } catch (ExtError $e) {
         return [$e->getCode() ?: 400, ['error' => $e->getMessage()]];
     } catch (FdReply $r) {
@@ -608,12 +585,21 @@ function aiDecide(PDO $pdo, int $id, bool $approve): array {
     $st = $pdo->prepare('SELECT base FROM ai_proposals WHERE id = ?');
     $st->execute([$id]);
     $base = $st->fetchColumn();
-    if (is_string($base) && $base !== '' && $base !== aiCaseBase($pdo, $p['tool'], $p['input'], $orgId)) {
+    $st->closeCursor();   // סמן פתוח מחזיק נעילת קריאה ומפיל כתיבה מקבילה ("database is locked", #1855)
+    $isStale = fn() => is_string($base) && $base !== '' && $base !== aiCaseBase($pdo, $p['tool'], $p['input'], $orgId);
+    $markStale = function () use ($pdo, $id, $orgId): array {
         $pdo->prepare("UPDATE ai_proposals SET status = 'stale', result = ?, decided_at = ? WHERE id = ?")
             ->execute([json_encode(['message' => 'התיק השתנה מאז ההצעה'], JSON_UNESCAPED_UNICODE), gmdate('c'), $id]);
         return ['stale' => true, 'proposal' => aiProposalGet($pdo, $id, $orgId)];
-    }
-    [$status, $data] = aiExt($pdo, $p['tool'], $p['input'], false);
+    };
+    if ($isStale()) return $markStale();
+    // ושוב בתוך הטרנזקציה של הכתיבה (extDo), צמוד לשמירה — בלי חלון בין הבדיקה לכתיבה
+    $hit = false;
+    $guard = function () use ($isStale, &$hit): void {
+        if ($isStale()) { $hit = true; throw new ExtError('התיק השתנה מאז ההצעה', 409); }
+    };
+    [$status, $data] = aiExt($pdo, $p['tool'], $p['input'], false, $guard);
+    if ($hit) return $markStale();
     $pdo->prepare('UPDATE ai_proposals SET status = ?, result = ?, decided_at = ? WHERE id = ?')
         ->execute([$status < 400 ? 'applied' : 'failed', json_encode($data, JSON_UNESCAPED_UNICODE), gmdate('c'), $id]);
     return ['proposal' => aiProposalGet($pdo, $id, $orgId), 'status' => $status, 'result' => $data];
