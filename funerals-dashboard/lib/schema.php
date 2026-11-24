@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function backupDir(): string { return dataDir() . '/backup'; }
 
@@ -24,6 +24,7 @@ function migrate(PDO $pdo): void {
         $pdo->exec('BEGIN IMMEDIATE');
         try {
             if ($from < 1) migrateV1($pdo);
+            if ($from < 2) migrateV2($pdo);
             $pdo->exec('PRAGMA user_version=' . SCHEMA_VERSION);
             $pdo->exec('COMMIT');
         } catch (Throwable $e) {
@@ -91,4 +92,33 @@ function migrateV1(PDO $pdo): void {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_funerals_org_month ON funerals(org_id, month)');
     $pdo->prepare('INSERT OR IGNORE INTO orgs(id, name, created_at, settings) VALUES (1, ?, ?, \'{}\')')->execute(['חברה קדישא', gmdate('c')]);
     $pdo->exec('UPDATE funerals SET org_id = 1 WHERE org_id IS NULL');
+}
+
+/**
+ * גרסה 2 (פרוסה 03, Dropbox): חיבור לארגון, מטמון התיקיות שבתוך הראשית, תיק ↔ תיקייה, וקבצים.
+ * מוסיפה טבלאות בלבד; אין בהן סודות (אלה ב-secrets; ה-verifier של OAuth — מוצפן). files ייחודי לפי (org_id, dbx_id):
+ * אותו חשבון Dropbox בשני ארגונים לא מערבב קבצים. upload_id — מזהה חד-פעמי של העלאה (חוזרת → אותה שורה).
+ */
+function migrateV2(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_orgs (
+        org_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT \'disconnected\', account_id TEXT, account_name TEXT,
+        root_id TEXT, root_path TEXT, root_lower TEXT, cursor TEXT, sync_pending INTEGER NOT NULL DEFAULT 0,
+        lock_token TEXT, lock_until INTEGER NOT NULL DEFAULT 0, last_sync_at TEXT, last_webhook_at TEXT, last_error TEXT,
+        last_error_at TEXT, connected_by TEXT, connected_at TEXT)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_folders (
+        org_id INTEGER NOT NULL, dbx_id TEXT NOT NULL, path TEXT NOT NULL, path_lower TEXT NOT NULL, PRIMARY KEY(org_id, dbx_id))');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_dbx_folders_path ON dbx_folders(org_id, path_lower)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS case_folders (
+        org_id INTEGER NOT NULL, case_id TEXT NOT NULL, dbx_folder_id TEXT NOT NULL, dbx_path TEXT NOT NULL,
+        linked_at TEXT NOT NULL, linked_by TEXT, PRIMARY KEY(org_id, case_id), UNIQUE(org_id, dbx_folder_id))');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, case_id TEXT, dbx_id TEXT NOT NULL,
+        path TEXT NOT NULL, path_lower TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, rev TEXT,
+        server_modified TEXT, deleted INTEGER NOT NULL DEFAULT 0, added_via TEXT NOT NULL, added_by TEXT, kind TEXT NOT NULL DEFAULT \'\', upload_id TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(org_id, dbx_id))');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_files_case ON files(org_id, case_id)');
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_files_upload ON files(org_id, upload_id) WHERE upload_id IS NOT NULL');
+    // OAuth: state ממתין בשרת (לא ב-session), לפי hash, קשור ל-sub ולארגון, חד-פעמי, 10 דקות. ה-verifier מוצפן.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_oauth (state_hash TEXT PRIMARY KEY, org_id INTEGER NOT NULL, sub TEXT NOT NULL,
+        verifier_enc TEXT NOT NULL, expires_at INTEGER NOT NULL, used_at TEXT)');
 }

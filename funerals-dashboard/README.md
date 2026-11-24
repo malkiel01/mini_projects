@@ -7,6 +7,7 @@
 | הדרישה במילים של הבעלים | `docs/owner-brief.md` |
 | כללי הצוות | `team/PROTOCOL.md` |
 | האפיון | `docs/spec/` |
+| Dropbox (פרוסה 03) | `dropbox/README.md` |
 
 כלי עצמאי בעברית, מבוסס PHP ו-SQLite, בתוך mini_projects. מידע אישי **לא נשמר ב-GitHub**: רק קוד האתר ציבורי.
 

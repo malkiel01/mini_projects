@@ -51,6 +51,17 @@
 - ⚪9 סינון סטטוס לפני החיתוך. ⚪10 ברירת מחדל 90 — נבדק. ⚪8 — נדחה עד ש-v2 של 03 ב-main (ראה הודעה לבקרה).
 - לכל סעיף בדיקה ב-tests/ext.sh; מוטציה ל-3/6/7 נכשלת כצפוי.
 
+## 2026-11-24 — פרוסה 03 (Dropbox), ענף `claude/funerals-dashboard-03-dropbox`
+
+- נבנה במקביל ל-01, בקבצים חדשים: `dropbox/` (lib, actions, compat), `dropbox-webhook.php`, `bin/dropbox-sync.php`,
+  `assets/js/dropbox.js`, `assets/css/dropbox.css`, `tests/dropbox-test.php`, `tests/dropbox-mock.php`.
+- **יושר מול 01 ו-02 אחרי המיזוג שלהן** (`git merge origin/main`): `dropbox/compat.php` קורא ל-`secretPut/Get`, `recordEvent`,
+  `ctx`/`can`/`scope`. נקודות חיבור: `api.php` (require + שורה אחת, ושורת Dropbox ב-`healthChecks`), `lib/access.php`
+  (שתי הרשאות: `dropbox.manage` למנהל, `files.upload` למשרד ומנהל), `app.json` (`dropbox-webhook.php` ב-`"public"`),
+  `index.html` (קטע הקבצים בתיק, לשונית Dropbox בהגדרות, שני קבצים), `assets/js/app.js` (אירועי `fd:case`/`fd:ready`,
+  `window.FD`, הלשונית, ושורת חיבור חיצוני עם ✅/⛔), `tests/run.sh` (מריץ את `dropbox-test.php` בסוף).
+- בדיקות: C1–C11, C13 מול Dropbox מדומה — עוברות, עם משתמשים וארגונים אמיתיים של 01 (הזמנות). C12 ידני בשרת.
+- נדרש מהבקרה: השורה `funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log` ב-`CRONS`.
 ## פרוסה 04 — עובד שטח (ענף `claude/funerals-dashboard-04-field`)
 
 - 2026-11-24 — נבנה בקבצים חדשים: `lib/field.php` (היום/מחר, חיפוש, תיק, עדכון `via: field`, העלאה עם `upload_id` בטבלה
