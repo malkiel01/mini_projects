@@ -8,7 +8,7 @@
 | יכולת | עובד במצב ההזרמה? | בממשק |
 | --- | --- | --- |
 | כתיבה, קריאה, עריכת קבצים, הרצת פקודות | כן | כרטיסי כלים |
-| זיכרון שיחה (`--resume`) | כן | כל שיחה = סשן של Claude Code |
+| זיכרון שיחה (`--resume`, `--session-id <uuid>`) | כן | כל שיחה = סשן של Claude Code; תהליך חי לשיחה פעילה (`--input-format stream-json`) |
 | סקילים (`/שם-סקיל`) ופקודות מותאמות | כן [לאמת] | רשימת `/` |
 | סוכני משנה, `--agents` | כן | כרטיס מקונן |
 | MCP שמוגדר ב-`~/.claude` | כן | שקוף; רשימה בהגדרות |
@@ -16,7 +16,9 @@
 | CLAUDE.md, hooks, הגדרות הריפו | כן (בלי `--bare`) | שקוף |
 | בקשת אישור לפעולה | כן, דרך `--permission-prompts host` / SDK | כרטיס אישור (06) |
 | בחירת מודל, מצב תכנון | כן, דגלים בכל הודעה | בורר ליד התיבה |
-| `/plugin`, `/mcp`, `/config`, `/login`, `/model` (המסכים האינטראקטיביים) | **לא** — אלה מסכים של הטרמינל | מסכים שלנו, שמפעילים את פקודות ה-CLI המקבילות (`claude plugin …`, `claude mcp …`, `claude auth …`) |
+| `/model`, `/rename`, `/mcp`, `/reload-plugins` | כן (נבדק מול v2.1.331) | פקודות ברשימת `/` |
+| `/login`, `/plugin`, `/theme` (מסכים אינטראקטיביים) | **לא** — טרמינל בלבד | מסכים שלנו, שמפעילים את פקודות ה-CLI המקבילות (`claude plugin install/uninstall/enable/list/update`, `claude plugin marketplace add`, `claude mcp add/list/remove`, `claude update`) |
+| שאלת בחירה של Claude (AskUserQuestion) | רק עם `--permission-prompt-tool` (נעלמת עם `--permission-prompts none`) | כרטיס בחירה בממשק — לכן כרטיס האישורים נחוץ בכל מקרה |
 | `/compact`, `/clear`, `/cost`, `/context` | [לאמת] חלק כן | כפתורים / פקודות שלנו |
 | `/resume` (בורר) | לא | רשימת השיחות שלנו |
 | סוכני רקע (`claude --bg`, `claude agents`) | כן, כפקודות | [שאלה Q13: להציג?] |
