@@ -8,6 +8,7 @@
   const groups = {bad:{icon:'⛔', chip:'bad'}, open:{icon:'❔', chip:''}, verify:{icon:'🔎', chip:'warn'}, done:{icon:'✅', chip:'ok'}};
   const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
   const TOTAL = F.TOTAL;
+  let openedSnap = '';
   let items = [], current = null, csrf = '', embedKey = '', filter = 'todo', me = null, rows = {};
   // trace — הבקשות והשגיאות האחרונות של הדפדפן, להקשר של 🐞 (DevLoop)
   const trace = {requests: [], errors: []};
@@ -179,6 +180,7 @@
     for (const [field, id] of Object.entries(fields)) $(id).value = current[field] || '';
     renderChecks(); renderSummary(); renderPayments(); renderDocuments();
     document.dispatchEvent(new CustomEvent('fd:case', {detail: {id: current.id || ''}}));   // קבצי Dropbox (dropbox.js)
+    openedSnap = JSON.stringify(formRecord());   // לזיהוי שינויים שלא נשמרו (fd:changed)
     showPane('case'); $('caseTabs').hidden = !current.id;
     // עובד שטח: בדיקות, הערות ומיקום קבר בלבד (השרת אוכף; כאן רק מה שמוצג)
     const ro = !can('case.edit');
@@ -387,6 +389,17 @@
   document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
     filter = b.dataset.filter; try { sessionStorage.setItem('fd_filter', filter); } catch (e) {} renderList(); }));
   $('editDialog').addEventListener('close', () => { current = null; rows = {}; });
+  // שינוי שנשמר מחוץ לטופס (✓ על הצעה של העוזר, ai.js): הרשימה נטענת מחדש, ותיק פתוח מתעדכן — כדי ש"שמירה" לא תדרוס את השינוי
+  // טופס עם שינויים שלא נשמרו לא מתאפס: הודעה בלבד (ביקורת 06 🟡6)
+  document.addEventListener('fd:changed', async e => {
+    const id = e.detail && e.detail.id;
+    const open = current && current.id === id;
+    const dirty = open && JSON.stringify(formRecord()) !== openedSnap;
+    await load();
+    const x = open && !dirty ? items.find(i => i.id === id) : null;
+    if (x) { edit(x); toast('התיק עודכן מההצעה שאושרה'); }
+    else if (dirty) toast('ההצעה נשמרה בתיק, אבל בטופס יש שינויים שלא נשמרו. כדי לא לדרוס אותה — לסגור בלי לשמור ולפתוח שוב.', true);
+  });
   document.querySelectorAll('[data-pane]').forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
   $('retryBtn').addEventListener('click', () => begin());
   $('tokenBtn').addEventListener('click', async () => {
@@ -403,11 +416,16 @@
   $('addDocument').addEventListener('click', () => { current.documents.push({label:'', kind:'', url:''}); renderDocuments();
     const eds = $('documents').querySelectorAll('.ck-edit'); if (eds.length) eds[eds.length - 1].hidden = false; });
   $('fFolder').addEventListener('change', () => { renderDocuments(); renderSummary(); });
+  /** התיק כפי שהוא בטופס עכשיו (מה ש"שמירה" תשלח). */
+  function formRecord() {
+    const record = JSON.parse(JSON.stringify(current));
+    for (const [key, id] of Object.entries(fields)) record[key] = $(id).value;
+    return record;
+  }
   $('editor').addEventListener('submit', async e => {
     e.preventDefault();
     if (!$('fName').value.trim()) { toast('נדרש שם נפטר', true); $('fName').focus(); return; }
-    const record = JSON.parse(JSON.stringify(current));
-    for (const [key, id] of Object.entries(fields)) record[key] = $(id).value;
+    const record = formRecord();
     try {
       const result = await request('save', 'POST', record);
       $('editDialog').close();

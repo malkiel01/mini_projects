@@ -101,6 +101,10 @@ $get = function () use ($method): void { if ($method !== 'GET') reply(405, ['err
 require_once __DIR__ . '/dropbox/actions.php';
 if (dbxHandles($action)) dbxAction($action, $method, $pu);
 
+/* ===== AI מובנה (פרוסה 06) — ai/actions.php ===== */
+require_once __DIR__ . '/ai/actions.php';
+if (aiHandles($action)) aiAction($pdo, $action, $method);
+
 /* ===== DevLoop (מפתח בלבד) ===== */
 if (str_starts_with($action, 'dev-') || $action === 'devloop-client-error') {
     need('dev');

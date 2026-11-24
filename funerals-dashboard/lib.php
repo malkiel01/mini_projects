@@ -28,7 +28,12 @@ require_once __DIR__ . '/lib/form.php';   // פרוסה 02 — הטופס החכ
 
 function dataDir(): string { return __DIR__ . '/data'; }
 
+/** תשובה שנלכדה (במקום echo + exit) — כשפעולה רצה מתוך פעולה אחרת, למשל כלי של הצ'אט (ai/lib.php, aiExt). */
+final class FdReply extends Exception {
+    public function __construct(public readonly int $status, public readonly array $data) { parent::__construct((string)($data['error'] ?? ''), $status); }
+}
 function reply(int $status, array $data): never {
+    if (!empty($GLOBALS['fd_reply_capture'])) throw new FdReply($status, $data);
     if ($status >= 400) $GLOBALS['fd_err'] = (string)($data['error'] ?? '');
     http_response_code($status);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
