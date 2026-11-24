@@ -16,7 +16,7 @@ $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 session_name('fd_session');
 session_set_cookie_params([
-    'lifetime' => 0, 'path' => '/mini_projects/funerals-dashboard/',
+    'lifetime' => 0, 'path' => rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/') . '/',
     'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict'
 ]);
 session_start();
