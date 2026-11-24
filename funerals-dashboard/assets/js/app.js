@@ -176,6 +176,7 @@
     $('editorTitle').textContent = current.name || 'תיק חדש';
     for (const [field, id] of Object.entries(fields)) $(id).value = current[field] || '';
     renderChecks(); renderSummary(); renderPayments(); renderDocuments();
+    document.dispatchEvent(new CustomEvent('fd:case', {detail: {id: current.id || ''}}));   // קבצי Dropbox (dropbox.js)
     showPane('case'); $('caseTabs').hidden = !current.id;
     // עובד שטח: בדיקות, הערות ומיקום קבר בלבד (השרת אוכף; כאן רק מה שמוצג)
     const ro = !can('case.edit');
