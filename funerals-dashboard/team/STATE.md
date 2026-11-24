@@ -77,3 +77,8 @@
 - **פרוסה 08** (`docs/spec/08-fixes-project.md`): P1–P6 — connect.html לפרויקט ChatGPT, הנחיות לפרויקט, אזהרת "תיק דומה", payments, כותרת בטלפון (P6 הועבר ל-09). קוד 08 נפתח: `session_018g4NYFCroPuhEYVJhHMcqh` (16:25).
 - ❌ **50MB בוטלה בידי הבעלים (16:50).** היה: נכתבה `.claude/teams/requests/app-upload-limit.md` (16:25) — ממתין להכרעת הפלטפורמה. היה: לכתוב בקשה ב-`.claude/teams/requests/` לשורת `upload_max_filesize`/`post_max_size` ב-`.user.ini` שהשער בונה.
 - **לקח:** סמן SQLite פתוח (`fetch` בלי `closeCursor`) לפני כתיבה → "database is locked" מול כותב מקביל. לבדוק בכל ביקורת.
+
+## מעבר לבקרה 4 (24.11)
+
+- ✅ **בקרה 4 פעילה:** `session_018g4NYEtyGfJPB3ADzV5Upg` (Sonnet; סף החלפה ~150K). שעון חדש — מגיע מהמנהל; הקודם `trig_01FteeWPuFwKcA4ZoRitKQAU` — המנהל מכבה.
+- אין PR פתוח של הצוות; 00–09 ב-main (4fd7eab). נשאר ידני אצל הבעלים: FD-T1…T7, K16–K18.
