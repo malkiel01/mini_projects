@@ -93,3 +93,36 @@
   בבדיקות התקינות. ההחלטה אצל הבקרה/הבעלים. שורת ה-CRONS — הבקרה. הבדיקה של 05 (`tests/ext-dbx.php`) מדלגת עכשיו — 05 רשמה להריץ מול המדומה.
 - **בדיקות:** שרתי `php -S` עם `-d opcache.jit=disable`, וסינון `in Unknown on line 0`. השער המדומה — זהות אחת לשרת; בקשות
   מקבילות רק בשני sessions של אותו משתמש (PHP נועל session).
+
+## פרוסה 04 — עובד שטח בטלפון (PR #1853, מוזג — 2f3786d, פריסה 1879 success)
+
+- **הקבצים:** `lib/field.php` (`field_today/search/case/save/upload` — החיבור ב-`api.php` שתי שורות), `assets/js/field-core.js` (בלי DOM:
+  הקטנה, GPS, התור, `idbStore`, `sendItem`, `backgroundSync` — נבדק ב-node), `assets/js/field.js` (המסך), `assets/css/field.css`, `sw.js`.
+  החיבור ל-`app.js` — האירוע `fd:me` בלבד (נורה גם בהחלפת ארגון — התור נבנה מחדש לפיו).
+- **הכניסה:** ברירת מחדל לתפקיד `field`; לכל אחד אחר `index.html#/field` (ותיק: `#/field/<id>`).
+- **עדכון מהשטח:** `fieldSave()` — רק `TRACK_FIELDS`, שדה אחר בקלט → 403; נשמר ב-`formSaveCase(..., 'field', ...)`.
+- **העלאה:** `fieldUpload()` — מזהה חד-פעמי ב-`field_uploads` (**מיגרציה v3**; v4 — 06; הבאה — v5), ואותו `upload_id` גם ל-`dropboxUploadToCase()` של 03.
+  אחרי ההעלאה התיק **נקרא מחדש** בתוך `BEGIN IMMEDIATE` ומשתנה רק `checks[<הבדיקה של הסוג>]` (`FIELD_KINDS`). Dropbox לא מוכן → 409
+  `dropbox_not_connected` ("Dropbox של הארגון לא מחובר — פנה למנהל"), והקובץ נשאר בתור. סוג הקובץ — `dbxAllowedUpload()` של 03; צילום קבר — תמונה בלבד.
+- **התור במכשיר:** IndexedDB `fd_field` (`queue`, `meta`). `sw.js` — **רק** Background Sync (בלי fetch/מטמון, `run.sh` בודק), ב-`"public"`.
+  `navigator.locks` בין לשוניות ל-SW. iOS — נשלח בפתיחה. פריט שייך למשתמש ולארגון; של משתמש אחר יורד אחרי שבוע.
+- **בדיקות:** `tests/field.test.php` (מדומה), `tests/field-dropbox.test.php` (מול המדומה של 03), `tests/field.test.js`, ו-W1/W5/W7 ב-`run.sh`.
+  בדיקת דפדפן ל-SW נעשתה ידנית (Playwright + CDP `ServiceWorker.dispatchSyncEvent`) — לא ב-CI.
+- **מלכודת ב-`run.sh`:** `kill "$pid"` כש-`pid=0` שולח SIGTERM לכל הקבוצה — רק `if [ "$pid" != 0 ]`.
+- **פתוח:** W8 (מצב טיסה בטלפון) — מטלה לבעלים. `fieldSearch` טוען את כל תיקי הארגון (בסדר ל-22; לשנות אם יגדל). אין `manifest.webmanifest`.
+## אחרי פרוסה 06 (AI מובנה) — 2026-11-24, PR ‏#1848 (7192b8b) + ‏#1857 (5c7a910)
+
+- **איפה:** `ai/lib.php` (הגדרות, תקרות, הספק, כלים, לולאה, הצעות, קבצים), `ai/actions.php` (פעולות `ai_*`; החיבור ב-`api.php` — שתי שורות),
+  `assets/js/ai.js` + `assets/css/ai.css`. הטבלאות — **מיגרציה v4** ב-`lib/schema.php` (`ai_settings`, `ai_usage`, `ai_threads`, `ai_proposals`,
+  `ai_file_kinds`). המיגרציה הבאה — v5.
+- **הכלים = `extDo()` של 05**, בהקשר של המשתמש המחובר, `via: 'ai'`. שני פרמטרים ש-06 הוסיף ל-`extDo`: `$dry` (כתיבה מלאה ואז ROLLBACK —
+  לכרטיס ההצעה) ו-`$guard` (נקרא בתוך הטרנזקציה, לפני `formSaveCase`). פעולה חדשה ב-`extActions()` נהיית כלי של העוזר לבד.
+- **`reply()` במצב לכידה** (`$GLOBALS['fd_reply_capture']` → `FdReply`) — כך 403/404 של פונקציות הליבה חוזרים לספק כ-tool_result.
+  קוד שקורא לפעולה מתוך פעולה — דרך `aiExt()`, ולא ישירות.
+- **שום כתיבה בלי ✓.** הצעה שומרת hash של השדות/הבדיקות שהיא נוגעת בהם (`base`); ✓ אחרי שאדם שינה אותם → 409 `stale`.
+- **הספק:** HTTP ישיר (אין composer בשרת). `fallbacks: "default"`, `cache_control`, ו-`prefix_mismatch_behavior: "drop_block"` (בטא
+  `thinking-binding-controls-2026-08-01`) — כי קבצים מוחלפים בסימון בהיסטוריה אחרי כל סבב. **לא לערוך היסטוריה ולא את `system` של שיחה**
+  בלי לשמור על זה: הודעת המערכת נקבעת פעם אחת לשיחה (`ai_threads.system`).
+- **בדיקות:** `tests/ai.sh` (ספק מדומה `tests/ai-mock.php` + Dropbox המדומה של 03, `tests/ai-dbx-fixture.php`). F1–F7, §2.2.2, §2.3, R1–R3.
+  כל `php -S` — עם `-d opcache.jit=disable`; הניקוי של `data/` שומר `.htaccess` ו-`.gitignore`; אחרי בלוק שמאפס `pid=0` — לא `kill "$pid"` (= `kill 0`).
+- **פתוח:** F8 — ידני אחרי פריסה ומפתח אמיתי ("מה חסר ב<שם>?", "תמלא מהקבצים").
