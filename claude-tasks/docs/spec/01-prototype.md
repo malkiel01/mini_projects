@@ -27,7 +27,8 @@ Code שרץ על המחשב שלו, וההודעה הבאה ממשיכה את א
 
 ### גשר (`desk-bridge/`, Node 20+, בלי תלויות)
 8. `desk-bridge/bridge.mjs pair <code> --url <base> --cwd <תיקייה>` → שומר `~/.claude-tasks-desk/config.json`
-   (אסימון, נושא, cwd, הרשאות, `max_budget_usd`, אופציונלי `anthropic_api_key`), הרשאות קובץ 600 (ב-Windows — תיקיית המשתמש).
+   (אסימון, נושא, cwd, `permissions` (ברירת מחדל `full`), `auth` (ברירת מחדל `api`), `max_budget_usd`, `anthropic_api_key`),
+   הרשאות קובץ 600. `bridge.mjs config [key value]` מציג ומשנה. `auth` ו-`permissions` נקראים מחדש בכל הודעה.
 9. `bridge.mjs run`: `bridge-hello` → `bridge-next` עד שאין → מחובר לזרם `https://ntfy.sh/<topic>/json`; על כל צלצול
    `msg` — `bridge-next`. זרם נפל → חיבור מחדש עם נסיגה (5, 30, 120 שניות); כל עוד הזרם למטה — `bridge-next` פעם בדקה.
 10. ביצוע: `claude -p --output-format stream-json --verbose [--resume <cc_session_id>]` + דגלי ההרשאה מהקובץ
@@ -43,7 +44,8 @@ Code שרץ על המחשב שלו, וההודעה הבאה ממשיכה את א
 3. הודעה שנייה "מה שאלתי קודם?" → עונה נכון (אותו `cc_session_id`, `--resume`).
 4. שני גשרים מקבילים עם אותו אסימון (בדיקה): הודעה רצה **פעם אחת בדיוק**. בדיקה אוטומטית ב-PHP לתפיסה הכפולה.
 5. הגשר נהרג באמצע ריצה → אחרי 30 דק' (או בעלייה הבאה) ההודעה `interrupted`, ובמסך "⚠ נקטע — לשלוח שוב?". לא רצה שוב לבד.
-6. "תעשה git push" → לא מתבצע; התשובה מסבירה שנחסם (`permission_denials`).
+6. פרופיל `repo`: "תעשה git push" → לא מתבצע, התשובה מסבירה שנחסם (`permission_denials`). מעבר ל-`full` ב-`bridge.mjs config`
+   → ההודעה הבאה כבר רצה עם push מותר, בלי הפעלה מחדש של הגשר. אותו דבר ל-`auth api|subscription`.
 7. כשאין הודעה ממתינה והדף פתוח 10 דק' — **אפס** בקשות מהדף; הגשר — רק דופק (≤ 2 בקשות ב-10 דק').
 8. ntfy חסום (בדיקה: נושא שגוי) → הודעה עדיין נענית, תוך ≤ 70 שניות.
 9. אסימון גשר על פעולת בעלים (`send`) → 403. בלי כניסה → 401. Origin זר → 403.
