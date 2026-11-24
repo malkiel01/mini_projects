@@ -17,5 +17,6 @@
 - **⚠️ עומק שושלת:** הבקרה בעומק 7/8, צ'אטי הקוד שהיא פותחת — 8/8. **בקרה מחליפה חייבת להיפתח בידי מנהל הצוותים**, לא בידי הבקרה, אחרת לא תוכל לפתוח צ'אטי קוד.
 - **אפיון גמור** (#1836, #1837; ה10–ה16 ב-00 §6 — להעתיק ל-decisions במיזוג). אפיון רדום.
 - **לזכור ל-03:** שורה ב-CRONS של deploy.yml — `funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log` (הבקרה מוסיפה, יחד עם מיזוג 03).
+- **דף התקדמות לבעלים:** https://claude.ai/artifact/H5rVZgqYnea8rybPsfzd53 — מקור `team/progress.html`; מתעדכן בכל סבב שבו משהו התקדם.
 - **מטלה FD-T1** (Dropbox App Console) נשלחה למטלות.
 - **הצעד הבא:** ביקורת PR של 01; ואז קוד 02, 03 ו-05 במקביל; אחריהן 04 ו-06.
