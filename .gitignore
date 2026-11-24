@@ -25,3 +25,8 @@ trading-strategies/data/secret.key
 .claude/board-link.json
 .claude/board-pending.json
 .claude/board-listen.log
+
+# דשבורד לוויות: נתוני נפטרים, מסד נתונים וסודות נשארים בשרת בלבד
+funerals-dashboard/data/config.php
+funerals-dashboard/data/*.sqlite*
+funerals-dashboard/data/*.json

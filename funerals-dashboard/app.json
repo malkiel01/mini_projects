@@ -1,0 +1,11 @@
+{
+  "id": "funerals-dashboard",
+  "name": "דשבורד לוויות וחוסרים",
+  "icon": "🕯️",
+  "description": "ניהול ממצאי לוויות, מסמכי זיהוי ותשלומים; קישורים מוגבלים ל-Dropbox וייצוא JSON",
+  "category": "daily",
+  "entry": "index.html",
+  "restricted": true,
+  "gate": true,
+  "public": ["ingest.php"]
+}
