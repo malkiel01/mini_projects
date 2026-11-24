@@ -6,7 +6,7 @@
   },
   "code": [],
   "control": {
-    "session": "session_018g4NYES4G3kVk57413GPnM",
+    "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
     "branch": "claude/funerals-dashboard-control",
     "clock": "trig_01PYjng67oPYVSwpwmksWifo"
   },
@@ -55,6 +55,11 @@
     {
       "session": "session_018g4NYFvCTWcu2sJBJangFR",
       "role": "בקרה 1",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYES4G3kVk57413GPnM",
+      "role": "בקרה 2",
       "state": "רדום"
     }
   ]
