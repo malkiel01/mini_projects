@@ -96,6 +96,12 @@ ok "A2 — גיבוי 0600 עם 22 תיקים"
 test "$(jv '$v["org"]["id"]')" = 1 && test "$(jv '$v["dev"]')" = true || fail "A8: המפתח בארגון 1"
 test "$(sql "SELECT m.role FROM members m JOIN users u ON u.id=m.user_id WHERE u.sub='1' AND m.org_id=1")" = admin || fail "A8: המפתח לא admin של ארגון 1"
 code="$(get dev list '&month=2026-10')"; test "$code" = 200 && test "$(jv 'count($v["records"])')" = 22 || fail "A8: המפתח רואה 22 תיקים ($code)"
+# ביקורת 5: secret.key נוצר בשימוש הראשון; מפתח פגום לא מפיל את התיקים ואת ingest.php
+test ! -e "$D/secret.key" || fail "secret.key נוצר בלי שימוש"
+printf 'bad' > "$D/secret.key"
+code="$(get dev list '&month=2026-10')"; test "$code" = 200 || fail "מפתח פגום הפיל את list ($code)"
+code="$(st -H "Authorization: Bearer $TOK0" "$ingest?action=list&month=2026-10")"; test "$code" = 200 || fail "מפתח פגום הפיל את ingest ($code)"
+rm -f "$D/secret.key"
 code="$(get dev dev_health)"; test "$code" = 200 || fail "A8: מסך מפתח ($code)"
 test "$(jv 'count(array_filter($v["checks"], fn($c) => !$c["ok"]))')" = 0 || fail "A16: בדיקת תקינות אדומה: $(jv 'array_values(array_filter($v["checks"], fn($c) => !$c["ok"]))')"
 test "$(stat -c %a "$D/secret.key")" = 600 || fail "A11: secret.key לא 0600"
@@ -138,6 +144,12 @@ login field; test "$code" = 200 && test "$(jv '$v["role"]')" = "'field'" || fail
 test -n "$(sql "SELECT used_at FROM invites WHERE email='x@example.com'")" || fail "A6: used_at"
 test "$(sql "SELECT email FROM users WHERE sub='3'")" = x@example.com || fail "A6: המייל נשמר באותיות קטנות"
 login office; test "$code" = 200 || fail "משרד נכנס ($code)"
+# ביקורת 3: מייל לא מאומת לא מממש הזמנה ולא מקשר חשבון
+code="$(post boss invite '{"email":"unv@example.com","role":"office"}')"; test "$code" = 200 || fail "הזמנה ל-unv ($code)"
+ID[unv]='{"sub":"7","name":"לא מאומת","email":"unv@example.com","email_verified":false,"platform_admin":false,"granted":true}'
+login unv; test "$code" = 403 || fail "ביקורת 3: מייל לא מאומת מימש הזמנה ($code)"
+test -z "$(sql "SELECT used_at FROM invites WHERE email='unv@example.com'")" || fail "ביקורת 3: ההזמנה סומנה"
+test -z "$(sql "SELECT email FROM users WHERE sub='7'")" || fail "ביקורת 3: מייל לא מאומת נשמר"
 ok "A6 — הזמנה במייל (באותיות גדולות) → חבר field, used_at"
 
 # ===== A5: תפקידים — עובד שטח =====
@@ -170,7 +182,14 @@ IMP="$(sql "SELECT id FROM funerals WHERE name='ייבוא משרד'")"
 e="$(ev "$IMP")"; php -r '[$o,$a,$s,$act,$d]=explode("|",$argv[1],5); $d=json_decode($d,true); if($o!=="1"||$a!=="office@example.com"||$s!=="ui"||$act!=="create"||($d["name"][1]??"")!=="ייבוא משרד") exit(1);' "$e" || fail "A10: אירוע import: $e"
 code="$(get office export '&month=2026-10')"; test "$code" = 200 || fail "משרד מייצא ($code)"
 code="$(post office save "$(mut '$r["payments"][0]["amount"]=777;')")"; test "$code" = 200 || fail "משרד משנה תשלום ($code)"
-ok "A10 — כל save/import נרשם ב-events עם org_id, actor ו-diff"
+# ביקורת 4: השוואה מחמירה — תשלום null → 0 בידי עובד שטח הוא שינוי
+refresh(){ get boss list '&month=2026-10' >/dev/null; php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["id"]===$argv[3]) file_put_contents($argv[2], json_encode($r, JSON_UNESCAPED_UNICODE));' "$tmp/out" "$tmp/case.json" "$CID"; }
+refresh; code="$(post office save "$(mut '$r["payments"][0]["amount"]=null;')")"; test "$code" = 200 || fail "משרד מאפס סכום ($code)"
+refresh; code="$(post field save "$(mut '$r["payments"][0]["amount"]=0;')")"; test "$code" = 403 || fail "ביקורת 4: null→0 בידי שטח ($code)"
+code="$(post field save "$(mut '$r["payments"][0]["reference"]="1e2";')")"; test "$code" = 403 || fail "ביקורת 4: אסמכתה בידי שטח ($code)"
+code="$(post field save "$(mut '$r["notes"]="עדיין מותר";')")"; test "$code" = 200 || fail "ביקורת 4: הערה בידי שטח אחרי השוואה מחמירה ($code)"
+refresh
+ok "A10 — כל save/import נרשם ב-events עם org_id, actor ו-diff; השוואה מחמירה"
 
 # ===== A9: ingest.php עם האסימון שהיה לפני המיגרציה =====
 code="$(st -H "Authorization: Bearer $TOK0" "$ingest?action=list&month=2026-10")"; test "$code" = 200 || fail "A9: האסימון הישן ($code)"
@@ -200,6 +219,18 @@ test "$(sql "SELECT COUNT(*) FROM funerals WHERE org_id=2")" = 1 || fail "A4: ה
 code="$(get boss list '&month=2026-10')"; test "$(jv 'count($v["records"])')" = 24 || fail "A4: ארגון 1 רואה $(jv 'count($v["records"])')"
 code="$(post a2 org_switch '{"org_id":1}')"; test "$code" = 404 || fail "A4: מעבר לארגון זר ($code)"
 code="$(get a2 members)"; test "$(jv 'count($v["members"])')" = 1 || fail "A4: חברים של ארגון אחר"
+# ביקורת 2: הזמנה של מייל קיים — ממתינה, לא מצרפת ולא חושפת
+code="$(post a2 invite '{"email":"boss@example.com","role":"admin"}')"; test "$code" = 200 || fail "a2 מזמין את boss ($code)"
+test "$(jv 'count(array_filter($v["members"], fn($m) => $m["email"] === "boss@example.com"))')" = 0 || fail "ביקורת 2: boss ברשימת החברים לפני כניסה"
+test "$(sql "SELECT COUNT(*) FROM members WHERE org_id=2 AND user_id=(SELECT id FROM users WHERE sub='2')")" = 0 || fail "ביקורת 2: צורף מיד"
+# ביקורת 1: השבתה בארגון ב' לא נוגעת בארגון א'
+login boss; test "$(sql "SELECT role FROM members WHERE org_id=2 AND user_id=(SELECT id FROM users WHERE sub='2')")" = admin || fail "boss לא הצטרף לארגון 2 בכניסה"
+BOSS="$(sql "SELECT id FROM users WHERE sub='2'")"
+code="$(post a2 member_active "{\"user_id\":$BOSS,\"active\":false}")"; test "$code" = 200 || fail "a2 משבית את boss בארגון 2 ($code)"
+login boss; test "$code" = 200 && test "$(jv '$v["org"]["id"]')" = 1 || fail "ביקורת 1: boss נחסם בארגון 1 ($code)"
+code="$(get boss list '&month=2026-10')"; test "$code" = 200 || fail "ביקורת 1: boss list בארגון 1 ($code)"
+test "$(sql "SELECT active FROM users WHERE id=$BOSS")" = 1 || fail "ביקורת 1: users.active השתנה"
+code="$(post boss user_active "{\"user_id\":$BOSS,\"active\":false}")"; test "$code" = 403 || fail "ביקורת 1: user_active למנהל ($code)"
 code="$(post dev org_switch '{"org_id":1}')"; test "$code" = 200 || fail "חזרה לארגון 1"
 ok "A4 — ארגון 2 לא רואה ולא משנה תיק של ארגון 1 (404)"
 

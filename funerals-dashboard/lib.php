@@ -83,7 +83,9 @@ function platformUser(): ?array {
     $email = is_string($id['email'] ?? null) && mb_strlen($id['email']) <= 200 && filter_var($id['email'], FILTER_VALIDATE_EMAIL)
         ? mb_strtolower($id['email']) : '';
     $name = mb_substr(trim((string)preg_replace('/\s+/u', ' ', is_string($id['name'] ?? null) ? $id['name'] : '')), 0, 120);
-    return ['sub' => (string)$id['sub'], 'name' => $name, 'email' => $email, 'platform_admin' => ($id['platform_admin'] ?? null) === true,
+    // email_verified — רק מייל מאומת מקשר חשבון קיים או מממש הזמנה (השער שולח שם משתמש כ-email כשלא אומת)
+    return ['sub' => (string)$id['sub'], 'name' => $name, 'email' => $email, 'email_verified' => ($id['email_verified'] ?? null) === true,
+        'platform_admin' => ($id['platform_admin'] ?? null) === true,
         'actor' => $email !== '' ? $email : ($name !== '' ? $name : 'platform:' . $id['sub'])];
 }
 function db(): PDO {
@@ -104,8 +106,7 @@ function db(): PDO {
         reply(503, ['error' => 'מסד הנתונים אינו זמין. בדוק הרשאות כתיבה ותמיכה ב-SQLite.']);
     }
     migrate($pdo);
-    secretKey();   // נוצר בבקשה הראשונה, אם אין
-    return $pdo;
+    return $pdo;   // secret.key נוצר בשימוש הראשון (secretKey) — כך ingest.php ושאר האפליקציה לא תלויים ב-sodium
 }
 function body(): array {
     if (strlen((string)($_SERVER['CONTENT_LENGTH'] ?? '')) > 0 && (int)$_SERVER['CONTENT_LENGTH'] > 1200000) {

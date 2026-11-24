@@ -422,7 +422,7 @@
       });
       const act = node('button', 'btn sm ' + (m.active ? 'danger' : ''), m.active ? 'השבתה' : 'הפעלה'); act.type = 'button'; act.hidden = m.me;
       act.addEventListener('click', async () => {
-        if (m.active && !confirm('להשבית את ' + (m.name || m.email) + '? הוא לא יוכל להיכנס לאף ארגון.')) return;
+        if (m.active && !confirm('להשבית את ' + (m.name || m.email) + '? הוא לא יוכל להיכנס לארגון הזה (בארגונים אחרים — לא משתנה).')) return;
         try { loadMembers(await request('member_active', 'POST', {user_id: m.id, active: !m.active})); } catch (e) { toast(e.message, true); }
       });
       li.append(body, role, act); list.append(li);

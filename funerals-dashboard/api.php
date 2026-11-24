@@ -113,7 +113,7 @@ switch ($action) {
         need('case.view');
         $item = normalize($payload, $org);
         $old = existing($pdo, $item['id'], $org);   // תיק של ארגון אחר → 404
-        need(caseChangeNeeds($old, $item));
+        need(caseChangeNeeds($old === null ? null : normalize($old, $org), $item));
         if ($old !== null) {
             foreach (['name','date','time','origin','team','grave','notes','folder_url','payments'] as $field) {
                 if (($item[$field] ?? null) !== ($old[$field] ?? null)) $item['manual_fields'][] = $field;
@@ -162,12 +162,11 @@ switch ($action) {
         $st->execute([$email]);
         $uid = $st->fetchColumn();
         if ($uid !== false && memberRole($org, (int)$uid) !== null) reply(400, ['error' => 'המשתמש כבר חבר בארגון']);
+        // ההזמנה תמיד ממתינה — מצטרפים בכניסה הבאה. לא מגלים אם יש חשבון במייל הזה, ולא מצרפים מיד.
         $pdo->prepare('DELETE FROM invites WHERE org_id = ? AND email = ? AND used_at IS NULL')->execute([$org, $email]);
         $pdo->prepare('INSERT INTO invites(org_id, email, role, created_by, created_at) VALUES (?,?,?,?,?)')
             ->execute([$org, $email, $role, $ctx['user']['id'], gmdate('c')]);
         recordEvent($org, null, $actor, 'ui', 'invite', ['email' => [null, $email], 'role' => [null, $role]]);
-        // כבר יש לו חשבון — נהיה חבר עכשיו, בלי לחכות לכניסה הבאה
-        if ($uid !== false) acceptInvites((int)$uid, $email, $actor['actor']);
         reply(200, membersOf($org));
     case 'invite_cancel':
         $in = $post();
@@ -200,9 +199,22 @@ switch ($action) {
         $cur = memberRole($org, $uid) ?? reply(404, ['error' => 'החבר לא נמצא']);
         if ($uid === $ctx['user']['id'] && !$active) reply(400, ['error' => 'אי אפשר להשבית את עצמך']);
         if (!$active && $cur === 'admin' && adminCount($org) <= 1) reply(400, ['error' => 'זה המנהל הפעיל האחרון של הארגון']);
-        $pdo->prepare('UPDATE users SET active = ? WHERE id = ?')->execute([$active, $uid]);
-        recordEvent($org, null, $actor, 'ui', $active ? 'user_enabled' : 'user_disabled', ['user_id' => [$uid, $uid], 'active' => [1 - $active, $active]]);
+        // השבתה בארגון הזה בלבד (members.active) — לא נוגעת בחברות שלו בארגונים אחרים
+        $pdo->prepare('UPDATE members SET active = ? WHERE org_id = ? AND user_id = ?')->execute([$active, $org, $uid]);
+        recordEvent($org, null, $actor, 'ui', $active ? 'member_enabled' : 'member_disabled', ['user_id' => [$uid, $uid], 'active' => [1 - $active, $active]]);
         reply(200, membersOf($org));
+    case 'user_active':
+        // חסימה גלובלית של משתמש (users.active) — מפתח בלבד
+        $in = $post();
+        need('dev');
+        $uid = (int)($in['user_id'] ?? 0);
+        $active = !empty($in['active']) ? 1 : 0;
+        if ($uid === $ctx['user']['id']) reply(400, ['error' => 'אי אפשר לחסום את עצמך']);
+        $st = $pdo->prepare('UPDATE users SET active = ? WHERE id = ?');
+        $st->execute([$active, $uid]);
+        if (!$st->rowCount()) reply(404, ['error' => 'המשתמש לא נמצא']);
+        recordEvent(null, null, $actor, 'ui', $active ? 'user_enabled' : 'user_disabled', ['user_id' => [$uid, $uid], 'active' => [1 - $active, $active]]);
+        reply(200, ['ok' => true]);
 
     /* ===== ארגונים ===== */
     case 'orgs':
@@ -267,8 +279,8 @@ function caseChangeNeeds(?array $old, array $new): string {
     foreach ($new as $k => $v) {
         if (in_array($k, TRACK_FIELDS, true) || $k === 'manual_fields' || $k === 'id') continue;
         $before = $old[$k] ?? (is_array($v) ? [] : '');
-        // השוואה רופפת: 100 ו-100.0 (סכום אחרי JSON) — אותו ערך
-        if ($before != $v) return 'case.edit';
+        // השוואה מחמירה מול התיק הקודם אחרי normalize() — אותם טיפוסים, כך ש-null→0 או "100"→"1e2" נתפסים כשינוי
+        if ($before !== $v) return 'case.edit';
     }
     return 'case.track';
 }
@@ -279,12 +291,12 @@ function memberRole(int $org, int $uid): ?string {
     return $r === false ? null : (string)$r;
 }
 function adminCount(int $org): int {
-    $st = db()->prepare("SELECT COUNT(*) FROM members m JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.role = 'admin' AND u.active = 1");
+    $st = db()->prepare("SELECT COUNT(*) FROM members m JOIN users u ON u.id = m.user_id WHERE m.org_id = ? AND m.role = 'admin' AND m.active = 1 AND u.active = 1");
     $st->execute([$org]);
     return (int)$st->fetchColumn();
 }
 function membersOf(int $org): array {
-    $st = db()->prepare('SELECT u.id, u.name, u.email, u.active, u.last_seen_at, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY u.name, u.email');
+    $st = db()->prepare('SELECT u.id, u.name, u.email, m.active, u.last_seen_at, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY u.name, u.email');
     $st->execute([$org]);
     $members = array_map(fn($r) => ['id' => (int)$r['id'], 'name' => $r['name'], 'email' => $r['email'], 'active' => (int)$r['active'] === 1,
         'role' => $r['role'], 'last_seen_at' => $r['last_seen_at'], 'me' => (int)$r['id'] === ctx()['user']['id']], $st->fetchAll());
@@ -308,8 +320,10 @@ function healthChecks(PDO $pdo): array {
     $add('schema', 'גרסת סכמה', $v === SCHEMA_VERSION, $v . ' (נדרש ' . SCHEMA_VERSION . ')');
     $add('version', 'גרסת האפליקציה', true, VERSION);
     $kp = secretKeyPath();
+    $selfTest = secretSelfTest();   // קודם — יוצר את המפתח בשימוש הראשון
+    clearstatcache();
     $mode = is_file($kp) ? substr(sprintf('%o', fileperms($kp)), -3) : '';
-    $add('secret_key', 'secret.key קיים ותקין', is_file($kp) && $mode === '600' && secretSelfTest(), $mode !== '' ? 'הרשאות ' . $mode : 'חסר');
+    $add('secret_key', 'secret.key קיים ותקין', is_file($kp) && $mode === '600' && $selfTest, $mode !== '' ? 'הרשאות ' . $mode : 'חסר');
     $add('sodium', 'sodium', extension_loaded('sodium'));
     $add('pdo_sqlite', 'pdo_sqlite', extension_loaded('pdo_sqlite'), (string)$pdo->query('SELECT sqlite_version()')->fetchColumn());
     $files = glob(backupDir() . '/*.sqlite') ?: [];

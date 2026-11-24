@@ -74,6 +74,8 @@ function migrateV1(PDO $pdo): void {
     $pdo->exec('CREATE TABLE IF NOT EXISTS members (org_id INTEGER NOT NULL, user_id INTEGER NOT NULL, role TEXT NOT NULL CHECK (role IN (\'admin\',\'office\',\'field\')),
         created_at TEXT NOT NULL, created_by INTEGER, PRIMARY KEY (org_id, user_id))');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id)');
+    // השבתה היא לארגון (members.active). users.active — חסימה גלובלית, רק בידי מפתח.
+    if (!hasColumn($pdo, 'members', 'active')) $pdo->exec('ALTER TABLE members ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
     $pdo->exec('CREATE TABLE IF NOT EXISTS invites (id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, email TEXT NOT NULL, role TEXT NOT NULL,
         created_by INTEGER, created_at TEXT NOT NULL, used_at TEXT)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_invites_email ON invites(email)');
