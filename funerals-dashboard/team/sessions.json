@@ -27,9 +27,9 @@
     }
   ],
   "control": {
-    "session": "session_018g4NYFvCTWcu2sJBJangFR",
+    "session": "session_018g4NYES4G3kVk57413GPnM",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_01VUaKANMqdEscU5LSbHmFmn"
+    "note": "בקרה 2; השעון עובר אליה"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -49,6 +49,13 @@
     {
       "session": "session_018g4NYE4eQofqbBdfWGEthU",
       "slice": "02",
+      "state": "רדום"
+    }
+  ],
+  "control_done": [
+    {
+      "session": "session_018g4NYFvCTWcu2sJBJangFR",
+      "role": "בקרה 1",
       "state": "רדום"
     }
   ]
