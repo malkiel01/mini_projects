@@ -71,3 +71,22 @@
 3. **אחרי מיזוג 03:** להעביר את `tokens` / `ext_fail` מ-`extEnsureSchema()` למיגרציה ממוספרת (migrateV3), אחרי v2 של 03.
 4. **06:** קורא ל-`extDo(..., 'ai')`. פונקציות הליבה עונות ב-`reply()` ולא זורקות — אם 06 צריך, זה שינוי של 01.
 
+## פרוסה 03 — Dropbox דו-כיווני (PR #1844, מוזג — f3064a0)
+
+**מצב:** C1–C11, C13 אוטומטיים ב-`tests/dropbox-test.php` מול Dropbox מדומה (`tests/dropbox-mock.php`), נקרא בסוף `run.sh`.
+**C12 ידני בשרת** — אחרי המטלה לבעלים (App Console + App key/secret ב-⚙️ ← Dropbox). פירוט מלא: `dropbox/README.md`.
+
+- **קבצים:** `dropbox/lib.php` (לקוח, סנכרון, תיקיות), `dropbox/actions.php` (פעולות api.php + הממשק היציב), `dropbox/compat.php`
+  (נקודת החיבור היחידה ל-01: secrets, recordEvent, ctx/can/scope), `dropbox-webhook.php` (ציבורי), `bin/dropbox-sync.php` (cron, CLI בלבד).
+- **מסד:** `migrateV2` (SCHEMA_VERSION=2): `dbx_orgs`, `dbx_folders`, `case_folders`, `files` (UNIQUE(org_id, dbx_id), `upload_id`),
+  `dbx_oauth`. מיגרציה הבאה — v3.
+- **OAuth:** ה-callback מטופל ב-`api.php` **לפני** `session_start` (עוגיית fd_session היא Strict ולא חוזרת מ-dropbox.com); state בטבלה.
+- **הרשאות:** `dropbox.manage` (מנהל), `files.upload` (משרד, מנהל) ב-PERMS. לשטח (04) — להוסיף `field` ל-`files.upload` או הרשאה משלה.
+- **ממשק לאחרים** (`dropbox/actions.php`): `dropboxUploadToCase(…, $via, ?$uploadId)`, `dropboxCaseFiles($pdo, $case)`,
+  `dropboxFileContent($pdo, $orgId, int $fileId, $maxBytes)`, `dropboxFileText(…)` (txt/csv/md/json בלבד). שגיאות — `DbxError->tag`.
+  ארגון שמעולם לא חובר → `not_connected`. החתימות נשלחו ל-04, 05, 06.
+- **SQLite:** שליפת שורה אחת — רק דרך `dbxRow()` (סוגר את הסמן). סמן פתוח בזמן קריאה ל-Dropbox גרם ל-"database is locked".
+- **פתוח:** מגבלת ההעלאה של PHP בשרת (upload_max_filesize) — לא ב-`.user.ini` של האפליקציה (build-gate עוצר פריסה); מוצגת
+  בבדיקות התקינות. ההחלטה אצל הבקרה/הבעלים. שורת ה-CRONS — הבקרה. הבדיקה של 05 (`tests/ext-dbx.php`) מדלגת עכשיו — 05 רשמה להריץ מול המדומה.
+- **בדיקות:** שרתי `php -S` עם `-d opcache.jit=disable`, וסינון `in Unknown on line 0`. השער המדומה — זהות אחת לשרת; בקשות
+  מקבילות רק בשני sessions של אותו משתמש (PHP נועל session).
