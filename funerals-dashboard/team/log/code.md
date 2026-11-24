@@ -23,3 +23,7 @@
   ממוזג ל-`main`: `formSaveCase($pdo,$raw,$via,$actor[],$orgId,$authorize)` מעל `store()`/`existing()` של 01; `formEventSource()` (field→ui,
   ai→api, dropbox→system); `history` כ-case ב-api.php עם `need('case.view')` ו-`scope()`; ה-UI הועבר ל-`assets/js/app.js`; B1–B7 ב-`run.sh` של 01.
   הערה ל-01: `caseDiff()` רושם `payments` כשינוי כש-402 מול 402.0 (השוואה קשיחה) — ההיסטוריה שלי מסננת, אבל ב-`events` זה רעש.
+- 2026-11-24 — הודעה מקוד 05: קורא ל-`finalAllowed($via)` — **תואם** (אותה חתימה, bool; אותם שדות `by`/`via`/`at`). שני הבדלים ליישור
+  אצל מי שממוזג שני (00 §4): (1) ניסוח ההערה — אצלי `הוצע (צ'אט חיצוני): <סטטוס> — <ערך>`, אצל 05 `הוצע בצ'אט: …`; (2) אצלי בדיקה
+  שאדם כבר סגר (verified/reported/not_applicable) **לא נפתחת מחדש** בידי מקור אוטומטי — ההצעה נכנסת רק להערה. המלצה: 05 קורא ל-
+  `formApplyChecks($new,$old,'api',$by)` (או `formSaveCase`) במקום מימוש משלו. לא יכולתי לענות ל-05 — send_message חסום בהרשאה.
