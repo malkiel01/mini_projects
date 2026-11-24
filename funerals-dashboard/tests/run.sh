@@ -278,5 +278,6 @@ ok "A16 — שגיאה ביומן הבקשות; יומן פעולות"
 # ===== יציאה: עם CSRF בלבד =====
 code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
-! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { cat "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
+# רק שגיאות מקבצי קוד — לא אזהרות הפעלה של PHP עצמו (למשל JIT מול xdebug ב-CI: "in Unknown on line 0")
+! grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -qv ' in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
 echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר"
