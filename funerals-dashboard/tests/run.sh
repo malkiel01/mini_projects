@@ -7,6 +7,7 @@ cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; rm 
 trap cleanup EXIT
 php -l funerals-dashboard/api.php
 php -l funerals-dashboard/setup.php
+php platform/check-apps.php
 php -r '$h=file_get_contents("funerals-dashboard/index.html"); if (!preg_match("~<script>\s*(.*?)\s*</script>~s", $h, $m)) exit(1); file_put_contents("/tmp/fd-dashboard-ui-check.js",$m[1]);'
 node --check /tmp/fd-dashboard-ui-check.js
 php -r '$c=["username"=>"admin","password_hash"=>password_hash("local-test-pass-1234",PASSWORD_DEFAULT),"api_token_sha256"=>hash("sha256","local-test-token"),"dropbox_app_key"=>""]; file_put_contents("funerals-dashboard/data/config.php","<?php\nreturn ".var_export($c,true).";\n");'
