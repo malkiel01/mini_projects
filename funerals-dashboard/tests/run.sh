@@ -15,7 +15,7 @@ fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונ�
 ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
-for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php lib/field.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php tests/field.test.php; do
+for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php lib/field.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php tests/field.test.php tests/field-dropbox.test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
 node --check "$APP/assets/js/app.js" || fail "node --check app.js"
@@ -400,11 +400,10 @@ test "$(sql "SELECT source||'|'||action||'|'||actor FROM events WHERE case_id='$
 # W7: Dropbox לא מחובר (03 עוד לא בקוד, או מנותק) → הודעה ברורה, לא שגיאה שקטה
 printf '\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9' > "$tmp/p.jpg"
 up(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -H "X-CSRF-Token: ${CSRF[$1]:-}" -F "case_id=$2" -F "upload_id=$3" -F "kind=$4" -F "file=@$5" "$base?action=field_upload"; }
+# (ארגון 1 לא מחובר ל-Dropbox בבדיקות האלה — גם אחרי פרוסה 03)
 code="$(up field "$FID" up_w7_00000000000000 grave_photo "$tmp/p.jpg")"
-if ! grep -q "function dbxReadyOrg" "$APP"/dropbox/lib.php 2>/dev/null; then
   test "$code" = 409 && test "$(jv '$v["error"]')" = "'Dropbox של הארגון לא מחובר — פנה למנהל'" && test "$(jv '$v["code"]')" = "'dropbox_not_connected'" || fail "W7: Dropbox לא מחובר ($code)"
   test "$(sql "SELECT status FROM field_uploads WHERE upload_id='up_w7_00000000000000'")" = failed || fail "W7: לא נרשם כנכשל"
-fi
 printf '<svg xmlns="http://www.w3.org/2000/svg"/>' > "$tmp/x.svg"
 code="$(up field "$FID" up_svg_0000000000000 other "$tmp/x.svg")"; test "$code" = 415 || fail "04: SVG → 415 ($code)"
 code="$(up a2 "$FID" up_a2_00000000000000 other "$tmp/p.jpg")"; test "$code" = 404 || fail "04: העלאה לתיק של ארגון אחר → 404 ($code)"
@@ -419,6 +418,9 @@ code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
 echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7; פרוסה 04 — W1, W5, W7"
 
 # ===== פרוסה 04 — העלאה מהשטח (מזהה חד-פעמי, שיוך לבדיקה) מול העלאה מדומה, מסד נקי =====
-kill "$pid" >/dev/null 2>&1 || true; pid=0
+# (kill 0 היה שולח אות לכל קבוצת התהליכים — לכן רק אם השרת עוד רץ)
+if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; pid=0; fi
 wipe
 php "$APP/tests/field.test.php" || fail "פרוסה 04 — field.test.php"
+wipe
+php "$APP/tests/field-dropbox.test.php" || fail "פרוסה 04 — מול Dropbox מדומה"

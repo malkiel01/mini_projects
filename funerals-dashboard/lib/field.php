@@ -190,7 +190,7 @@ function fieldFileName(string $kind, array $case, string $original, ?DateTimeImm
 function fieldUploadIdValid(string $id): bool { return (bool)preg_match('/^[A-Za-z0-9_-]{16,80}$/D', $id); }
 
 /**
- * העלאה מהשטח, עם מזהה חד-פעמי. $uploader — fn(PDO, int org, array case, string tmp, string name, string kind, array actor): array
+ * העלאה מהשטח, עם מזהה חד-פעמי. $uploader — fn(PDO, int org, array case, string tmp, string name, string kind, array actor, string uploadId): array
  * שמחזירה ['file_id' => int|null, 'name' => string, 'link' => string|null], וזורקת FieldUploadError.
  * מחזירה [status, body]. אותו upload_id שכבר הצליח → אותה תשובה, בלי לקרוא ל-uploader (W3).
  */
@@ -231,7 +231,7 @@ function fieldUpload(PDO $pdo, int $orgId, string $caseId, string $uploadId, str
 
     $name = fieldFileName($kind, $case, $original, $now);
     try {
-        $file = $uploader($pdo, $orgId, $case, $tmp, $name, $kind, $actor);
+        $file = $uploader($pdo, $orgId, $case, $tmp, $name, $kind, $actor, $uploadId);
     } catch (FieldUploadError $e) {
         $pdo->prepare("UPDATE field_uploads SET status = 'failed', error = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
             ->execute([$e->tag, gmdate('c'), $orgId, $uploadId]);
@@ -264,31 +264,14 @@ function fieldUpload(PDO $pdo, int $orgId, string $caseId, string $uploadId, str
 }
 
 /**
- * ההעלאה ל-Dropbox דרך הקוד של פרוסה 03 (dropbox/lib.php): תיקיית התיק (נוצרת בהעלאה הראשונה), העלאה, שורה ב-files
- * עם added_via = field ו-kind. כל עוד 03 לא בקוד — "Dropbox לא מחובר" (409), והקובץ נשאר בתור במכשיר.
+ * ההעלאה ל-Dropbox דרך הממשק היציב של פרוסה 03: dropboxUploadToCase() — תיקיית התיק (נוצרת בהעלאה הראשונה), העלאה,
+ * ושורה ב-files עם added_via = field. אותו upload_id גם שם, כך שגם אם הבקשה נקטעה אחרי ההעלאה — ניסיון חוזר לא מעלה שוב.
+ * כל עוד 03 לא בקוד, או ש-Dropbox של הארגון לא מוכן — "Dropbox לא מחובר" (409), והקובץ נשאר בתור במכשיר.
  */
-function fieldDropboxUploader(PDO $pdo, int $orgId, array $case, string $tmp, string $name, string $kind, array $actor): array {
-    $need = ['dbxReadyOrg', 'dbxUploadFile', 'dbxUpsertFile', 'dbxCreateCaseFolder', 'dbxLowerInRoot'];
-    foreach ($need as $fn) if (!function_exists($fn)) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
+function fieldDropboxUploader(PDO $pdo, int $orgId, array $case, string $tmp, string $name, string $kind, array $actor, ?string $uploadId = null): array {
+    if (!function_exists('dropboxUploadToCase')) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
     try {
-        $org = dbxReadyOrg($pdo, $orgId);
-        $st = $pdo->prepare('SELECT cf.dbx_folder_id, COALESCE(df.path, cf.dbx_path) AS path FROM case_folders cf
-            LEFT JOIN dbx_folders df ON df.org_id=cf.org_id AND df.dbx_id=cf.dbx_folder_id WHERE cf.org_id=? AND cf.case_id=?');
-        $st->execute([$orgId, $case['id']]);
-        $folder = $st->fetch();
-        $folderPath = $folder ? (string)$folder['path'] : dbxCreateCaseFolder($pdo, $org, $case, $actor)[1];
-        $meta = dbxUploadFile($pdo, $org, $folderPath, $tmp, $name);
-        if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new FieldUploadError(502, 'upload_result', 'ההעלאה ל-Dropbox נכשלה');
-        dbxUpsertFile($pdo, $orgId, $meta, 'field', (string)$actor['actor']);
-        $pdo->prepare("UPDATE files SET added_via = 'field', kind = ?, added_by = COALESCE(added_by, ?) WHERE dbx_id = ?")
-            ->execute([$kind, (string)$actor['actor'], $meta['id']]);
-        $row = $pdo->prepare('SELECT id, name FROM files WHERE dbx_id = ?');
-        $row->execute([$meta['id']]);
-        $f = $row->fetch();
-        return ['file_id' => $f ? (int)$f['id'] : null, 'name' => (string)($f['name'] ?? $meta['name']),
-            'link' => $f ? 'api.php?action=file_view&id=' . (int)$f['id'] : null];
-    } catch (FieldUploadError $e) {
-        throw $e;
+        $f = dropboxUploadToCase($pdo, $orgId, $case, $tmp, $name, $actor, 'field', $uploadId);
     } catch (Throwable $e) {
         if (!is_a($e, 'DbxError')) throw $e;
         $tag = (string)$e->tag;
@@ -297,6 +280,9 @@ function fieldDropboxUploader(PDO $pdo, int $orgId, array $case, string $tmp, st
         if (str_contains($tag, 'insufficient_space')) throw new FieldUploadError(507, 'insufficient_space', 'אין מספיק מקום בחשבון ה-Dropbox — פנה למנהל');
         throw new FieldUploadError(502, 'dropbox_error', 'ההעלאה ל-Dropbox נכשלה — נסה שוב');
     }
+    // סוג המסמך — של השטח (03 משאיר אותו ריק)
+    $pdo->prepare("UPDATE files SET kind = ? WHERE id = ? AND kind = ''")->execute([$kind, (int)$f['id']]);
+    return ['file_id' => (int)$f['id'], 'name' => (string)$f['name'], 'link' => 'api.php?action=file_view&id=' . (int)$f['id']];
 }
 
 /** סוגי קבצים: תמונה, PDF, מסמכי Office — לפי התוכן (finfo), ו-Office החדש (zip) רק עם סיומת מתאימה. בלי SVG/HTML. */

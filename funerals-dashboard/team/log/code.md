@@ -40,3 +40,8 @@
 - **ניסיון send_message לקוד 03 לתיאום החתימה — נחסם בהרשאה.** לכן לא ביקשתי שינוי ב-03; ה-idempotency אצלי. אחרי מיזוג 03:
   `git merge origin/main`, ובדיקה של `fieldDropboxUploader` מול `tests/dropbox-mock.php` (W2 עם קובץ אמיתי במדומה).
 - בדיקות: `tests/field.test.php`, `tests/field.test.js`, W1/W5/W7 ב-`run.sh` — כולן ירוקות. W8 — ידני בטלפון.
+- 2026-11-24 — 03 כבר מציע `dropboxUploadToCase($pdo,$orgId,$case,$tmp,$name,$actor,$via,$uploadId)` (בענף 03, 69dadac). עברתי אליו
+  (במקום להרכיב את הפונקציות הפנימיות). `tests/field-dropbox.test.php` — W2–W4, W7 מול המדומה של 03; מדלג כל עוד 03 לא בקוד.
+  **מיזוג ניסיון מקומי עם ענף 03 (לא נדחף): כל run.sh ירוק, כולל C1–C13 ו-W מול המדומה.** התנגשויות צפויות במיזוג: `index.html`
+  (שורת ה-CSS), `tests/run.sh` (רשימת `php -l` והסוף), `team/log/code.md` — כולן הוספה משני הצדדים.
+  נמצא ותוקן: `kill "$pid"` עם `pid=0` (אחרי בלוק 03) שולח SIGTERM לכל הקבוצה — אצלי רק אם השרת רץ.

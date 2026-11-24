@@ -34,14 +34,15 @@
 | `field_today`, `field_search`, `field_case`, `field_save`, `field_upload` — החיבור ב-`api.php` הוא שתי שורות | `lib/field.php` |
 | הקטנה (2,560 בצלע הארוכה, JPEG 85%), ה-GPS מה-EXIF נשמר וכל השאר נמחק, תור ההעלאות — בלי DOM | `assets/js/field-core.js` |
 | המסך, התור ב-IndexedDB (`fd_field`), השליחה | `assets/js/field.js`, `assets/css/field.css` |
-| בדיקות | `tests/field.test.php` (שרת, העלאה מדומה), `tests/field.test.js` (W6, התור), ו-W1/W5/W7 ב-`run.sh` |
+| בדיקות | `tests/field.test.php` (שרת, העלאה מדומה), `tests/field-dropbox.test.php` (W2–W4, W7 מול Dropbox המדומה של 03), `tests/field.test.js` (W6, התור), ו-W1/W5/W7 ב-`run.sh` |
 
 - **עדכון מהשטח** — רק `checks`, `notes`, `grave` (שדה אחר בקלט → 403), נשמר ב-`formSaveCase(..., 'field', ...)` של 02.
 - **מזהה חד-פעמי** — הדפדפן נותן לכל קובץ `upload_id` ושולח איתו בכל ניסיון. `data/funerals.sqlite` ← `field_uploads`
   (`org_id`, `upload_id`): אותו מזהה שהצליח מחזיר את אותו קובץ בלי לשלוח שוב ל-Dropbox.
 - **שיוך לבדיקה** — סוג קובץ ← בדיקה (`FIELD_KINDS`: רישיון קבורה ← `license_document` וכו'). הבדיקה עוברת ל"לאימות" רק אם
   היא טרם נבדקה / חסרה / לא קריאה; בדיקה שאדם כבר סגר — לא יורדת.
-- **ההעלאה** — דרך הקוד של פרוסה 03 (`dbxReadyOrg`, `dbxUploadFile`, `dbxUpsertFile`…), עם `added_via = field` ו-`kind`.
+- **ההעלאה** — דרך הממשק היציב של פרוסה 03, `dropboxUploadToCase(..., 'field', $uploadId)` (אותו מזהה גם שם — ניסיון
+  חוזר אחרי בקשה שנקטעה לא מעלה שוב), ואחריו `kind` ב-`files`.
   כל עוד 03 לא בקוד, או ש-Dropbox של הארגון מנותק: 409 "Dropbox של הארגון לא מחובר — פנה למנהל", והקובץ נשאר בתור.
 - **התור** — ממתין לשליחה ← שולח… ← נשלח ✓ (עם קישור); אין רשת / 5xx → ניסיון חוזר (5 שניות עד 5 דקות); Dropbox מנותק → כל
   5 דקות; שגיאה אחרת → ידני. ⟳ ניסיון חוזר, ✕ ביטול. "נשלח ✓" יורד מהמכשיר אחרי יום. פריט של משתמש אחר במכשיר לא נשלח.

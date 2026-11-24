@@ -94,7 +94,7 @@ ok($pdo->query("SELECT status FROM field_uploads WHERE upload_id='" . $uid('d') 
 [$st] = fieldUpload($pdo, 1, $t0['id'], $uid('d'), 'grave_photo', $tmp, 'x.jpg', $actor, $fake, $now);
 ok($st === 200, 'W7: ניסיון חוזר עם אותו מזהה — מצליח');
 // בלי הקוד של 03 — fieldDropboxUploader עונה "לא מחובר"
-if (!function_exists('dbxReadyOrg')) {
+if (!function_exists('dropboxUploadToCase')) {
     try { fieldDropboxUploader($pdo, 1, $t0, $tmp, 'x.jpg', 'other', $actor); ok(false, 'W7: בלי 03 — חריגה'); }
     catch (FieldUploadError $e) { ok($e->status === 409 && $e->getMessage() === FIELD_DBX_DOWN, 'W7: בלי 03 — 409 "לא מחובר"'); }
 }
