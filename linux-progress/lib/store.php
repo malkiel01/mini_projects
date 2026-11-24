@@ -14,6 +14,7 @@ const LP_PATH = 'progress/linux-progress.json';
 const LP_TOKEN_MIN = 20;
 const LP_TOKEN_MAX = 512;
 const LP_STATUSES = ['done', 'verified'];
+const LP_MODULE_ID = '/^\d{2}\.\d{2}$/';
 
 /** תיקיית האפליקציה: linux-progress/. השורש: mini_projects/. */
 function lp_app_dir(): string {
@@ -87,7 +88,13 @@ function lp_validate(mixed $data): ?array {
         if (!is_string($topic) || $topic === '' || mb_strlen($topic) > 200) return null;
         if (!is_string($status) || !in_array($status, LP_STATUSES, true)) return null;
         if (!is_string($note) || mb_strlen($note) > 500) return null;
-        $out[] = ['date' => $date, 'topic' => $topic, 'status' => $status, 'note' => $note];
+        $row = ['date' => $date, 'topic' => $topic, 'status' => $status, 'note' => $note];
+        // moduleId אופציונלי: מזהה מודול בתוכנית, למשל "03.02". צורה לא תקינה → הרשומה נפסלת.
+        if (isset($it['moduleId'])) {
+            if (!is_string($it['moduleId']) || !preg_match(LP_MODULE_ID, $it['moduleId'])) return null;
+            $row['moduleId'] = $it['moduleId'];
+        }
+        $out[] = $row;
     }
     return $out;
 }

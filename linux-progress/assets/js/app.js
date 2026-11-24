@@ -19,6 +19,45 @@
     el.hidden = false;
   }
 
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = String(text);
+    return n;
+  }
+
+  function renderSummary(sum) {
+    const box = $('syllabus');
+    box.textContent = '';
+    if (!sum) { box.hidden = true; return; }
+    box.hidden = false;
+    const o = sum.overall;
+    box.append(el('h2', 'sec', 'מסלול הלימוד'));
+    box.append(el('p', 'overall', `נלמדו ${o.practiced} מתוך ${o.total} מודולים (${o.percent}%) · אומתו ${o.verified}`));
+    if (sum.pace) {
+      box.append(el('p', 'pace', `קצב: ${sum.pace.modulesPerWeek} מודולים בשבוע, מאז ${sum.pace.since}`));
+    }
+    for (const t of sum.tracks) {
+      const card = el('div', 'track');
+      card.append(el('div', 'track-head', `${t.title} — ${t.practiced}/${t.total} (${t.percent}%)`));
+      const bar = el('div', 'bar');
+      const fill = el('div', 'fill');
+      fill.style.width = Math.min(100, t.percent) + '%';
+      bar.append(fill);
+      card.append(bar);
+      if (t.remaining.length) {
+        const det = document.createElement('details');
+        det.append(el('summary', '', `נותרו ${t.remaining.length}`));
+        const ul = el('ul', 'remaining');
+        for (const r of t.remaining) ul.append(el('li', '', `${r.id} ${r.title}`));
+        det.append(ul);
+        card.append(det);
+      }
+      box.append(card);
+    }
+    if (sum.unmapped) box.append(el('p', 'unmapped', `${sum.unmapped} תרגולים לא מקושרים למודול בתוכנית`));
+  }
+
   function render(items) {
     const list = $('items');
     list.textContent = '';
@@ -66,6 +105,7 @@
     .then((data) => {
       if (data.status === 'ok') {
         render(Array.isArray(data.items) ? data.items : []);
+        renderSummary(data.summary);
         return;
       }
       show('state', MESSAGES[data.status] || MESSAGES.unavailable);

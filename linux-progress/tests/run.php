@@ -63,5 +63,38 @@ array_map('unlink', glob("$base/academy-secrets/*") ?: []);
 array_map('unlink', glob("$base/wide/*") ?: []);
 @rmdir("$base/academy-secrets"); @rmdir("$base/wide"); @rmdir($base);
 
+
+// ---------- סיכום מול התוכנית (lib/syllabus.php) ----------
+require_once __DIR__ . '/../lib/syllabus.php';
+$syl = ['tracks' => [['id' => '01', 'title' => 'יסודות'], ['id' => '03', 'title' => 'Linux']],
+        'modules' => [['id' => '01.01', 'trackId' => '01', 'title' => 'א'], ['id' => '01.02', 'trackId' => '01', 'title' => 'ב'],
+                      ['id' => '03.01', 'trackId' => '03', 'title' => 'ג'], ['id' => '03.02', 'trackId' => '03', 'title' => 'ד']]];
+$cur = lp_read_curriculum($syl);
+ok('תוכנית: נקראה עם 2 מסלולים ו-4 מודולים', $cur !== null && count($cur['tracks']) === 2 && count($cur['modules']) === 4);
+ok('תוכנית לא תקינה → null', lp_read_curriculum(['x' => 1]) === null);
+$today = new DateTimeImmutable('2026-11-24');
+$items = [
+    ['date' => '2026-11-22', 'topic' => 'chmod', 'status' => 'done', 'note' => '', 'moduleId' => '03.02'],
+    ['date' => '2026-11-22', 'topic' => 'מודול אחר', 'status' => 'verified', 'note' => '', 'moduleId' => '01.01'],
+    ['date' => '2026-11-22', 'topic' => 'בלי מזהה', 'status' => 'done', 'note' => ''],
+    ['date' => '2026-11-22', 'topic' => 'מזהה לא קיים', 'status' => 'done', 'note' => '', 'moduleId' => '09.09'],
+];
+$sum = lp_summary($cur, $items, $today);
+ok('סיכול: נלמדו 2 מודולים מתוך 4 (50%)', $sum['overall']['practiced'] === 2 && $sum['overall']['total'] === 4 && $sum['overall']['percent'] === 50.0);
+ok('סיכום: אומתו 1 (רק 01.01)', $sum['overall']['verified'] === 1);
+ok('מסלול 03: 1 מתוך 2, נותר 03.01', $sum['tracks'][1]['id'] === '03' && $sum['tracks'][1]['practiced'] === 1 && $sum['tracks'][1]['remaining'][0]['id'] === '03.01');
+ok('לא ממופה: 2 רשומות (בלי מזהה, ומזהה לא קיים)', $sum['unmapped'] === 2);
+ok('קצב: שבוע 1 מ-22.11, 2 מודולים נלמדים', $sum['pace']['weeks'] === 1 && $sum['pace']['modulesPerWeek'] === 2.0);
+$sumEmpty = lp_summary($cur, [], $today);
+ok('בלי רשומות: אחוז 0 וקצב ריק', $sumEmpty['overall']['percent'] === 0.0 && $sumEmpty['pace'] === null);
+$sumFar = lp_summary($cur, [['date' => '2026-10-01', 'topic' => 'x', 'status' => 'done', 'note' => '', 'moduleId' => '01.01']], $today);
+ok('קצב: 54 ימים = 8 שבועות, 1 מודול → 0.1 בשבוע', $sumFar['pace']['weeks'] === 8 && $sumFar['pace']['modulesPerWeek'] === 0.1);
+ok('moduleId בצורה לא תקינה → הרשומה נפסלת', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'moduleId' => '3.2']]]) === null);
+ok('moduleId תקין נשמר', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'moduleId' => '03.02']]])[0]['moduleId'] === '03.02');
+[$cs, $cc] = lp_fetch_curriculum(str_repeat('t', 30), fn($u, $t) => [200, json_encode($syl, JSON_UNESCAPED_UNICODE)]);
+ok('תוכנית נקראת מהריפו דרך השרת', $cs === 'ok' && count($cc['modules']) === 4);
+ok('תוכנית: בלי סוד → no_token', lp_fetch_curriculum(null)[0] === 'no_token');
+ok('תוכנית: 404 → unavailable', lp_fetch_curriculum('x', fn($u, $t) => [404, false])[0] === 'unavailable');
+
 echo ($fails === 0 ? "✓ " : "✗ ") . ($n - $fails) . " עברו, $fails נכשלו (מתוך $n)\n";
 exit($fails === 0 ? 0 : 1);
