@@ -248,62 +248,86 @@ def steps_for(s):
 PILL = {'ok': ('ok', 'בשרת'), 'run': ('run', 'בבנייה'), 'wait': ('wait', 'ממתין')}
 
 
+def app_desc(app):
+    try:
+        return json.loads(show('origin/main', f'{app}/app.json') or '{}').get('description', '')
+    except ValueError:
+        return ''
+
+
+def task_html(w):
+    head = ' · '.join(x for x in (w.get('kind', ''), w.get('id', '')) if x)
+    st = w.get('status') or ''
+    sub = f'<span class="foot">{esc(st)}</span>' if st else ''
+    text = w['text']
+    cut = re.split(r'(?<=[.;:])\s', text, maxsplit=1)
+    short = cut[0] if len(cut[0]) >= 30 or len(cut) == 1 else text[:120]
+    short = short if len(short) <= 120 else short[:118].rstrip() + '…'
+    short = short.rstrip(' :;')
+    more = f'<details><summary>פירוט</summary><p>{esc(text)}</p></details>' if short != text.rstrip(' :;') else ''
+    return (f'<div class="task"><div><b>{esc(head)}</b><span class="txt">{esc(short)}</span>{more}{sub}</div>'
+            f'<span class="pill run">פתוחה</span></div>')
+
+
+def q_html(w):
+    st = w.get('status') or ''
+    sub = f'<span>{esc(st)}</span>' if st else ''
+    return f'<div class="q"><span class="id">{esc(w.get("id", ""))}</span><div><b>{esc(w["text"])}</b>{sub}</div></div>'
+
+
+def slice_html(s):
+    st = s.get('status') or ''
+    p = f'<p>{esc(st)}</p>' if st else ''
+    return (f'<li class="slice"><div class="num">{esc(s["id"])}</div><div><h3>{esc(s["title"])}</h3>{p}'
+            f'<div class="steps">{steps_for(s)}</div></div>'
+            f'<span class="pill {PILL[s["state"]][0]}">{PILL[s["state"]][1]}</span></li>')
+
+
 def render(data, now, general):
-    active = sum(1 for d in data if d['status'] == 'active')
-    paused = sum(1 for d in data if d['status'] != 'active')
-    all_wait = [(d['name'], w) for d in data for w in d['waiting']] + [('כללי', w) for w in general]
-    qcount = sum(len(d['questions']) for d in data)
-    cards = []
-    for d in data:
+    opts, panels = [], []
+    for i, d in enumerate(data):
         total = d['total']
-        pct = round(100 * d['done'] / total) if total else 0
+        active = d['status'] == 'active'
+        st_txt = 'פעיל' if active else 'מושהה'
+        extra = f' · מחכה לך {len(d["waiting"])}' if d['waiting'] else ''
+        opts.append(f'<option value="{esc(d["id"])}">{esc(d["name"])} · {st_txt}{extra}</option>')
         segs = ''.join(f'<span class="{ {"ok": "ok", "run": "run"}.get(s["state"], "") }"></span>'
                        for s in d['slices'] if s.get('count', True))
-        st_cls = 'ok' if d['status'] == 'active' else 'wait'
-        st_txt = 'פעיל' if d['status'] == 'active' else 'מושהה'
-        if d['status_note']:
-            st_txt += ' · ' + d['status_note']
-        slices_html = ''.join(
-            f'<li class="slice"><div class="num">{esc(s["id"])}</div><div><h4>{esc(s["title"])}</h4>'
-            f'<p>{esc(s.get("status", ""))}</p><div class="steps">{steps_for(s)}</div></div>'
-            f'<span class="pill {PILL[s["state"]][0]}">{PILL[s["state"]][1]}</span></li>'
-            for s in d['slices'])
-        wait_html = ''.join(
-            f'<li><span class="kind">{esc(w["kind"])} {esc(w.get("id", ""))}</span> {esc(w["text"])}'
-            f'{(" <em>" + esc(w["status"]) + "</em>") if w.get("status") else ""}</li>' for w in d['waiting'])
-        q_html = ''.join(
-            f'<li><span class="kind">{esc(w.get("id", ""))}</span> {esc(w["text"])}'
-            f'{(" <em>" + esc(w["status"]) + "</em>") if w.get("status") else ""}</li>' for w in d['questions'])
-        link = (f'<a class="ext" href="{esc(d["progress_url"])}" target="_blank" rel="noopener">דף ההתקדמות של הצוות ↗</a>'
-                if d['progress_url'] else '')
-        note = f'<p class="foot">{esc(d["board_note"])}</p>' if d['board_note'] else ''
-        cards.append(f'''
-<details class="card" id="app-{esc(d['id'])}">
-  <summary>
-    <div class="card-head"><h3>{esc(d['name'])}</h3><span class="pill {st_cls}">{esc(st_txt)}</span></div>
-    <div class="bar" style="--n:{max(total, 1)}" aria-hidden="true">{segs}</div>
-    <div class="meter-row"><span>בשרת: <b>{d['done']} מתוך {total}</b>{f' ({pct}%)' if total else ''}</span>
-      <span>{'בבנייה' if d['status'] == 'active' else 'נעצר ב'}: <b>{esc(d['now']) or '—'}</b></span>
-      <span>מחכה לך: <b>{len(d['waiting'])}</b>{f" · שאלות: <b>{len(d['questions'])}</b>" if d['questions'] else ''}</span></div>
-    <div class="foot">עודכן {esc(d['updated'])} · מקור: <code>{esc(d['source'])}</code></div>
-  </summary>
-  <div class="detail">
-    {link}{note}
-    <h4 class="sub">הפרוסות</h4>
-    {f'<ol class="slices">{slices_html}</ol>' if slices_html else '<p class="foot">אין לוח פרוסות עדיין.</p>'}
-    <h4 class="sub">מחכה לך כאן</h4>
-    {f'<ul class="waits">{wait_html}</ul>' if wait_html else '<p class="foot">אין כרגע.</p>'}
-    {f'<h4 class="sub">שאלות פתוחות</h4><p class="foot">העבודה ממשיכה לפי ברירת המחדל של כל שאלה עד שתענה.</p><ul class="waits">{q_html}</ul>' if q_html else ''}
-    {f'<p class="foot">{esc(d["questions_note"])}</p>' if d['questions_note'] else ''}
-  </div>
-</details>''')
-    wait_list = ''.join(
-        f'<li><span class="app">{esc(app)}</span><span class="kind">{esc(w["kind"])} {esc(w.get("id", ""))}</span>'
-        f'<span class="txt">{esc(w["text"] if len(w["text"]) <= 110 else w["text"][:108].rstrip() + "…")}</span></li>' for app, w in all_wait)
-    return TEMPLATE.replace('{{NOW}}', esc(now)).replace('{{ACTIVE}}', str(active)) \
-        .replace('{{PAUSED}}', str(paused)).replace('{{WAITCOUNT}}', str(len(all_wait))).replace('{{QCOUNT}}', str(qcount)) \
-        .replace('{{WAITLIST}}', wait_list or '<li><span class="txt">אין כרגע.</span></li>') \
-        .replace('{{CARDS}}', ''.join(cards))
+        slices = ''.join(slice_html(s) for s in d['slices'])
+        waits = ''.join(task_html(w) for w in d['waiting'])
+        qs = ''.join(q_html(w) for w in d['questions'])
+        desc = app_desc(d['id'])
+        status_line = st_txt + (' · ' + d['status_note'] if d['status_note'] else '')
+        now_lbl = 'בבנייה עכשיו' if active else 'נעצר ב'
+        parts = [f'<article class="app" data-app="{esc(d["id"])}"{"" if i == 0 else " hidden"}>',
+                 '<header class="hero">',
+                 f'<div class="eyebrow"><span class="pill {"ok" if active else "wait"}">{esc(status_line)}</span></div>',
+                 f'<h1>{esc(d["name"])}</h1>']
+        if desc:
+            parts.append(f'<p class="lead">{esc(desc)}</p>')
+        parts.append(f'<div class="meter" aria-label="התקדמות הבנייה"><div class="bar" style="--n:{max(total, 1)}">{segs}</div>'
+                     f'<div class="meter-row"><span>בשרת: <b>{d["done"]} מתוך {total}</b></span>'
+                     f'<span>{now_lbl}: <b>{esc(d["now"]) or "—"}</b></span></div></div>')
+        if d['progress_url']:
+            parts.append(f'<a class="ext" href="{esc(d["progress_url"])}" target="_blank" rel="noopener">הדף המפורט של הצוות ↗</a>')
+        parts.append('</header>')
+        parts.append('<section><h2>מחכה לך</h2>' +
+                     (f'<div class="panel">{waits}</div>' if waits else '<p class="empty">אין כרגע שום דבר שמחכה לך כאן.</p>') +
+                     '</section>')
+        if qs:
+            parts.append('<section><h2>שאלות פתוחות</h2><div class="panel">'
+                         '<div class="foot">עד שתענה, העבודה ממשיכה לפי ברירת המחדל.</div>' + qs + '</div></section>')
+        if d['questions_note']:
+            parts.append(f'<p class="foot">{esc(d["questions_note"])}</p>')
+        parts.append('<section><h2>הפרוסות</h2>' +
+                     (f'<ol class="slices">{slices}</ol>' if slices else '<p class="empty">אין לוח פרוסות עדיין.</p>') +
+                     (f'<p class="foot">{esc(d["board_note"])}</p>' if d['board_note'] else '') + '</section>')
+        parts.append(f'<p class="foot">עודכן {esc(d["updated"])} · מקור: <code>{esc(d["source"])}</code></p></article>')
+        panels.append('\n'.join(parts))
+    gen = ''.join(task_html(w) for w in general)
+    return (TEMPLATE.replace('{{NOW}}', esc(now)).replace('{{OPTIONS}}', ''.join(opts))
+            .replace('{{PANELS}}', '\n'.join(panels))
+            .replace('{{GENERAL}}', f'<section><h2>כללי</h2><div class="panel">{gen}</div></section>' if gen else ''))
 
 
 TEMPLATE = r'''<title>מצב כל הצוותים</title>
@@ -311,7 +335,7 @@ TEMPLATE = r'''<title>מצב כל הצוותים</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&display=swap">
 <style>
-/* פריסה: עמודה אחת צרה — סיכום למעלה, "מחכה לך" מכל הצוותים, ואז כרטיס מתקפל לכל אפליקציה */
+/* פריסה: בורר פרויקט קבוע למעלה; מתחתיו דשבורד של פרויקט אחד — כותרת ומד, מחכה לך, שאלות, פרוסות */
 :root{
   --bg:#f5f6f4; --surface:#ffffff; --ink:#1d2523; --muted:#5f6b67; --line:#dde2df;
   --accent:#2f5d55; --accent-soft:#e3ece9;
@@ -328,87 +352,86 @@ TEMPLATE = r'''<title>מצב כל הצוותים</title>
   --accent:#8cc2b6; --accent-soft:#22332f;
   --ok:#72c993; --ok-soft:#1c3326; --run:#f0b25a; --run-soft:#3a2c14; --wait:#8d9893; --wait-soft:#252c29; color-scheme:dark}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
-.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px;display:flex;flex-direction:column;gap:28px}
-h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+.top{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line)}
+.top-in{max-width:760px;margin:0 auto;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:4px}
+.top label{font-size:12px;color:var(--muted)}
+.top select{font:inherit;font-size:16px;font-weight:500;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;min-height:46px;padding:0 12px;width:100%}
+.top select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:22px 48px;display:flex;flex-direction:column;gap:28px}
+.app{display:flex;flex-direction:column;gap:28px}
+.app[hidden]{display:none}
+.task details{font-size:13.5px;color:var(--muted)}
+.task summary{cursor:pointer;color:var(--accent);font-size:13px;width:max-content}
+.task details p{margin:4px 0 0;overflow-wrap:anywhere}
+h1,h2{font-family:var(--f-display);text-wrap:balance;margin:0}
 h1{font-size:clamp(26px,6vw,36px);line-height:1.15}
-h2{font-size:21px} h3{font-size:18px}
-h4{margin:0}
-.eyebrow{font-size:12px;letter-spacing:.06em;color:var(--muted)}
-.lead{color:var(--muted);margin:6px 0 0;max-width:60ch}
-.hero{display:flex;flex-direction:column;gap:14px}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:2px}
-.stat b{font-family:var(--f-display);font-size:28px;font-variant-numeric:tabular-nums;line-height:1.1}
-.stat span{font-size:13px;color:var(--muted)}
-.stat.ok b{color:var(--ok)} .stat.run b{color:var(--run)}
-section{display:flex;flex-direction:column;gap:12px}
-.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 16px}
-.allwait{list-style:none;margin:0;padding:0}
-.allwait li{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:10px 0;border-top:1px solid var(--line);min-width:0}
-.allwait li:first-child{border-top:0}
-.allwait .app{font-size:12px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);align-self:start;white-space:nowrap}
-.allwait .kind{font-size:12px;color:var(--muted);align-self:center}
-.allwait .txt{grid-column:1/-1;min-width:0;overflow-wrap:anywhere}
-.cards{display:flex;flex-direction:column;gap:12px}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:10px}
-.card summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
-.card summary::-webkit-details-marker{display:none}
-.card summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:10px}
-.card[open] summary{border-bottom:1px solid var(--line)}
-.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.card-head h3::after{content:"‹";display:inline-block;margin-inline-start:8px;color:var(--muted);transition:transform .15s}
-.card[open] .card-head h3::after{transform:rotate(-90deg)}
-.bar{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:3px}
-.bar span{height:9px;border-radius:3px;background:var(--wait-soft)}
+h2{font-size:21px}
+.eyebrow{font-size:12px;color:var(--muted)}
+.lead{color:var(--muted);margin:0;max-width:60ch;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hero{display:flex;flex-direction:column;gap:12px}
+.meter{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:4px}
+.bar span{height:10px;border-radius:3px;background:var(--wait-soft)}
 .bar .ok{background:var(--ok)} .bar .run{background:var(--run)}
-.meter-row{display:flex;justify-content:space-between;gap:6px 14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
-.meter-row b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:500}
-.detail{padding:12px 16px 16px;display:flex;flex-direction:column;gap:10px}
-.sub{font-size:15px;font-family:var(--f-display)}
+.meter-row{display:flex;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.meter-row b{color:var(--ink);font-variant-numeric:tabular-nums}
+section{display:flex;flex-direction:column;gap:12px}
 .slices{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
-.slice{display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:start;padding:12px 0;border-bottom:1px solid var(--line)}
-.num{font-family:var(--f-display);font-size:18px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.2;overflow-wrap:anywhere}
-.slice h4{font-size:15px;font-weight:700}
-.slice p{margin:2px 0 0;color:var(--muted);font-size:13px;min-width:0;overflow-wrap:anywhere}
+.slice{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:start;padding:14px 0;border-bottom:1px solid var(--line)}
 .slice>div{min-width:0}
-.steps{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.num{font-family:var(--f-display);font-size:22px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.2;overflow-wrap:anywhere}
+.slice h3{margin:0;font-size:16px;font-weight:700}
+.slice p{margin:2px 0 0;color:var(--muted);font-size:13.5px;overflow-wrap:anywhere}
+.steps{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .step{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--wait-soft);color:var(--wait)}
 .step.ok{background:var(--ok-soft);color:var(--ok)} .step.run{background:var(--run-soft);color:var(--run)}
-.pill{font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.pill{font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;white-space:nowrap;display:inline-block}
 .pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.run{background:var(--run-soft);color:var(--run)} .pill.wait{background:var(--wait-soft);color:var(--wait)}
-.waits{margin:0;padding-inline-start:18px;display:flex;flex-direction:column;gap:6px;font-size:14px}
-.waits .kind{font-weight:500;color:var(--accent)} .waits em{color:var(--muted);font-style:normal;font-size:13px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:4px 16px;display:flex;flex-direction:column}
+.panel>.foot{padding-top:12px}
+.task{display:flex;justify-content:space-between;gap:8px 12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}
+.task:first-child{border-top:0}
+.task>div{min-width:0;flex:1 1 220px;display:flex;flex-direction:column;gap:2px}
+.task .txt{overflow-wrap:anywhere}
+.q{display:grid;grid-template-columns:40px 1fr;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.q .id{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.q b{display:block;font-weight:500;overflow-wrap:anywhere}
+.q span{color:var(--muted);font-size:13.5px}
+.q>div{min-width:0}
 .ext{color:var(--accent);font-weight:500;align-self:start}
+.empty{margin:0;color:var(--muted)}
 code{font-size:12px;background:var(--wait-soft);padding:0 5px;border-radius:4px}
-.foot{font-size:12px;color:var(--muted);margin:0}
-@media (max-width:420px){.slice{grid-template-columns:40px 1fr}.slice .pill{grid-column:2;justify-self:start}.stat b{font-size:24px}}
-@media (prefers-reduced-motion:reduce){.card-head h3::after{transition:none}}
+.foot{font-size:12px;color:var(--muted);margin:0;overflow-wrap:anywhere}
+@media (max-width:420px){.slice{grid-template-columns:34px 1fr}.slice .pill{grid-column:2;justify-self:start}}
 </style>
 
-<div class="wrap" dir="rtl" lang="he">
-  <header class="hero">
-    <div class="eyebrow">מצב הפיתוח · עודכן {{NOW}}</div>
-    <h1>כל הצוותים</h1>
-    <p class="lead">כל האפליקציות שעובדות בשיטת הצוות, במקום אחד. לחיצה על כרטיס פותחת את הפרוסות ואת מה שמחכה לך באותה אפליקציה.</p>
-    <div class="stats">
-      <div class="stat ok"><b>{{ACTIVE}}</b><span>צוותים פעילים</span></div>
-      <div class="stat"><b>{{PAUSED}}</b><span>מושהים</span></div>
-      <div class="stat run"><b>{{WAITCOUNT}}</b><span>מחכים לך</span></div>
-    </div>
-  </header>
-
-  <section>
-    <h2>מחכה לך</h2>
-    <p class="foot">מטלות והחלטות מכל הצוותים. בנוסף יש {{QCOUNT}} שאלות פתוחות, בפירוט של כל אפליקציה — עליהן העבודה ממשיכה לפי ברירת המחדל.</p>
-    <div class="panel"><ul class="allwait">{{WAITLIST}}</ul></div>
-  </section>
-
-  <section>
-    <h2>האפליקציות</h2>
-    <div class="cards">{{CARDS}}</div>
-    <p class="foot">הפרוסות נקראות מ-team/board.md של כל צוות, מהענף שעודכן אחרון (main או ענף הבקרה). "בשרת" = מוזג ל-main ונפרס.</p>
-  </section>
+<div dir="rtl" lang="he">
+  <div class="top"><div class="top-in">
+    <label for="pick">פרויקט</label>
+    <select id="pick">{{OPTIONS}}</select>
+  </div></div>
+  <main class="wrap">
+    {{PANELS}}
+    {{GENERAL}}
+    <p class="foot">עודכן {{NOW}} · מתעדכן בכל סבב של מנהל הצוותים. "בשרת" = מוזג ל-main ונפרס.</p>
+  </main>
 </div>
+<script>
+(function(){
+  var pick=document.getElementById('pick'), apps=document.querySelectorAll('.app');
+  function show(id){
+    var found=false;
+    apps.forEach(function(a){var on=a.dataset.app===id; a.hidden=!on; if(on) found=true;});
+    if(!found && apps[0]){apps[0].hidden=false; id=apps[0].dataset.app;}
+    pick.value=id;
+    try{localStorage.setItem('teams-pick',id);}catch(e){}
+  }
+  var saved=null; try{saved=localStorage.getItem('teams-pick');}catch(e){}
+  if(location.hash.length>1) saved=decodeURIComponent(location.hash.slice(1));
+  if(saved) show(saved);
+  pick.addEventListener('change',function(){show(pick.value); window.scrollTo(0,0);});
+})();
+</script>
 '''
 
 if __name__ == '__main__':
