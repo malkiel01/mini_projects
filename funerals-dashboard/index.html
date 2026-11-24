@@ -48,12 +48,9 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
   <div class="panel">
     <div class="eyebrow">מערכת פנימית · חברה קדישא</div>
     <h1>דשבורד לוויות</h1>
-    <form id="loginForm">
-      <label>שם משתמש <input id="username" autocomplete="username" value="admin" required></label>
-      <label>סיסמה <input id="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit" class="primary">כניסה מאובטחת</button>
-    </form>
-    <p class="message error" id="loginError" hidden></p>
+    <p class="muted">הכניסה מתבצעת דרך הפלטפורמה, לפי אישור לאפליקציה בממשק המנהל.</p>
+    <p class="message error" id="signinError" hidden></p>
+    <button type="button" id="retryBtn" class="primary">כניסה מחדש</button>
   </div>
 </div>
 <main class="app" id="application" hidden>
@@ -64,6 +61,7 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
     <div class="actions">
       <button id="exportBtn">ייצוא JSON</button>
       <button id="importBtn">ייבוא ממצאים</button>
+      <button id="tokenBtn">🔑 יצירת אסימון API</button>
       <button id="logoutBtn">יציאה</button>
       <input id="importFile" type="file" accept=".json,application/json" hidden>
     </div>
@@ -117,6 +115,12 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
   </div>
   <footer class="footer">תצוגת Dropbox כפופה להרשאות הקישור ולהגבלות הדפדפן. הדשבורד אינו מאחסן את הקבצים המקוריים.</footer>
 </main>
+<dialog id="tokenDialog" style="width:min(94vw,560px);border:0;border-radius:15px;padding:16px;">
+  <div class="panel-head"><h2>אסימון API חדש</h2><button id="closeToken">סגירה</button></div>
+  <p class="message">האסימון מוצג פעם אחת בלבד. יש לשמור אותו במקום פרטי. האסימון הקודם בוטל.</p>
+  <input id="tokenValue" readonly dir="ltr" style="width:100%;font-family:monospace" aria-label="אסימון API">
+  <div class="bar"><button type="button" id="copyToken" class="primary">העתקה</button></div>
+</dialog>
 <dialog id="previewDialog" style="width:min(94vw,1000px);max-height:92vh;border:0;border-radius:15px;padding:16px;">
   <div class="panel-head"><h2>תצוגת מסמך ב־Dropbox</h2><button id="closePreview">סגירה</button></div>
   <div id="preview"></div>
@@ -150,9 +154,9 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
     if (!res.ok) throw new Error(response.error || 'שגיאה בבקשה');
     return response;
   }
-  function showLogin(error='') {
+  function showSignin(error='') {
     $('signin').hidden = false; $('application').hidden = true;
-    $('loginError').hidden = !error; $('loginError').textContent = error;
+    $('signinError').hidden = !error; $('signinError').textContent = error;
   }
   async function begin() {
     try {
@@ -160,7 +164,7 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
       csrf = auth.csrf; embedKey = auth.embed_key || '';
       $('signin').hidden = true; $('application').hidden = false;
       await load();
-    } catch (e) { showLogin(e.message.includes('הוגדרה') ? e.message : 'יש להתחבר כדי לצפות בנתונים'); }
+    } catch (e) { showSignin(e.message); }
   }
   async function load(preferredId='') {
     try {
@@ -268,13 +272,15 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
       window.Dropbox.embed({link:url,file:{zoom:'best'},folder:{view:'list'}},box);
     } catch(e) {box.append(node('p','message error',e.message));const a=node('a','button','פתח בדרופבוקס');a.href=url;a.target='_blank';a.rel='noopener noreferrer';box.append(a);}
   }
-  $('loginForm').addEventListener('submit',async e=>{
-    e.preventDefault();
-    try {
-      const res=await request('login','POST',{username:$('username').value,password:$('password').value});
-      csrf=res.csrf; $('password').value=''; await begin();
-    } catch(err){showLogin(err.message);}
+  $('retryBtn').addEventListener('click',()=>begin());
+  $('tokenBtn').addEventListener('click',async()=>{
+    if(!confirm('ליצור אסימון API חדש? האסימון הקיים יבוטל, ומערכות שמשתמשות בו יפסיקו לעבוד.')) return;
+    try{const res=await request('api_token','POST',{});$('tokenValue').value=res.token;$('tokenDialog').showModal();$('tokenValue').select();}
+    catch(e){message(e.message,true);}
   });
+  $('copyToken').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('tokenValue').value);message('האסימון הועתק');}catch(e){$('tokenValue').select();}});
+  $('closeToken').addEventListener('click',()=>{$('tokenValue').value='';$('tokenDialog').close();});
+  $('tokenDialog').addEventListener('close',()=>{$('tokenValue').value='';});
   $('month').addEventListener('change',()=>load());
   $('search').addEventListener('input',renderList);
   $('newBtn').addEventListener('click',()=>edit(newRecord()));
@@ -310,7 +316,7 @@ label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column
     }catch(err){message(err.message,true);}
     finally{$('importFile').value='';}
   });
-  $('logoutBtn').addEventListener('click',async()=>{try{await request('logout','POST',{});csrf='';current=null;items=[];showLogin();}catch(e){message(e.message,true);}});
+  $('logoutBtn').addEventListener('click',async()=>{try{await request('logout','POST',{});csrf='';current=null;items=[];showSignin('יצאת מהדשבורד. "כניסה מחדש" תחבר אותך שוב לפי ההרשאה בפלטפורמה.');}catch(e){message(e.message,true);}});
   $('closePreview').addEventListener('click',()=>$('previewDialog').close());
   begin();
 })();
