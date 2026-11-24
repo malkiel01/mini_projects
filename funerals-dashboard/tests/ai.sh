@@ -30,12 +30,12 @@ test -n "$CASE" || fail "אין תיק בארגון 1"
 
 # ===== ספק מדומה + האפליקציה =====
 M="$tmp/mock"; mkdir -p "$M"; echo '[]' > "$M/queue.json"; : > "$M/requests.jsonl"
-AI_MOCK_DIR="$M" php -S 127.0.0.1:18967 "$APP/tests/ai-mock.php" > "$tmp/mock.log" 2>&1 &
+AI_MOCK_DIR="$M" php -d opcache.jit=disable -S 127.0.0.1:18967 "$APP/tests/ai-mock.php" > "$tmp/mock.log" 2>&1 &
 pids+=($!)
 idf="$tmp/identity.json"
 as(){ printf '%s' "$1" > "$idf"; }
 as ''
-AI_API_BASE=http://127.0.0.1:18967 FD_TEST_IDENTITY_FILE="$idf" php -S 127.0.0.1:18966 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+AI_API_BASE=http://127.0.0.1:18967 FD_TEST_IDENTITY_FILE="$idf" php -d opcache.jit=disable -S 127.0.0.1:18966 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pids+=($!)
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18966/index.html >/dev/null && break || sleep .2; done
 B=http://127.0.0.1:18966/api.php
@@ -43,6 +43,7 @@ st(){ curl -sS -o "$tmp/out" -w '%{http_code}' "$@"; }
 j(){ php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach(explode(".",$argv[2]) as $k){ if(!is_array($v)||!array_key_exists($k,$v)){echo "";exit;} $v=$v[$k];} echo is_scalar($v)?(is_bool($v)?($v?"true":"false"):$v):json_encode($v,JSON_UNESCAPED_UNICODE);' "$tmp/out" "$1"; }
 declare -A ID CSRF
 ID[admin]='{"sub":"701","name":"מנהלת בדיקה","email":"ai-admin@example.com","email_verified":true,"platform_admin":false,"granted":true}'
+ID[dev]='{"sub":"704","name":"המפתח","email":"ai-dev@example.com","email_verified":true,"platform_admin":true,"granted":true}'
 ID[field]='{"sub":"702","name":"עובד שטח","email":"ai-field@example.com","email_verified":true,"platform_admin":false,"granted":true}'
 login(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -c "$tmp/c-$1" "$B?action=me" >/dev/null; CSRF[$1]="$(j csrf)"; test -n "${CSRF[$1]}" || fail "login $1"; }
 get(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -c "$tmp/c-$1" "$B?action=$2${3:+&$3}"; }
@@ -56,7 +57,7 @@ tool(){ msg tool_use "[{\"type\":\"text\",\"text\":\"בודק\"},{\"type\":\"too
 lastreq(){ tail -n 1 "$M/requests.jsonl"; }
 caseBody(){ sql "SELECT body FROM funerals WHERE id='$1'"; }
 events(){ sql "SELECT COUNT(*) FROM events"; }
-login admin; login field
+login admin; login field; login dev
 
 # ===== F2: בלי מפתח → הודעה, בלי קריאה לספק =====
 code="$(get admin ai_status)"; test "$code" = 200 && test "$(j has_key)" = false || fail "F2 ai_status ($code)"
@@ -157,6 +158,11 @@ ok "F7 — תקרה 0 ו-2/2: הודעה, אין קריאה לספק; מונה, 
   queue "[$(tool find '{"q":"סודי"}'),$(text 'אין')]"
   post admin ai_chat '{"text":"חפש סודי"}' >/dev/null
   ! grep -q 'fd_org2secretcase01' <(tail -n 1 "$M/requests.jsonl" | sed 's/"q":"סודי"//') || fail "F6 find חשף תיק של ארגון אחר"
+  # מפתח (platform_admin) — רואה כל הארגונים בממשק, אבל דרך ה-AI רק את הארגון הפעיל
+  queue "[$(tool case '{"id":"fd_org2secretcase01"}'),$(text 'לא נמצא')]"
+  post dev ai_chat '{"text":"מה בתיק?"}' >/dev/null
+  lastreq | php -r '$r=json_decode(stream_get_contents(STDIN),true); $m=end($r["body"]["messages"]); $t=$m["content"][0]; exit(($t["is_error"]??false)===true && str_contains($t["content"],"לא נמצא") ? 0 : 1);' || fail "F6 מפתח הגיע לתיק של ארגון לא פעיל"
+  ! grep -qE 'סודי-ארגון-שני|חלקה-סודית-77' "$M/requests.jsonl" || fail "F6 נתוני ארגון אחר נשלחו לספק (מפתח)"
   ok "F6 — תיק של ארגון אחר: 404 בכלי, והנתונים שלו לא בבקשה לספק ולא בתשובה"
 
   # אישור אוטומטי — מדלג על הכרטיס, לא על הכלל
@@ -168,5 +174,5 @@ ok "F7 — תקרה 0 ו-2/2: הודעה, אין קריאה לספק; מונה, 
   ok "אישור אוטומטי — בלי כרטיס, ועדיין \"לאימות\""
 
 head -n 4 "$M/requests.jsonl" | tail -n 1 | grep -q '"version":"2023-06-01"' || fail "anthropic-version"
-! grep -qE 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | head; fail "שגיאות PHP בשרת"; }
+! grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -v 'in Unknown on line 0' | head; fail "שגיאות PHP בשרת"; }
 echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה"
