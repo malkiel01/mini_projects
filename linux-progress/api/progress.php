@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/store.php';
 require_once __DIR__ . '/../lib/syllabus.php';
+require_once __DIR__ . '/../lib/metrics.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -32,7 +33,9 @@ try {
         if ($status === 'ok') {
             [$curStatus, $cur] = lp_fetch_curriculum($token);
             if ($curStatus === 'ok') {
-                $summary = lp_summary($cur, $items, new DateTimeImmutable('now', new DateTimeZone('Asia/Jerusalem')));
+                $today = new DateTimeImmutable('now', new DateTimeZone('Asia/Jerusalem'));
+                $summary = lp_summary($cur, $items, $today);
+                $summary['metrics'] = lp_metrics($summary, $items, $today);
             }
         }
         lp_out(200, ['ok' => true, 'status' => $status, 'items' => $items, 'curriculum' => $curStatus, 'summary' => $summary]);
