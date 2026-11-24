@@ -7,10 +7,10 @@
 | --- | --- |
 | `dropbox/lib.php` | טבלאות, לקוח HTTP (רענון אסימון, RPC, content, upload בחלקים), הגבלה לראשית, סנכרון ב-cursor, תיקייה לתיק, סריקת התאמה |
 | `dropbox/actions.php` | פעולות `api.php` (`dropbox_*`, `case_files`, `file_view`) — החיבור היחיד ב-`api.php` הוא שתי שורות |
-| `dropbox/compat.php` | שכבה דקה מול 01: `dbxSecretPut/Get/Delete`, `dbxEvent`, `dbxWho`, `dbxCan`, `dbxCase` — קוראת ל-`secretPut`/`recordEvent`/`can` כשהן קיימות |
+| `dropbox/compat.php` | נקודת החיבור היחידה ל-01: `secretPut/Get` (+ מחיקה בניתוק), `recordEvent`, `ctx`/`can`/`scope`. הרשאות: `dropbox.manage` (מנהל), `files.upload` (משרד, מנהל), `case.view`, `dev` |
 | `dropbox-webhook.php` | ציבורי (`"public"`). GET challenge; POST חתום ב-`X-Dropbox-Signature` → 200 מיד, ואז סנכרון (עד 8 שניות לארגון) |
 | `bin/dropbox-sync.php` | גיבוי ל-webhook, כל 5 דקות, CLI בלבד (HTTP → 404) |
-| `assets/js/dropbox.js`, `assets/css/dropbox.css` | קבצי התיק ומסך ההגדרות (☁️ בכותרת) |
+| `assets/js/dropbox.js`, `assets/css/dropbox.css` | קבצי התיק, ולשונית "Dropbox" ב-⚙️ הגדרות (מנהל; App key/secret — למפתח) |
 | `tests/dropbox-test.php`, `tests/dropbox-mock.php` | C1–C11, C13 מול Dropbox מדומה, בלי רשת (רץ מ-`tests/run.sh`) |
 
 ## נתונים (כולם ב-`data/funerals.sqlite`, מוסיפים בלבד)
@@ -38,7 +38,7 @@
 ## מה הבעלים עושה פעם אחת
 
 האפיון §2: אפליקציה ב-App Console (Full Dropbox; `files.metadata.read`, `files.content.read`, `files.content.write`,
-`account_info.read`), Redirect URI ו-Webhook URI (מוצגים במסך ☁️ למפתח, להעתקה), ו-App key / App secret במסך ☁️.
+`account_info.read`), Redirect URI ו-Webhook URI (מוצגים למפתח ב-⚙️ הגדרות ← Dropbox, להעתקה), ו-App key / App secret באותו מקום.
 
 ## מה טרם הוכרע / נשאר ל-C12 (ידני בשרת)
 

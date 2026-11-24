@@ -8,5 +8,5 @@
 .dbx-crumbs { display: flex; flex-wrap: wrap; gap: var(--s1); margin-bottom: var(--s2); }
 .dbx-picker { display: grid; gap: var(--s2); }
 .dbx-picker .list { max-block-size: 40dvh; overflow-y: auto; }
-#dbxBody .group { display: grid; gap: var(--s2); }
-#dbxBody .card select { margin-top: var(--s1); }
+#sDropbox .group { display: grid; gap: var(--s2); }
+#sDropbox .card select { margin-top: var(--s1); }

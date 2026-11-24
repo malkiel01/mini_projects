@@ -1,13 +1,14 @@
 /*
  * Dropbox בממשק (פרוסה 03): קבצי התיק (רשימה, תמונה ממוזערת, תצוגה, העלאה, פתיחת תיקייה) ומסך ההגדרות
  * (חיבור, תיקייה ראשית, סריקת התאמה, ומפתחות האפליקציה למפתח). כל הפעולות דרך api.php; שום אסימון בדפדפן.
- * נקודות החיבור ל-index.html: window.FD (request, toast, csrf), האירועים fd:ready ו-fd:case, ו-#dbxFiles / #dbxDialog.
+ * נקודות החיבור ל-app.js: window.FD (request, toast, csrf, openSettings), האירועים fd:ready ו-fd:case, #dbxFiles בתיק,
+ * ו-window.FDDropbox.settings(<section>) — הלשונית "Dropbox" בהגדרות.
  */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
   const FD = () => window.FD;
-  let status = null, caseId = '', browsePath = '';
+  let status = null, caseId = '', browsePath = '', host = null;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -106,12 +107,9 @@
 
   /* ---------- הגדרות Dropbox ---------- */
 
-  async function openSettings() {
-    if (!$('dbxDialog').open) $('dbxDialog').showModal();
-    await renderSettings();
-  }
   async function renderSettings() {
-    const box = $('dbxBody'); box.replaceChildren(el('p', 'hint', 'טוען…'));
+    const box = host; if (!box) return;
+    box.replaceChildren(el('p', 'hint', 'טוען…'));
     try { status = await api('dropbox_status'); } catch (e) { box.replaceChildren(el('p', 'error', e.message)); return; }
     box.replaceChildren();
     const d = status.dropbox;
@@ -249,7 +247,7 @@
   document.addEventListener('fd:case', e => { caseId = (e.detail && e.detail.id) || ''; renderCase(); });
   document.addEventListener('fd:ready', () => {
     api('dropbox_status').catch(() => {});      // סנכרון בפתיחת הרשימה, כשהאחרון ישן מ-2 דקות
-    if (location.hash === '#dropbox') { history.replaceState(null, '', location.pathname + location.search); openSettings(); }
+    if (location.hash === '#dropbox') { history.replaceState(null, '', location.pathname + location.search); FD().openSettings('dropbox'); }
   });
-  const open = $('dbxBtn'); if (open) open.addEventListener('click', openSettings);
+  window.FDDropbox = {settings(section) { host = section; renderSettings(); }};
 })();

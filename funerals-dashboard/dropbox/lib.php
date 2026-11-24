@@ -347,7 +347,7 @@ function dbxSync(PDO $pdo, int $orgId, float $budget): array {
                 $pdo->commit();
             } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
             foreach ($newFiles as $f) {
-                dbxEvent($orgId, (string)$f['case_id'], 'system', 'file_added', ['via' => 'dropbox', 'name' => $f['name']]);
+                dbxEvent($orgId, (string)$f['case_id'], 'system', 'file_added', ['file' => [null, $f['name']], 'via' => [null, 'dropbox']]);
                 $added++;
             }
             $cursor = (string)$page['cursor'];
@@ -388,7 +388,8 @@ function dbxNormName(string $s): string {
 }
 
 /** פותח `<ראשית>/YYYY-MM/YYYY-MM-DD <שם>/` לתיק (כפילות → " (2)") ומקשר. מחזיר [dbx_folder_id, path]. */
-function dbxCreateCaseFolder(PDO $pdo, array $org, array $case, string $actor): array {
+/** @param array $actor ['id','actor'] — המבצע ליומן */
+function dbxCreateCaseFolder(PDO $pdo, array $org, array $case, array $actor): array {
     $orgId = (int)$org['org_id'];
     $st = $pdo->prepare('SELECT dbx_folder_id, dbx_path FROM case_folders WHERE org_id=? AND case_id=?');
     $st->execute([$orgId, $case['id']]);
@@ -407,8 +408,8 @@ function dbxCreateCaseFolder(PDO $pdo, array $org, array $case, string $actor): 
         }
     }
     if (!isset($meta['id'])) throw new DbxError('folder_conflict');
-    dbxLinkFolder($pdo, $org, (string)$case['id'], $meta, $actor);
-    dbxEvent($orgId, (string)$case['id'], 'ui', 'dropbox_folder_created', ['path' => $meta['path_display']], ['actor' => $actor]);
+    dbxLinkFolder($pdo, $org, (string)$case['id'], $meta, (string)$actor['actor']);
+    dbxEvent($orgId, (string)$case['id'], 'ui', 'dropbox_folder_created', ['dropbox_folder' => [null, $meta['path_display']]], $actor);
     return [$meta['id'], $meta['path_display']];
 }
 /** קישור תיקייה (מטא-נתונים של Dropbox או שורה מ-dbx_folders) לתיק. */

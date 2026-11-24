@@ -1,14 +1,43 @@
 # יומן — code
 
 
+## 2026-11-24 13:26 (נרשם בידי הבקרה)
+- פרוסה 00: dev/audit.md, PR ‏#1834 מוזג; העברה ב-PR ‏#1835. הצ'אט רדום.
+
+## 2026-11-24 — פרוסה 01 (תשתית), ענף `claude/funerals-dashboard-01-infra`
+- נבנה לפי `docs/spec/01-infrastructure.md`: מיגרציה v1 עם גיבוי, ארגונים/משתמשים/חברים/הזמנות, `can()`/`scope()`, `events`,
+  `req_log`, סודות, מסך מפתח, DevLoop (`FD-`), מפת דרכים, VERSION 1.0.0. `tests/run.sh` מכסה A1–A14, A16 (חלקית), A17.
+- ה-JS עבר מ-`index.html` ל-`assets/js/app.js` (audit ג.7).
+- נדרש מהבקרה: שורת `.devloop.json` (בתיאור ה-PR), ביקורת, מיזוג.
+## 2026-11-24 — פרוסה 02 (טופס חכם), ענף `claude/funerals-dashboard-02-smart-form` — במקביל ל-01 (טורבו)
+- `lib/form.php` (חדש): `finalAllowed($via)`, `formApplyChecks()` (by/via/at לבדיקה ששונתה בלבד, אוטומטי → לאימות + הצעה ב-note,
+  לא פותח מחדש בדיקה שאדם סגר), `formSaveCase()` (ה-save של api.php עבר לכאן), `formHistory()` (events של 01; עד אז — audit).
+- `assets/js/form.js` (חדש): `caseState` ("הושלם" רק עם בדיקה מאומתת), `nextUp`, `matches`, `provenance` ("מייבוא ישן").
+- נגיעות קטנות בקבצים של 01: `lib.php` (require + שורה ב-importRecords), `api.php` (save → formSaveCase, action=history).
+- ממשק: "הבא בתור" כפתור בראש התיק, 6 סינונים (להשלמה/חסר/לאימות/טרם נבדק/הושלם/הכול), מקור לכל בדיקה, לשונית היסטוריה.
+- בדיקות: `tests/form.test.php`, `tests/form.test.js`, `tests/fixtures/legacy-cases.json` (22 תיקים בצורה הישנה) + B1/B3/B6/B7 מול השרת ב-`run.sh`. B8 — ידני.
+- **פתוח ליישור אחרי 01:** `formHistoryAction($pdo,$method,null)` → הארגון הפעיל של 01 (404 לארגון אחר); מבנה `diff` ב-`events`
+  (`formDiffChanges` סובלני ל-[לפני,אחרי] / from-to / מקונן); לוודא ש-`recordEvent` נקרא גם ב-`formSaveCase`.
+- ניסיון send_message לקוד 01 לתיאום — נחסם בהרשאה. מחכה להודעת הבקרה על מיזוג 01.
+- 2026-11-24 (המשך) — קוד 01 שלח את הממשק (PR #1839). יישור מוכן **מקומית** בענף `align-01` (מיזוג של ענף 01 + התאמה), לא נדחף עד ש-01
+  ממוזג ל-`main`: `formSaveCase($pdo,$raw,$via,$actor[],$orgId,$authorize)` מעל `store()`/`existing()` של 01; `formEventSource()` (field→ui,
+  ai→api, dropbox→system); `history` כ-case ב-api.php עם `need('case.view')` ו-`scope()`; ה-UI הועבר ל-`assets/js/app.js`; B1–B7 ב-`run.sh` של 01.
+  הערה ל-01: `caseDiff()` רושם `payments` כשינוי כש-402 מול 402.0 (השוואה קשיחה) — ההיסטוריה שלי מסננת, אבל ב-`events` זה רעש.
+- 2026-11-24 — הודעה מקוד 05: קורא ל-`finalAllowed($via)` — **תואם** (אותה חתימה, bool; אותם שדות `by`/`via`/`at`). שני הבדלים ליישור
+  אצל מי שממוזג שני (00 §4): (1) ניסוח ההערה — אצלי `הוצע (צ'אט חיצוני): <סטטוס> — <ערך>`, אצל 05 `הוצע בצ'אט: …`; (2) אצלי בדיקה
+  שאדם כבר סגר (verified/reported/not_applicable) **לא נפתחת מחדש** בידי מקור אוטומטי — ההצעה נכנסת רק להערה. המלצה: 05 קורא ל-
+  `formApplyChecks($new,$old,'api',$by)` (או `formSaveCase`) במקום מימוש משלו. לא יכולתי לענות ל-05 — send_message חסום בהרשאה.
+- 2026-11-24 — 01 מוזג (#1839, 8eb9a9f). `main` מוזג לענף 02 (הגרסה של `main` לכל קבצי 01 + ה-diff של 02 מעליה); `caseChangeNeeds`
+  מקבל `normalize($old)` כמו ב-`main`. כל A ו-B1–B7 ירוקים. PR טיוטה ל-`main`.
+
 ## 2026-11-24 — פרוסה 03 (Dropbox), ענף `claude/funerals-dashboard-03-dropbox`
 
-- נבנה במקביל ל-01, בקבצים חדשים (`dropbox/`, `dropbox-webhook.php`, `bin/dropbox-sync.php`, `assets/js/dropbox.js`).
-  נקודות חיבור: `api.php` (שתי שורות), `index.html` (קטע קבצים, ☁️, דיאלוג, `window.FD`, אירועי `fd:case`/`fd:ready`),
-  `app.json` (`dropbox-webhook.php` ב-`"public"`), `tests/run.sh`.
-- מול 01 — `dropbox/compat.php`, עד היישור אחרי מיזוג 01.
-- בדיקות: C1–C11, C13 מול Dropbox מדומה — עוברות. C12 ידני בשרת.
+- נבנה במקביל ל-01, בקבצים חדשים: `dropbox/` (lib, actions, compat), `dropbox-webhook.php`, `bin/dropbox-sync.php`,
+  `assets/js/dropbox.js`, `assets/css/dropbox.css`, `tests/dropbox-test.php`, `tests/dropbox-mock.php`.
+- **יושר מול 01 ו-02 אחרי המיזוג שלהן** (`git merge origin/main`): `dropbox/compat.php` קורא ל-`secretPut/Get`, `recordEvent`,
+  `ctx`/`can`/`scope`. נקודות חיבור: `api.php` (require + שורה אחת, ושורת Dropbox ב-`healthChecks`), `lib/access.php`
+  (שתי הרשאות: `dropbox.manage` למנהל, `files.upload` למשרד ומנהל), `app.json` (`dropbox-webhook.php` ב-`"public"`),
+  `index.html` (קטע הקבצים בתיק, לשונית Dropbox בהגדרות, שני קבצים), `assets/js/app.js` (אירועי `fd:case`/`fd:ready`,
+  `window.FD`, הלשונית, ושורת חיבור חיצוני עם ✅/⛔), `tests/run.sh` (מריץ את `dropbox-test.php` בסוף).
+- בדיקות: C1–C11, C13 מול Dropbox מדומה — עוברות, עם משתמשים וארגונים אמיתיים של 01 (הזמנות). C12 ידני בשרת.
 - נדרש מהבקרה: השורה `funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log` ב-`CRONS`.
-- **שאלות ממשק ל-01** (נשלחו ישירות נחסמו; כאן, כדי שהיישור יהיה קטן): (1) `secretPut/secretGet(name, orgId, …)` עם org_id=0 לסודות
-  כלליים — בסדר? יש `secretDelete`? (2) החתימה של `recordEvent()`; (3) שם הפונקציה של "המשתמש + ארגון פעיל + תפקיד + מפתח"
-  ושמות ההרשאות ב-`can()`; (4) פונקציה שמחזירה תיק לפי id בארגון הפעיל. המיפוי כולו ב-`dropbox/compat.php` בלבד.

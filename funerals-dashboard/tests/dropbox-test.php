@@ -23,10 +23,9 @@ $transcript = '';      // כל התשובות — לחיפוש סודות (C9)
 function cleanup(): void {
     global $procs, $tmp, $data;
     foreach ($procs as $p) { $s = proc_get_status($p); if ($s['running']) proc_terminate($p); proc_close($p); }
-    foreach (glob("$data/funerals.sqlite*") ?: [] as $f) @unlink($f);
-    foreach (['secret.key', 'config.php', 'dropbox-sync.log'] as $f) @unlink("$data/$f");
-    foreach (glob("$data/cache/thumbs/*") ?: [] as $f) @unlink($f);
-    @rmdir("$data/cache/thumbs"); @rmdir("$data/cache");
+    // data/ התחילה ריקה (נבדק למעלה) — מנקים כל מה שהבדיקה יצרה בה, חוץ מ-.htaccess
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($data, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+    foreach ($it as $f) { if ($f->getFilename() === '.htaccess' && $f->getPath() === $data) continue; $f->isDir() ? @rmdir((string)$f) : @unlink((string)$f); }
     if (!getenv('KEEP')) exec('rm -rf ' . escapeshellarg($tmp)); else fwrite(STDERR, "tmp: $tmp\n");
 }
 register_shutdown_function('cleanup');
@@ -65,8 +64,8 @@ function http(string $method, string $url, array $opt = []): array {
 function as_(array $id): void { global $identity; file_put_contents($identity, json_encode($id + ['email_verified' => true, 'granted' => true])); }
 $DEV = ['sub' => '1', 'name' => 'מפתח', 'email' => 'dev@example.com', 'platform_admin' => true];
 $ADMIN = ['sub' => '2', 'name' => 'מנהל', 'email' => 'admin@example.com', 'platform_admin' => false];
-$FIELD = ['sub' => '3', 'name' => 'שטח', 'email' => 'field@example.com', 'platform_admin' => false, 'test_role' => 'field'];
-$OTHER = ['sub' => '4', 'name' => 'ארגון ב', 'email' => 'b@example.com', 'platform_admin' => false, 'test_org' => 2];
+$FIELD = ['sub' => '3', 'name' => 'שטח', 'email' => 'field@example.com', 'platform_admin' => false];
+$OTHER = ['sub' => '4', 'name' => 'ארגון ב', 'email' => 'b@example.com', 'platform_admin' => false];
 
 $csrf = '';
 function login(array $who): void {
@@ -108,6 +107,19 @@ ok($st === 200 && $b === 'abc' && str_starts_with($h['content-type'] ?? '', 'tex
 file_put_contents($identity, '');     // webhook ציבורי — גם בלי זהות
 [$st, $b] = http('GET', "$base/dropbox-webhook.php?challenge=xyz");
 ok($st === 200 && $b === 'xyz', 'C1 בלי זהות');
+
+/* ---------- חברים (פרוסה 01): המפתח הראשון = מנהל ארגון 1; מנהל ושטח בארגון 1, מנהל בארגון ב' ---------- */
+login($DEV);
+foreach ([['admin@example.com', 'admin'], ['field@example.com', 'field']] as [$e, $r]) {
+    [$st] = api('POST', 'invite', [], ['email' => $e, 'role' => $r]);
+    ok($st === 200, "הזמנה $e ($st)");
+}
+[$st, $j] = api('POST', 'org_create', [], ['name' => 'ארגון ב']);
+ok($st === 200 && $j['created'] === 2, "ארגון ב ($st)");
+api('POST', 'org_switch', [], ['org_id' => 2]);
+[$st] = api('POST', 'invite', [], ['email' => 'b@example.com', 'role' => 'admin']);
+ok($st === 200, "הזמנה לארגון ב ($st)");
+api('POST', 'org_switch', [], ['org_id' => 1]);
 
 /* ---------- מפתחות האפליקציה (מסך המפתח) ---------- */
 login($ADMIN);
@@ -209,7 +221,7 @@ $row = q('SELECT * FROM files WHERE dbx_id=?', [$newId])[0] ?? null;
 ok($row && $row['case_id'] === $cases['ישראל ישראלי'] && $row['added_via'] === 'dropbox', 'C2/C3 הקובץ החדש בתיק');
 ok(q1('SELECT last_webhook_at FROM dbx_orgs WHERE org_id=1') !== null, 'webhook אחרון נרשם');
 $ev = q("SELECT * FROM events WHERE action='file_added'");
-ok(count($ev) >= 1 && $ev[0]['source'] === 'system' && json_decode($ev[0]['diff'], true)['via'] === 'dropbox', 'events: file_added, system, via dropbox');
+ok(count($ev) >= 1 && $ev[0]['source'] === 'system' && json_decode($ev[0]['diff'], true)['via'][1] === 'dropbox', 'events: file_added, system, via dropbox');
 $evCount = count($ev);
 // C3: אותו סנכרון פעמיים → שורה אחת
 api('POST', 'dropbox_sync', [], []);
@@ -374,5 +386,8 @@ foreach (['events', 'dbx_orgs', 'files', 'case_folders'] as $t) $hay .= json_enc
 if ($db->query("SELECT name FROM sqlite_master WHERE name='req_log'")->fetchColumn()) $hay .= json_encode($db->query('SELECT * FROM req_log')->fetchAll());
 foreach (array_merge($refreshTokens, ['mocksecret456']) as $secret) ok(!str_contains($hay, $secret), 'C9 סוד דלף: ' . substr($secret, 0, 4));
 ok(!preg_match('/\bat_[0-9a-f]{24}\b/', $hay), 'C9 אסימון גישה דלף');
+
+$log = (string)file_get_contents("$tmp/app.log");
+ok(!preg_match('/PHP (Fatal|Warning|Notice|Deprecated|Parse)/', $log), 'שגיאות PHP בשרת: ' . (preg_match('/PHP (Fatal|Warning|Notice|Deprecated|Parse)[^\n]*/', $log, $mm) ? $mm[0] : ''));
 
 echo "PASS: Dropbox (C1–C11, C13): webhook challenge וחתימה, OAuth PKCE ו-state חד-פעמי, תיקייה ראשית והגבלה אליה, סריקת התאמה ואישור, סנכרון ב-cursor (כפילות, reset, עמודים, שינוי שם, מחיקה), העלאה ב-upload session ומחיקת הזמני, תצוגה מקדימה ומטמון, הפרדת ארגונים, invalid_grant, CLI, ניתוק, ושום סוד בתשובות/ביומן/באירועים\n";

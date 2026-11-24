@@ -70,8 +70,10 @@ function dbxFileRow(array $f): array {
         'thumb' => $preview === 'image', 'dropbox_url' => dbxWebUrl((string)$f['path'], false)];
 }
 
-function dbxAction(string $action, string $method, array $user): never {
-    $who = dbxWho($user);
+/** $pu — הזהות מהשער (ל-sub שנקשר ל-state של OAuth). נקרא אחרי resolveAccess() ובדיקת ה-CSRF. */
+function dbxAction(string $action, string $method, array $pu): never {
+    $user = $pu;
+    $who = dbxWho();
     if ($who === null) reply(403, ['error' => 'אין שיוך לארגון']);
     $pdo = db();
     dbxSchema($pdo);
@@ -159,13 +161,13 @@ function dbxActCallback(PDO $pdo, array $who, string $method, array $user): neve
     $prev = dbxOrg($pdo, $orgId);
     dbxSecretPut('dropbox_refresh', $orgId, $j['refresh_token']);
     $sameAccount = $prev['account_id'] === $j['account_id'];
-    dbxOrgSet($pdo, $orgId, ['status' => 'connected', 'account_id' => $j['account_id'], 'connected_by' => $who['actor'],
+    dbxOrgSet($pdo, $orgId, ['status' => 'connected', 'account_id' => $j['account_id'], 'connected_by' => $who['actor_label'],
         'connected_at' => gmdate('c'), 'last_error' => null] + ($sameAccount ? [] : ['root_id' => null, 'root_path' => null, 'root_lower' => null, 'cursor' => null]));
     try {
         $acc = (new DbxClient($pdo, $orgId))->rpc('users/get_current_account', null);
         dbxOrgSet($pdo, $orgId, ['account_name' => mb_substr((string)($acc['name']['display_name'] ?? $acc['email'] ?? ''), 0, 120)]);
     } catch (DbxError $e) { /* שם החשבון — לא קריטי */ }
-    dbxEvent($orgId, null, 'ui', 'dropbox_connected', ['account_id' => $j['account_id']], ['actor' => $who['actor']]);
+    dbxEvent($orgId, null, 'ui', 'dropbox_connected', ['account_id' => [$prev['account_id'], $j['account_id']]], $who['actor']);
     header('Location: index.html#dropbox', true, 302);
     exit;
 }
@@ -187,11 +189,12 @@ function dbxCallbackPage(int $status, string $why): never {
 function dbxActDisconnect(PDO $pdo, array $who, string $method): never {
     dbxNeed($who, 'dropbox_admin'); dbxMethod($method, 'POST');
     $orgId = $who['org_id'];
+    $wasStatus = dbxOrg($pdo, $orgId)['status'];
     try { (new DbxClient($pdo, $orgId))->rpc('auth/token/revoke', null); } catch (DbxError $e) { /* האסימון נמחק אצלנו בכל מקרה */ }
     dbxSecretDelete('dropbox_refresh', $orgId);
     // הקבצים ב-Dropbox לא נוגעים; רשימות הקבצים והקישורים לתיקים נשארים ("Dropbox מנותק")
     dbxOrgSet($pdo, $orgId, ['status' => 'disconnected', 'cursor' => null, 'sync_pending' => 0]);
-    dbxEvent($orgId, null, 'ui', 'dropbox_disconnected', [], ['actor' => $who['actor']]);
+    dbxEvent($orgId, null, 'ui', 'dropbox_disconnected', ['status' => [$wasStatus, 'disconnected']], $who['actor']);
     reply(200, ['ok' => true, 'dropbox' => dbxPublicStatus(dbxOrg($pdo, $orgId))]);
 }
 
@@ -227,7 +230,7 @@ function dbxActSetRoot(PDO $pdo, array $who, string $method): never {
     if ($org['root_id'] !== $meta['id']) {
         $pdo->prepare('DELETE FROM dbx_folders WHERE org_id=?')->execute([$orgId]);   // מטמון תיקיות — נבנה מחדש בסנכרון
         dbxOrgSet($pdo, $orgId, ['root_id' => $meta['id'], 'root_path' => $meta['path_display'], 'root_lower' => $meta['path_lower'], 'cursor' => null]);
-        dbxEvent($orgId, null, 'ui', 'dropbox_root_set', ['path' => $meta['path_display']], ['actor' => $who['actor']]);
+        dbxEvent($orgId, null, 'ui', 'dropbox_root_set', ['root' => [$org['root_path'], $meta['path_display']]], $who['actor']);
     }
     $r = dbxSync($pdo, $orgId, 8.0);
     reply(200, ['ok' => true, 'sync' => $r, 'dropbox' => dbxPublicStatus(dbxOrg($pdo, $orgId))]);
@@ -272,16 +275,19 @@ function dbxActLink(PDO $pdo, array $who, string $method): never {
     $busy = $pdo->prepare('SELECT case_id FROM case_folders WHERE org_id=? AND (case_id=? OR dbx_folder_id=?)');
     $busy->execute([$who['org_id'], $case['id'], $folderId]);
     if ($busy->fetch()) reply(409, ['error' => 'התיק או התיקייה כבר משויכים']);
-    dbxLinkFolder($pdo, $org, (string)$case['id'], $folder, $who['actor']);
-    dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'dropbox_folder_linked', ['path' => $folder['path_display']], ['actor' => $who['actor']]);
+    dbxLinkFolder($pdo, $org, (string)$case['id'], $folder, $who['actor_label']);
+    dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'dropbox_folder_linked', ['dropbox_folder' => [null, $folder['path_display']]], $who['actor']);
     reply(200, ['ok' => true, 'folder' => ['id' => $folderId, 'path' => $folder['path_display']]]);
 }
 function dbxActUnlink(PDO $pdo, array $who, string $method): never {
     dbxNeed($who, 'dropbox_admin'); dbxMethod($method, 'POST');
     $case = dbxCaseOr404($pdo, $who, body()['case_id'] ?? null);
+    $lp = $pdo->prepare('SELECT dbx_path FROM case_folders WHERE org_id=? AND case_id=?');
+    $lp->execute([$who['org_id'], $case['id']]);
+    $linkedPath = $lp->fetchColumn() ?: null;
     $pdo->prepare('DELETE FROM case_folders WHERE org_id=? AND case_id=?')->execute([$who['org_id'], $case['id']]);
     dbxReassignFiles($pdo, $who['org_id']);
-    dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'dropbox_folder_unlinked', [], ['actor' => $who['actor']]);
+    dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'dropbox_folder_unlinked', ['dropbox_folder' => [$linkedPath, null]], $who['actor']);
     reply(200, ['ok' => true]);
 }
 function dbxActFolderCreate(PDO $pdo, array $who, string $method): never {
@@ -338,9 +344,9 @@ function dbxActUpload(PDO $pdo, array $who, string $method): never {
         $folderPath = $folder ? (string)$folder['path'] : dbxCreateCaseFolder($pdo, $org, $case, $who['actor'])[1];
         $meta = dbxUploadFile($pdo, $org, $folderPath, $tmp, $name);
         if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new DbxError('upload_result');
-        dbxUpsertFile($pdo, $who['org_id'], $meta, 'ui', $who['actor']);
-        $pdo->prepare("UPDATE files SET added_via='ui', added_by=COALESCE(added_by, ?) WHERE dbx_id=?")->execute([$who['actor'], $meta['id']]);
-        dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'file_uploaded', ['via' => 'ui', 'name' => $meta['name'], 'size' => (int)$meta['size']], ['actor' => $who['actor']]);
+        dbxUpsertFile($pdo, $who['org_id'], $meta, 'ui', $who['actor_label']);
+        $pdo->prepare("UPDATE files SET added_via='ui', added_by=COALESCE(added_by, ?) WHERE dbx_id=?")->execute([$who['actor_label'], $meta['id']]);
+        dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'file_uploaded', ['file' => [null, $meta['name']], 'via' => [null, 'ui'], 'size' => [null, (int)$meta['size']]], $who['actor']);
         $row = $pdo->prepare('SELECT * FROM files WHERE dbx_id=?');
         $row->execute([$meta['id']]);
         reply(200, ['ok' => true, 'file' => dbxFileRow($row->fetch())]);
@@ -437,6 +443,22 @@ function dbxActAppSet(PDO $pdo, array $who, string $method, array $user): never 
     }
     if ($key !== '') dbxSecretPut('dropbox_app_key', DBX_GLOBAL_ORG, $key);
     if ($secret !== '') dbxSecretPut('dropbox_app_secret', DBX_GLOBAL_ORG, $secret);
-    dbxEvent(DBX_GLOBAL_ORG, null, 'ui', 'dropbox_app_set', ['app_key' => $key !== '', 'app_secret' => $secret !== ''], ['actor' => $who['actor']]);
+    dbxEvent(DBX_GLOBAL_ORG, null, 'ui', 'dropbox_app_set', ['app_key' => [null, $key !== '' ? 'updated' : 'unchanged'], 'app_secret' => [null, $secret !== '' ? 'updated' : 'unchanged']], $who['actor']);
     reply(200, ['ok' => true, 'app_key_set' => DbxClient::appKey() !== null, 'app_secret_set' => DbxClient::appSecret() !== null]);
+}
+
+/** שורת "Dropbox" בבדיקות התקינות של מסך המפתח (אפיון 03 §3.6): App key, ולכל ארגון — מצב, סנכרון, webhook ושגיאה. */
+function dbxHealthRow(PDO $pdo): array {
+    dbxSchema($pdo);
+    $appOk = DbxClient::appKey() !== null && DbxClient::appSecret() !== null;
+    $orgs = $pdo->query('SELECT d.*, o.name FROM dbx_orgs d LEFT JOIN orgs o ON o.id = d.org_id ORDER BY d.org_id')->fetchAll();
+    $label = ['connected' => 'מחובר', 'reauth' => 'צריך חיבור מחדש', 'disconnected' => 'לא מחובר'];
+    $parts = [$appOk ? 'App key מוגדר' : 'App key / App secret חסרים'];
+    foreach ($orgs as $o) {
+        $parts[] = ($o['name'] ?? ('ארגון ' . $o['org_id'])) . ': ' . ($label[$o['status']] ?? $o['status'])
+            . ($o['last_sync_at'] ? ' · סנכרון ' . $o['last_sync_at'] : '') . ($o['last_webhook_at'] ? ' · webhook ' . $o['last_webhook_at'] : '')
+            . ($o['last_error'] ? ' · שגיאה: ' . $o['last_error'] : '');
+    }
+    $ok = $appOk && !array_filter($orgs, static fn($o) => $o['status'] === 'reauth');
+    return ['name' => 'Dropbox', 'ok' => $ok, 'state' => implode(' | ', $parts)];
 }
