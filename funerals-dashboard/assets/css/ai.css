@@ -1,6 +1,6 @@
 /* פרוסה 06 — עוזר AI: חלון הצ'אט, כרטיסי הצעה, הגדרות. משתמש במשתני app.css. */
 #aiDialog .ai-form { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-#aiDialog { width: min(640px, 100vw); height: min(760px, 92dvh); }
+@media (min-width: 600px) { #aiDialog { width: min(640px, 100vw); height: min(760px, 92dvh); } }
 .ai-body { display: flex; flex-direction: column; gap: var(--s2); }
 .ai-msg { max-width: 85%; padding: var(--s2) var(--s3); border-radius: var(--r); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .ai-msg.me { align-self: flex-start; background: var(--brand-soft); }
@@ -10,7 +10,7 @@
 .ai-compose { flex: none; border-top: 1px solid var(--line); padding: var(--s2); padding-bottom: calc(var(--s2) + env(safe-area-inset-bottom)); background: var(--surface); }
 .ai-meta { font-size: .75rem; color: var(--muted); margin-bottom: 4px; }
 .ai-row { display: flex; gap: var(--s2); align-items: flex-end; }
-.ai-row textarea { flex: 1; min-width: 0; resize: none; font: inherit; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
+.ai-row textarea { padding-block: var(--s1); flex: 1; min-width: 0; resize: none; font: inherit; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); }
 .ai-card { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); background: var(--surface); }
 .ai-card h3 { font-size: .95rem; margin: 0 0 4px; }
 .ai-src { margin: 0 0 var(--s1); font-size: .8rem; }
@@ -27,6 +27,7 @@
 .ai-state.applied { color: var(--ok); }
 .ai-state.failed { color: var(--danger); }
 .ai-check { display: flex; gap: var(--s2); align-items: center; min-height: var(--tap); }
+.ai-check input { flex: none; inline-size: 22px; block-size: 22px; min-height: 0; padding: 0; }
 .ai-test { align-items: center; }
 .ai-test .btn { flex: none; }
 @media (max-width: 420px) { .ai-r { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); } .ai-l { grid-column: 1 / -1; } }

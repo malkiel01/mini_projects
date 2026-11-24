@@ -48,7 +48,7 @@
   function card(p) {
     const c = node('section', 'ai-card'); c.dataset.id = p.id;
     c.append(node('h3', '', p.card.title || 'הצעת עדכון'));
-    if (p.card.source) c.append(node('p', 'muted ai-src', 'מקור: ' + p.card.source));
+    if (p.card.source) { const src = node('p', 'muted ai-src', 'מקור: '); const b = node('bdi', '', p.card.source); b.dir = 'auto'; src.append(b); c.append(src); }
     const t = node('div', 'ai-rows');
     (p.card.rows || []).forEach(r => {
       const row = node('div', 'ai-r');
@@ -181,10 +181,15 @@
     fillModels(); prov.addEventListener('change', fillModels);
     const lab = (t, el, wide) => { const l = node('label', 'f' + (wide ? ' wide' : '')); l.append(node('span', '', t), el); return l; };
     f.append(lab('ספק', prov), lab('מודל', model));
-    g.append(f);
+    g.append(f, node('p', 'hint', 'מומלץ: Claude Opus 5.5. מודל זול יותר — תשובות מהירות, פחות מדויקות.'));
 
     g.append(node('h3', '', 'מפתח API'));
-    g.append(node('p', 'hint', s.has_key ? `מוגדר, מסתיים ב-…${s.key_hint}` + (s.key_check ? ' · בדיקה אחרונה: ' + ({ok: 'תקין', invalid: 'לא תקין', no_credit: 'אין יתרה', error: 'שגיאה'}[s.key_check] || s.key_check) : '') : 'לא הוגדר מפתח. המפתח נשמר מוצפן, ולא מוצג שוב.'));
+    const kh = node('p', 'hint');
+    if (s.has_key) {
+      const tail = node('bdi', '', '…' + s.key_hint); tail.dir = 'ltr';
+      kh.append('מוגדר, מסתיים ב-', tail, s.key_check ? ' · בדיקה אחרונה: ' + ({ok: 'תקין', invalid: 'לא תקין', no_credit: 'אין יתרה', error: 'שגיאה'}[s.key_check] || s.key_check) : '');
+    } else kh.textContent = 'לא הוגדר מפתח. המפתח נשמר מוצפן, ולא מוצג שוב.';
+    g.append(kh);
     const key = node('input'); key.type = 'password'; key.autocomplete = 'off'; key.dir = 'ltr'; key.placeholder = s.has_key ? 'מפתח חדש (ריק = להשאיר)' : 'sk-ant-…';
     key.setAttribute('aria-label', 'מפתח API');
     const kf = node('div', 'fields'); kf.append(lab('מפתח', key, true)); g.append(kf);
