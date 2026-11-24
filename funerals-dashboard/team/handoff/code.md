@@ -33,3 +33,12 @@
   (`normalize`, `cleanText`, `existing`, `need`) עונות בעצמן ב-`reply()` ויוצאות — ב-06 זה מסיים את הבקשה עם JSON שגיאה.
 - רשימת הכלים: `extActions()` (שם, שיטה, הרשאה, תיאור he/en, פרמטרים, סכמת גוף) — אותה טבלה של openapi.json.
 - בדיקה: `tests/ext-ai.php`, `tests/ext-ai2.php`.
+
+**05 מוזגה (#1840, d7f0063).** פתוח אחרי המיזוג:
+1. **E11** (ידני, הבעלים): GPT מותאם עם הפרומפט, קובץ ה-API והאסימון — "תוסיף ל<שם>: הערה בדיקה". במטלות.
+   כאן ייבדק גם ש-`ext.php/<action>` (PATH_INFO) עובד בשרת; אם לא — `ext/<action>.php` או rewrite.
+2. **אחרי מיזוג 03:** `tests/ext-dbx.php` ידלג (03 קיימת). לבדוק את `files`/`file_text` מול ה-Dropbox המדומה של 03
+   (`tests/dropbox-mock.php`, `DBX_API_BASE=http://127.0.0.1:PORT`, כמו ב-`tests/dropbox-test.php`).
+3. **אחרי מיזוג 03:** להעביר את `tokens` / `ext_fail` מ-`extEnsureSchema()` למיגרציה ממוספרת (migrateV3), אחרי v2 של 03.
+4. **06:** קורא ל-`extDo(..., 'ai')`. פונקציות הליבה עונות ב-`reply()` ולא זורקות — אם 06 צריך, זה שינוי של 01.
+
