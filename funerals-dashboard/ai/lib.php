@@ -6,8 +6,8 @@ declare(strict_types=1);
  * האפיון: docs/spec/06-ai.md. נטען מ-ai/actions.php (שנטען מ-api.php). לא נקודת קצה: גישה ישירה → 404.
  *
  * הכללים שהקובץ אוכף:
- * - **הכלים = הפעולות של ext.php (05)**, דרך extRun() — אותה לוגיקה ואותן הרשאות, בהקשר של המשתמש המחובר. אין כאן
- *   שאילתה על תיקים ואין כתיבה ישירה. אין extRun (05 עוד לא מוזגה) → הכלים לא מוצעים לספק, והצ'אט אומר זאת.
+ * - **הכלים = הפעולות של ext.php (05)**, דרך extDo() — אותה לוגיקה ואותן הרשאות, בהקשר של המשתמש המחובר. אין כאן
+ *   שאילתה על תיקים ואין כתיבה ישירה. אין extDo → הכלים לא מוצעים לספק, והצ'אט אומר זאת.
  * - **שום כתיבה בלי ✓:** כלי כתיבה רץ ב-dry (05 עושה הכול ו-ROLLBACK) ומחזיר כרטיס. ✓ מריץ אותו באמת, via: ai
  *   (formSaveCase של 02 — "מאומת" נשמר "לאימות"). "אישור אוטומטי" (הגדרת ארגון, כבויה) מדלג על הכרטיס, לא על הכלל.
  * - **המפתח** — רק ב-secrets (מוצפן). לא חוזר בתשובה, לא ביומן הבקשות, לא ב-events; מוצגים רק 4 התווים האחרונים.
@@ -177,7 +177,7 @@ function aiKeyTest(string $provider, string $model, string $key): array {
 // ───────────────────────── הכלים = הפעולות של ext.php ─────────────────────────
 
 /** הכלים קיימים רק כשהשכבה המשותפת של 05 קיימת. */
-function aiToolsReady(): bool { return function_exists('extActions') && function_exists('extRun'); }
+function aiToolsReady(): bool { return function_exists('extActions') && function_exists('extDo'); }
 
 /** הגדרות הכלים לספק — נוצרות מטבלת הפעולות של 05 (extActions), לא נכתבות כאן. */
 function aiToolDefs(): array {
@@ -207,28 +207,17 @@ function aiToolDefs(): array {
     return $tools;
 }
 
-/** ה"חבר" ש-extRun מקבל — מההקשר של המשתמש המחובר (01), לא מאסימון. */
-function aiMember(): array {
-    $c = ctx();
-    return ['user_id' => $c['user']['id'], 'name' => $c['user']['name'], 'email' => $c['user']['email'],
-        'org_id' => (int)$c['org']['id'], 'org_name' => (string)$c['org']['name'], 'role' => $c['role']];
-}
-
 /**
- * מריץ פעולה של ext.php בהקשר של המשתמש המחובר, ולוכד את התשובה במקום לצאת (reply() במצב לכידה).
- * מחזיר [status, data]. ה-actor ב-events: שם המשתמש + " (AI)". טרנזקציה שנשארה פתוחה (שגיאה באמצע) — מתבטלת.
+ * מריץ פעולה של ext.php (extDo של 05) בהקשר של המשתמש המחובר, via: ai (05 כותב "<שם> (AI)" ביומן). מחזיר [status, data].
+ * שגיאת פעולה — ExtError; פונקציות הליבה (normalize, existing, need) עונות ב-reply() — כאן במצב לכידה (FdReply), כדי שהשגיאה
+ * תחזור לספק כ-tool_result ולא תסיים את בקשת הצ'אט. טרנזקציה שנשארה פתוחה (שגיאה באמצע) — מתבטלת.
  */
 function aiExt(PDO $pdo, string $action, array $input, bool $dry): array {
-    $def = extActions()[$action] ?? null;
-    if ($def === null) return [404, ['error' => 'כלי לא מוכר: ' . $action]];
-    $query = $body = [];
-    if ($def['method'] === 'POST') $body = $input; else foreach ($input as $k => $v) if (is_scalar($v)) $query[$k] = (string)$v;
-    $saveActor = $GLOBALS['fd_ctx']['actor'];
-    $GLOBALS['fd_ctx']['actor'] = ['id' => $saveActor['id'], 'actor' => aiActorName()];
     $GLOBALS['fd_reply_capture'] = true;
     try {
-        extRun($pdo, aiMember(), $action, $query, $body, 'ai', $dry);
-        return [500, ['error' => 'הפעולה לא החזירה תשובה']];
+        return [200, extDo($pdo, $action, $input, 'ai', $dry)];
+    } catch (ExtError $e) {
+        return [$e->getCode() ?: 400, ['error' => $e->getMessage()]];
     } catch (FdReply $r) {
         return [$r->status, $r->data];
     } catch (Throwable $e) {
@@ -236,14 +225,8 @@ function aiExt(PDO $pdo, string $action, array $input, bool $dry): array {
         return [500, ['error' => 'הכלי נכשל']];
     } finally {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        unset($GLOBALS['fd_reply_capture']);
-        $GLOBALS['fd_ctx']['actor'] = $saveActor;
-        unset($GLOBALS['fd_err']);
+        unset($GLOBALS['fd_reply_capture'], $GLOBALS['fd_err']);
     }
-}
-function aiActorName(): string {
-    $u = ctx()['user'];
-    return ($u['name'] !== '' ? $u['name'] : ($u['email'] !== '' ? $u['email'] : 'משתמש ' . $u['id'])) . ' (AI)';
 }
 
 /** שורות "לפני ← אחרי" לכרטיס: מה ביקשו מול התיק כפי שהוא, ומה יישמר בפועל (מה-dry של 05). */

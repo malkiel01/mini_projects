@@ -10,3 +10,26 @@
 - **נתיבים חדשים רק תחת `data/`.** כך ההחרגה הקיימת ב-`deploy.yml:360` מכסה אותם ולא צריך `--exclude` חדש.
 - **מזהי התיקים הקיימים (`fd_…`) נשמרים.** המזהה מחושב היום משם, חודש ותאריך (`lib.php:127`), ולכן תיקון שם בייבוא יוצר תיק כפול.
 - **בדיקות לפני push:** `php platform/check-apps.php` ו-`bash funerals-dashboard/tests/run.sh`. שניהם רצים בכ-10 שניות.
+## פרוסה 05 — API חיצוני (ענף `claude/funerals-dashboard-05-external-api`, PR #1840)
+
+**מצב:** מיושר מול 01 (#1839) ו-02 (#1842). E1–E10 אוטומטיים ב-`tests/ext.sh` (נקרא מ-`run.sh`). E11 ידני אחרי פריסה.
+
+**איך 05 יושבת על 01:**
+- `ext.php`: האסימון → `extMember()` (users.active=1 וגם members.active=1, ברגע הבקשה) → `extSetContext()` בונה את `fd_ctx`,
+  וכל הרשאה היא `can()` דרך `EXT_PERM_MAP` (view→case.view, update→case.track, details/payments/create→case.edit). אף פעם לא `dev`.
+- כתיבה: `formSaveCase($pdo, $raw, 'api', ctx()['actor'], $org, fn => need(caseChangeNeeds(...)))` של 02 — בלי מימוש משלנו:
+  "מאומת" → "לאימות", ובדיקה שאדם כבר סגר לא נפתחת מחדש (ההצעה בהערה). `caseChangeNeeds()` הועבר מ-`api.php` ל-`lib/access.php`.
+  לפני כן — בדיקה לפי שדה (`EXT_FIELDS`), כדי לומר לצ'אט בדיוק מה אסור. יומן: `logRequest('ext:…')`.
+- `tokens.php`: `resolveAccess()` — הארגון הפעיל של 01. מפתח בלי תפקיד בארגון לא יוצר אסימון (אין תפקיד לתת לו).
+- טבלת `tokens` — `extEnsureSchema()` לפי שם ואידמפוטנטית, **בלי** מספר גרסה — כדי לא להתנגש במיגרציה של 03 (הצעת הבקרה).
+
+**03:** files/file_text מיושרות לחתימות של 03 (#1844): `dropbox/actions.php` נטען לפי צורך, `dropboxFileText(int)`, DbxError → 422/501/413/502. נבדק בתחליף (`tests/ext-dbx.php`, מדלג כש-03 קיימת). אחרי מיזוג 03 — להריץ שוב.
+**PATH_INFO:** OpenAPI משתמש ב-`ext.php/<action>`; `?action=` נתמך גם. אם לא עובד בשרת (E11) — `ext/<action>.php` או rewrite.
+
+**לפרוסה 06 (AI):** הפעולות הן `extDo(PDO $pdo, string $action, array $in, string $via = 'api'): array` ב-`ext-lib.php`.
+- הקשר: `ctx()` של 01 — ב-06 אחרי `resolveAccess()` של המשתמש המחובר; ב-ext.php מ-`extSetContext()` של האסימון.
+- `$via = 'ai'` → `via: ai` בבדיקות, "<שם> (AI)" ביומן, ו"מאומת" → "לאימות" (finalAllowed('ai') = false).
+- שגיאה של הפעולה → `ExtError` (getCode = 400/403/404/501, getMessage בעברית) — להחזיר למודל. **אבל** פונקציות הליבה
+  (`normalize`, `cleanText`, `existing`, `need`) עונות בעצמן ב-`reply()` ויוצאות — ב-06 זה מסיים את הבקשה עם JSON שגיאה.
+- רשימת הכלים: `extActions()` (שם, שיטה, הרשאה, תיאור he/en, פרמטרים, סכמת גוף) — אותה טבלה של openapi.json.
+- בדיקה: `tests/ext-ai.php`, `tests/ext-ai2.php`.

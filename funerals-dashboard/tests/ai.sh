@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # בדיקות פרוסה 06 (AI מובנה): F1–F7 מ-docs/spec/06-ai.md, מול ספק מדומה (tests/ai-mock.php) — בלי רשת.
-# רץ מתוך tests/run.sh, או לבד. F3–F6 דורשים את השכבה המשותפת של 05 (extRun ב-ext-lib.php); בלעדיה — מדולגים, עם הודעה.
+# רץ מתוך tests/run.sh, או לבד. הכלים — extDo() של 05 (ext-lib.php).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 APP=funerals-dashboard
@@ -109,9 +109,6 @@ get admin ai_thread "id=$T" >/dev/null; test "$(j thread.messages.1.text)" = 'ש
 ok "F7 — תקרה 0 ו-2/2: הודעה, אין קריאה לספק; מונה, היסטוריה נשמרת"
 
 # ===== F3–F6: הכלים = הפעולות של ext.php (05) =====
-if ! grep -q 'function extRun' "$APP/ext-lib.php" 2>/dev/null; then
-  echo "  ⏭  F3–F6 מדולגים: אין extRun ב-ext-lib.php (פרוסה 05 עוד לא מוזגה)"
-else
   # F3: כלי כתיבה → כרטיס, ושום שינוי במסד עד ✓
   before="$(caseBody "$CASE")"; ev0="$(events)"
   queue "[$(tool case_update "{\"id\":\"$CASE\",\"checks\":{\"license_number\":{\"status\":\"verified\",\"value\":\"12345\"}},\"source\":\"רישיון.pdf\"}"),$(text 'הצעתי — אשר בכרטיס')]"
@@ -169,8 +166,7 @@ else
   caseBody "$CASE" | php -r '$c=json_decode(stream_get_contents(STDIN),true)["checks"]["identity_document"]; exit($c["status"]==="document_present" ? 0 : 1);' || fail "אישור אוטומטי עקף את כלל ה'לאימות'"
   post admin ai_settings_save '{"auto_approve":false}' >/dev/null
   ok "אישור אוטומטי — בלי כרטיס, ועדיין \"לאימות\""
-fi
 
 head -n 4 "$M/requests.jsonl" | tail -n 1 | grep -q '"version":"2023-06-01"' || fail "anthropic-version"
 ! grep -qE 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | head; fail "שגיאות PHP בשרת"; }
-if grep -q "function extRun" "$APP/ext-lib.php" 2>/dev/null; then echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה"; else echo "PASS (06): F1, F2, F7 (F3–F6 ממתינים ל-extRun של 05)"; fi
+echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה"
