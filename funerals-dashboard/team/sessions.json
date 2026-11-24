@@ -4,18 +4,7 @@
     "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
     "branch": "claude/funerals-dashboard-spec"
   },
-  "code": [
-    {
-      "session": "session_018g4NYFpGmzP8ZDdxNpWJVb",
-      "branch": "claude/funerals-dashboard-04-field",
-      "slice": "04"
-    },
-    {
-      "session": "session_018g4NYDuym4xhnQbP7pp88K",
-      "branch": "claude/funerals-dashboard-06-ai",
-      "slice": "06"
-    }
-  ],
+  "code": [],
   "control": {
     "session": "session_018g4NYES4G3kVk57413GPnM",
     "branch": "claude/funerals-dashboard-control",
@@ -49,6 +38,16 @@
     {
       "session": "session_018g4NYEkZkJeu8Y7WL7JS7a",
       "slice": "05",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYFpGmzP8ZDdxNpWJVb",
+      "slice": "04",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYDuym4xhnQbP7pp88K",
+      "slice": "06",
       "state": "רדום"
     }
   ],
