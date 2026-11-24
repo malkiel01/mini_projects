@@ -4,11 +4,23 @@
     "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
     "branch": "claude/funerals-dashboard-spec"
   },
-  "code": {
-    "session": "session_018g4NYGdJzhAAfEVxcVrjGM",
-    "branch": "claude/funerals-dashboard-01-infra",
-    "slice": "01"
-  },
+  "code": [
+    {
+      "session": "session_018g4NYGdJzhAAfEVxcVrjGM",
+      "branch": "claude/funerals-dashboard-01-infra",
+      "slice": "01"
+    },
+    {
+      "session": "session_018g4NYE4eQofqbBdfWGEthU",
+      "branch": "claude/funerals-dashboard-02-smart-form",
+      "slice": "02"
+    },
+    {
+      "session": "session_018g4NYD6tKx36K2GtksWvXW",
+      "branch": "claude/funerals-dashboard-03-dropbox",
+      "slice": "03"
+    }
+  ],
   "control": {
     "session": "session_018g4NYFvCTWcu2sJBJangFR",
     "branch": "claude/funerals-dashboard-control",
