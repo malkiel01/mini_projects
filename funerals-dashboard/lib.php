@@ -232,7 +232,6 @@ function listMonth(PDO $pdo, string $action, string $method, int $orgId): never 
     }
     reply(200, ['month'=>$month, 'records'=>$items]);
 }
-/** $source — 'import' (ingest.php) או 'ui' (ייבוא קובץ מהמסך). */
 /** שם לצורך "תיק דומה": בלי גרשיים, פיסוק ורווחים כפולים, ובלי תלות בסדר המילים ("כהן משה" = "משה כהן"). */
 function similarName(string $name): string {
     $words = preg_split('/\s+/u', trim(preg_replace('/["\'`״׳.,()\-]+/u', ' ', mb_strtolower($name))), -1, PREG_SPLIT_NO_EMPTY);
@@ -258,6 +257,7 @@ function importSimilar(PDO $pdo, array $raw, int $orgId): ?array {
     }
     return null;
 }
+/** $source — 'import' (ingest.php) או 'ui' (ייבוא קובץ מהמסך). */
 function importRecords(PDO $pdo, string $method, int $orgId, array $actor, string $source): never {
     if ($method !== 'POST') reply(405, ['error'=>'שיטה לא מורשית']);
     $payload = body();
@@ -277,6 +277,20 @@ function importRecords(PDO $pdo, string $method, int $orgId, array $actor, strin
         $similar[] = ['index'=>$i, 'name'=>cleanText($raw['name'] ?? '', 160), 'date'=>cleanText($raw['date'] ?? '', 10),
             'match'=>['id'=>$match['id'], 'name'=>$match['name'], 'date'=>$match['date'] ?? ''], 'choice'=>$choice];
         if ($choice === 'update') { $raw['id'] = $match['id']; $raw['name'] = $match['name']; $records[$i] = $raw; }
+    }
+    // ⚪2 (ביקורת 08): שתי רשומות חדשות דומות באותו קובץ — הראשונה עוד לא במסד, ולכן importSimilar לא תופס אותה.
+    // אותו מזהה מחושב (אותו שם, חודש ותאריך) הוא עדכון של אותו תיק; מזהה אחר — היה נוצר תיק כפול, ולכן 400 עם השמות.
+    $fresh = [];
+    foreach ($records as $i => $raw) {
+        if (cleanText($raw['id'] ?? '', 100) !== '') continue;
+        $item = normalize($raw, $orgId);
+        foreach ($fresh as [$j, $other]) {
+            if ($other['id'] !== $item['id'] && $other['month'] === $item['month'] && similarName($other['name']) === similarName($item['name'])
+                && ($other['date'] === '' || $item['date'] === '' || $other['date'] === $item['date'])) {
+                reply(400, ['error'=>'אותו תיק פעמיים בקובץ: "' . $other['name'] . '" ו-"' . $item['name'] . '" — לאחד לרשומה אחת', 'code'=>'duplicate', 'index'=>[$j, $i]]);
+            }
+        }
+        $fresh[] = [$i, $item];
     }
     $undecided = array_values(array_filter($similar, static fn($x) => $x['choice'] === null));
     if ($undecided) reply(409, ['error'=>'יש תיקים דומים — לבחור לעדכן או ליצור חדש', 'code'=>'similar', 'similar'=>$undecided]);

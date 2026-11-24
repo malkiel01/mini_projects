@@ -50,6 +50,10 @@ ok(!in_array('verified', EXT_PROJECT_STATUSES, true) && array_diff(EXT_PROJECT_S
 $allowed = substr($p, (int)strpos($p, '## הסטטוסים שמותר להחזיר'));
 ok(!str_contains($allowed, '`verified`') && str_contains($p, 'אף פעם לא `verified`'), 'P2: "אף פעם לא verified", ו-verified לא ברשימת המותרים');
 ok(str_contains($p, '**בלי `id`**') && str_contains($p, '`id` בדיוק כמו בקובץ הייצוא'), 'P2: id מהייצוא; תיק חדש בלי id');
+ok(str_contains($p, '**`notes` ו-`payments` — מלאים או בכלל לא.**') && str_contains($p, '**מוחקים** את הקיים'),
+    'P2: notes ו-payments — מלאים (הקיים + החדש) או בכלל לא, כי הייבוא מחליף אותם');
+ok(str_contains($p, 'תיק | מה עודכן | מאיזה קובץ') && str_contains($p, '`source` (שם הקובץ)') && str_contains($p, '"תכין JSON"'),
+    'P2: מהנוסח של מנהל הצוותים — טבלה לפני ה-JSON, source = שם הקובץ, JSON רק לפי בקשה');
 ok(!preg_match('/\b(find|case_update|whoami|file_text)\b/', $p), 'P2: בלי פעולות API (זרימת קובץ, בלי Actions)');
 preg_match('/```json\n(.*?)\n```/s', $p, $ex);
 $j = json_decode($ex[1] ?? '', true);

@@ -246,6 +246,14 @@ code="$(st -H 'Content-Type: application/json' -H "Authorization: Bearer $TOK0" 
 test "$code" = 200 && test "$(jv '$v["similar"][0]["choice"]')" = "'update'" || fail "P3: ingest — ברירת המחדל לעדכן ($code)"
 test "$(sql "SELECT COUNT(*) FROM funerals")" = "$n0" && test "$(sql "SELECT json_extract(body,'\$.notes') FROM funerals WHERE id='$IMP'")" = 'מ-ingest' || fail "P3: ingest — עדכן ולא יצר"
 ok "P3 — רשומה דומה בלי id: 409 עם הרשימה ושום דבר לא נשמר; לעדכן (השם נשאר) / ליצור חדש; עם id — בלי שאלה; ingest — לעדכן"
+# ⚪2 (ביקורת 08): שתי רשומות חדשות דומות באותו קובץ → 400 ושום דבר לא נשמר; שתי רשומות זהות → תיק אחד
+n1="$(sql "SELECT COUNT(*) FROM funerals")"
+code="$(post office import '{"records":[{"month":"2026-10","name":"כפול דו","date":"2026-10-15"},{"month":"2026-10","name":"דו  כפול"}]}')"
+test "$code" = 400 && test "$(jv '$v["code"]')" = "'duplicate'" && test "$(sql "SELECT COUNT(*) FROM funerals")" = "$n1" || fail "⚪2: כפול באותו קובץ ($code)"
+code="$(post office import '{"records":[{"month":"2026-10","name":"כפול דו","date":"2026-10-15"},{"month":"2026-10","name":"כפול דו","date":"2026-10-15","notes":"שני"}]}')"
+test "$code" = 200 && test "$(sql "SELECT COUNT(*) FROM funerals")" = "$((n1 + 1))" || fail "⚪2: אותה רשומה פעמיים → תיק אחד ($code)"
+sql "DELETE FROM funerals WHERE name='כפול דו'"   # הספירות של A4 בהמשך
+ok "⚪2 — שתי רשומות דומות באותו קובץ → 400 duplicate; זהות → תיק אחד"
 # P4: סכום שמור כמספר שלם (402) מול 402.0 אחרי normalize — שמירה בלי שינוי לא רושמת payments
 sql "UPDATE funerals SET body=json_set(body,'\$.payments',json('[{\"amount\":402,\"purpose\":\"קבר\",\"reference\":\"\",\"source\":\"\"}]')) WHERE id='$IMP'"
 code="$(get office list '&month=2026-10')"
