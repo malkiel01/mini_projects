@@ -7,6 +7,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../lib/store.php';
+require_once __DIR__ . '/../lib/syllabus.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -24,8 +25,17 @@ if (!lp_allowed($server)) lp_out(403, ['ok' => false, 'code' => 'forbidden', 'er
 $method = strtoupper((string) ($server['REQUEST_METHOD'] ?? 'GET'));
 try {
     if ($method === 'GET') {
-        [$status, $items] = lp_fetch_progress(lp_read_token());
-        lp_out(200, ['ok' => true, 'status' => $status, 'items' => $items]);
+        $token = lp_read_token();
+        [$status, $items] = lp_fetch_progress($token);
+        $curStatus = null;
+        $summary = null;
+        if ($status === 'ok') {
+            [$curStatus, $cur] = lp_fetch_curriculum($token);
+            if ($curStatus === 'ok') {
+                $summary = lp_summary($cur, $items, new DateTimeImmutable('now', new DateTimeZone('Asia/Jerusalem')));
+            }
+        }
+        lp_out(200, ['ok' => true, 'status' => $status, 'items' => $items, 'curriculum' => $curStatus, 'summary' => $summary]);
     }
     if ($method !== 'POST') lp_out(405, ['ok' => false, 'code' => 'method_not_allowed', 'error' => 'GET או POST בלבד']);
 

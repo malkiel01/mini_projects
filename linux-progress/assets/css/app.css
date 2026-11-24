@@ -78,3 +78,12 @@ form#token-form { display: grid; gap: 8px; margin: 16px 0; }
 form#token-form label { font-weight: 600; }
 form#token-form input { font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); }
 form#token-form button { font: inherit; padding: 10px; border: 0; border-radius: 8px; background: var(--ok); color: #fff; cursor: pointer; }
+#syllabus { margin: 8px 0 20px; }
+#syllabus .sec { font-size: 1.1rem; margin: 0 0 6px; }
+#syllabus .overall, #syllabus .pace, #syllabus .unmapped { margin: 4px 0; color: var(--muted); }
+#syllabus .track { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+#syllabus .track-head { font-weight: 600; margin-bottom: 6px; }
+#syllabus .bar { height: 8px; background: var(--todo-bg); border-radius: 999px; overflow: hidden; }
+#syllabus .fill { height: 100%; background: var(--ok); }
+#syllabus details { margin-top: 6px; }
+#syllabus .remaining { margin: 6px 0 0; padding-inline-start: 18px; font-size: 0.9rem; }
