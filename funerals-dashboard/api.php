@@ -84,7 +84,7 @@ function normalize(array $v): array {
     if ($name === '') reply(400, ['error' => 'נדרש שם נפטר']);
     $id = cleanText($v['id'] ?? '', 100);
     if ($id !== '' && !preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(400, ['error' => 'מזהה תיק אינו תקין']);
-    if ($id === '') $id = bin2hex(random_bytes(12));
+    if ($id === '') $id = 'fd_' . substr(hash('sha256', $month . '|' . $name . '|' . ($v['date'] ?? '')), 0, 24);
     $date = cleanText($v['date'] ?? '', 10);
     if ($date !== '' && (!preg_match('/^\d{4}-\d\d-\d\d$/D', $date) || !checkdate((int)substr($date, 5, 2), (int)substr($date, 8, 2), (int)substr($date, 0, 4)))) reply(400, ['error' => 'תאריך לא תקין']);
     $time = cleanText($v['time'] ?? '', 5);
@@ -208,10 +208,13 @@ if ($action === 'save') {
     } else {
         $item['manual_fields'] = ['name','date','time','origin','team','grave','notes','folder_url','payments'];
     }
-    foreach ($item['checks'] as &$check) {
-        if ($check['status'] !== 'unknown') {
+    foreach ($item['checks'] as $key => &$check) {
+        $previous = $old['checks'][$key] ?? null;
+        if (is_array($previous) && $previous['status'] === $check['status']
+            && $previous['value'] === $check['value'] && $previous['note'] === $check['note']) {
+            $check = $previous;
+        } elseif ($check['status'] !== 'unknown' || $check['value'] !== '' || $check['note'] !== '') {
             $check['source'] = 'עדכון ידני';
-            $check['status'] = 'reported';
         }
     }
     unset($check);
@@ -232,9 +235,17 @@ if ($action === 'import') {
             $old = existing($pdo,$item['id']);
             if ($old !== null) {
                 $item['manual_fields'] = $old['manual_fields'] ?? [];
-                foreach ($item['manual_fields'] as $field) if (array_key_exists($field,$old)) $item[$field]=$old[$field];
+                foreach (['name','date','time','origin','team','grave','notes','folder_url','payments'] as $field) {
+                    if (in_array($field, $item['manual_fields'], true)
+                        || (($item[$field] ?? null) === '' && !empty($old[$field]))
+                        || ($field === 'payments' && empty($item['payments']) && !empty($old['payments']))) {
+                        if (array_key_exists($field, $old)) $item[$field] = $old[$field];
+                    }
+                }
+                if (!$item['documents']) $item['documents'] = $old['documents'] ?? [];
+                $item['checks'] = array_replace(($old['checks'] ?? []), $item['checks']);
                 foreach (($old['checks'] ?? []) as $key => $c) {
-                    if (($c['status'] ?? '') === 'reported') $item['checks'][$key]=$c;
+                    if (($c['source'] ?? '') === 'עדכון ידני' || ($c['status'] ?? '') === 'reported') $item['checks'][$key]=$c;
                 }
             }
             store($pdo,$item,$tokenAuth ? 'api' : 'dashboard','import');
