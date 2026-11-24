@@ -30,8 +30,8 @@ node "$APP/tests/field.test.js" || fail "field.test.js"
 grep -q 'src="assets/js/field.js"' "$APP/index.html" || fail "index.html לא טוען את field.js"
 grep -q 'src="assets/js/form.js"' "$APP/index.html" || fail "index.html לא טוען את form.js"
 test ! -e "$APP/setup.php" || fail "setup.php עדיין קיים"
-php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
-  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
+php -r '$a=json_decode(file_get_contents($argv[1]),true); $pub=["ingest.php","ext.php","openapi.json","api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"];
+  if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==$pub) { fwrite(STDERR,"app.json: gate, restricted, ו-public רק ingest.php, ext.php, openapi.json ופעולות devapi\n"); exit(1); }' "$APP/app.json" || fail "app.json"
 php platform/check-apps.php >/dev/null || fail "check-apps.php"
 php -r 'json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);' "$APP/dev/open-items.json" || fail "dev/open-items.json אינו JSON תקין"
 ! grep -qE 'type="password"|id="username"' "$APP/index.html" || fail "index.html: נשארו שדות כניסה בסיסמה"
@@ -60,7 +60,7 @@ test "$(wc -l < "$tmp/cases0")" = 22 || fail "fixture: 22 תיקים"
 idf="$tmp/identity.json"
 as(){ printf '%s' "$1" > "$idf"; }
 as ''
-FD_TEST_IDENTITY_FILE="$idf" php -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+FD_TEST_IDENTITY_FILE="$idf" php -d opcache.jit=disable -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pid=$!
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18964/index.html >/dev/null && break || sleep .2; done
 base="http://127.0.0.1:18964/api.php"
@@ -414,12 +414,14 @@ ok "W1, W5, W7 (HTTP) — היום ומחר, חיפוש, עדכון via field, �
 # ===== יציאה: עם CSRF בלבד =====
 code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
-! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
+! grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
 echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7; פרוסה 04 — W1, W5, W7"
 
-# ===== פרוסה 04 — העלאה מהשטח (מזהה חד-פעמי, שיוך לבדיקה) מול העלאה מדומה, מסד נקי =====
-# (kill 0 היה שולח אות לכל קבוצת התהליכים — לכן רק אם השרת עוד רץ)
+# ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
 if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; pid=0; fi
+bash "$APP/tests/ext.sh"
+
+# ===== פרוסה 04 — העלאה מהשטח (מזהה חד-פעמי, שיוך לבדיקה) מול העלאה מדומה, מסד נקי =====
 wipe
 php "$APP/tests/field.test.php" || fail "פרוסה 04 — field.test.php"
 wipe

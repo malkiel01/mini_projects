@@ -5,6 +5,8 @@
 
 **מנהל הצוותים:** `session_018g4NYCbBPFt8wcKkYCTSP9` (מנהל (5), מ-2026-11-16 ~13:22 UTC) — שעון `trig_016wU15GJpyQAkCeTbJ6QkU5`, כל שעה בדקה 13. (הקודמים: `session_018g4NYFBib6zieTUP467tex` (4), שעון `trig_016SiPhMTUW2wVw2Q73PHzRg` — כבוי; `session_018g4NYGVHYR6Kruh7ktecg3` (3), שעון `trig_01BNGJ8SmxZdndUqBsepanVL` — כבוי; `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
 
+**דף ההתקדמות של כל הצוותים:** https://claude.ai/artifact/5p12Fsrc2EeQtkWrNaAWRu (Artifact פרטי). המקור: `.claude/teams/progress.html`, נבנה ב-`python3 .claude/teams/progress-build.py` מהקבצים של כל צוות; מה שאי אפשר לקרוא מגיט (שעון דולק, בבנייה עכשיו) — ב-`progress-overrides.json`. מנהל הצוותים בונה ומפרסם מחדש לאותה כתובת בכל סבב שיש בו שינוי.
+
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
 | `appraisers` שמאות מקרקעין | פעיל (חודש 21.11 באישור הבעלים) — 14 מתוך 22 ב-main (0.15); פרוסה 16 בקוד (14); שעון `trig_013dnpHoHQ2THx77U6say9Pt` (דקה 47) | `session_018g4NYDF3ThMFSJdPNYMBHe` (בקרה 3; קודם בקרה 2 `session_018g4NYFwUcVefmCvwGAazWA`) |
