@@ -54,6 +54,9 @@ if ($action === 'api_token') {
         ->execute(['-', gmdate('c'), $user['actor'], 'api_token']);
     reply(200, ['ok'=>true,'token'=>$token]);
 }
+// Dropbox (פרוסה 03) — כל הפעולות בקובץ משלהן
+require_once __DIR__ . '/dropbox/actions.php';
+if (dbxHandles($action)) dbxAction($action, $method, $user);
 $pdo = db();
 if ($action === 'list' || $action === 'export') listMonth($pdo, $action, $method);
 if ($action === 'save') {

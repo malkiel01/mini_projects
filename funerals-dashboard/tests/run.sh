@@ -3,12 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 tmp="$(mktemp -d)"
 pid=0
-cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; rm -f funerals-dashboard/data/config.php funerals-dashboard/data/.config-* funerals-dashboard/data/funerals.sqlite*; rm -rf "$tmp"; }
+cleanup(){ if [ "$pid" != 0 ]; then kill "$pid" >/dev/null 2>&1 || true; fi; rm -f funerals-dashboard/data/config.php funerals-dashboard/data/.config-* funerals-dashboard/data/funerals.sqlite* funerals-dashboard/data/secret.key; rm -rf "$tmp"; }
 trap cleanup EXIT
 fail(){ echo "FAIL: $*"; exit 1; }
-for f in api.php lib.php ingest.php tests/gate-prepend.php; do php -l "funerals-dashboard/$f"; done
+for f in api.php lib.php ingest.php dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/gate-prepend.php tests/dropbox-mock.php tests/dropbox-test.php; do php -l "funerals-dashboard/$f"; done
 test ! -e funerals-dashboard/setup.php || fail "setup.php עדיין קיים"
-php -r '$a=json_decode(file_get_contents("funerals-dashboard/app.json"),true); if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==["ingest.php"]) { fwrite(STDERR,"app.json: נדרשים gate:true, restricted:true ו-public רק ingest.php\n"); exit(1); }'
+php -r '$a=json_decode(file_get_contents("funerals-dashboard/app.json"),true); if (($a["gate"]??null)!==true || ($a["restricted"]??null)!==true || ($a["public"]??null)!==["ingest.php","dropbox-webhook.php"]) { fwrite(STDERR,"app.json: נדרשים gate:true, restricted:true ו-public רק ingest.php ו-dropbox-webhook.php\n"); exit(1); }'
 php platform/check-apps.php
 php -r '$h=file_get_contents("funerals-dashboard/index.html"); if (!preg_match("~<script>\s*(.*?)\s*</script>~s", $h, $m)) exit(1); file_put_contents($argv[1],$m[1]); if (preg_match("~type=\"password\"|id=\"username\"|password_hash|\x27login\x27~", $h)) { fwrite(STDERR,"index.html: נשארו שדות כניסה בסיסמה\n"); exit(1); }' "$tmp/ui.js"
 node --check "$tmp/ui.js"
@@ -103,4 +103,7 @@ php -r '$p=new PDO("sqlite:".$argv[1]); $a=$p->query("SELECT actor FROM audit WH
 # יציאה: עם CSRF בלבד
 code="$(st -b "$tmp/cookies" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(st -b "$tmp/cookies" -X POST -H "X-CSRF-Token: $csrf" "$base?action=logout")"; test "$code" = 200 || fail "logout ($code)"
+kill "$pid" >/dev/null 2>&1 || true; pid=0
+rm -f funerals-dashboard/data/config.php funerals-dashboard/data/funerals.sqlite* funerals-dashboard/data/secret.key
+php funerals-dashboard/tests/dropbox-test.php
 echo "PASS: זהות מהשער (בלי/granted:false/granted:true/כותרת מזויפת), אין כניסה בסיסמה, אסימון API מהממשק (CSRF, SHA-256, 0600, החלפה מבטלת), config.php נוצר לבד, ingest.php Bearer בלבד, קליטה, ייצוא, עדכון ידני וייבוא חוזר"

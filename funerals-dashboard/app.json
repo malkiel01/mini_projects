@@ -8,6 +8,7 @@
   "restricted": true,
   "gate": true,
   "public": [
-    "ingest.php"
+    "ingest.php",
+    "dropbox-webhook.php"
   ]
 }
