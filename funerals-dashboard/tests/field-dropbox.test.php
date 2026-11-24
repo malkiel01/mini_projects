@@ -13,7 +13,7 @@ $tmpDir = sys_get_temp_dir() . '/fd-field-dbx-' . getmypid();
 $state = "$tmpDir/mock.json";
 file_put_contents($state, '');
 $port = 18975;
-$mock = proc_open(['php', '-S', "127.0.0.1:$port", "$app/tests/dropbox-mock.php"], [1 => ['file', "$tmpDir/mock.log", 'a'], 2 => ['file', "$tmpDir/mock.log", 'a']],
+$mock = proc_open(['php', '-d', 'opcache.jit=disable', '-S', "127.0.0.1:$port", "$app/tests/dropbox-mock.php"], [1 => ['file', "$tmpDir/mock.log", 'a'], 2 => ['file', "$tmpDir/mock.log", 'a']],
     $pipes, null, ['DBX_MOCK_STATE' => $state, 'PATH' => getenv('PATH')]);
 register_shutdown_function(static function () use ($mock, $tmpDir) {
     proc_terminate($mock); proc_close($mock);
@@ -82,5 +82,8 @@ dbxOrgSet($pdo, 1, ['status' => 'disconnected']);
 [$st, $b] = fieldUpload($pdo, 1, $case['id'], 'up_' . str_repeat('c', 32), 'grave_photo', $img, 'x.jpg', $actor, 'fieldDropboxUploader', $now);
 ok($st === 409 && $b['error'] === FIELD_DBX_DOWN, "W7: מנותק → 409 ($st)");
 
+// אזהרות PHP בשרת המדומה (בלי אזהרת ה-JIT של ה-runner, "in Unknown on line 0")
+$warn = array_filter(file("$tmpDir/mock.log") ?: [], static fn($l) => preg_match('/PHP (Fatal|Warning|Parse)/', $l) && !str_contains($l, 'in Unknown on line 0'));
+ok($warn === [], 'אזהרות PHP במדומה: ' . implode('', $warn));
 if ($fails) { fwrite(STDERR, "field-dropbox.test.php: $fails כשלים\n"); exit(1); }
 echo "  ✓ פרוסה 04 — W2–W4, W7 מול Dropbox מדומה\n";
