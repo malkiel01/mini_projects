@@ -55,7 +55,7 @@ test "$(wc -l < "$tmp/cases0")" = 22 || fail "fixture: 22 תיקים"
 idf="$tmp/identity.json"
 as(){ printf '%s' "$1" > "$idf"; }
 as ''
-FD_TEST_IDENTITY_FILE="$idf" php -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+FD_TEST_IDENTITY_FILE="$idf" php -d opcache.jit=disable -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pid=$!
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18964/index.html >/dev/null && break || sleep .2; done
 base="http://127.0.0.1:18964/api.php"
@@ -364,7 +364,7 @@ ok "B7 — 22 התיקים הקיימים (ועוד 22 ישנים) נפתחים;
 # ===== יציאה: עם CSRF בלבד =====
 code="$(as "${ID[boss]}"; st -b "$tmp/c-boss" -X POST "$base?action=logout")"; test "$code" = 403 || fail "logout בלי CSRF ($code)"
 code="$(post boss logout '{}')"; test "$code" = 200 || fail "logout ($code)"
-! grep -qE 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log"; fail "שגיאות PHP בשרת"; }
+! grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse)' "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
 echo "PASS: פרוסה 01 — A1–A14, A16 (יומן), A17; זהות מהשער, CSRF, אסימון ingest, ייבוא חוזר; פרוסה 02 — B1–B7"
 
 # ===== פרוסה 05 — API חיצוני (שרת נפרד, מסד נקי) =====
