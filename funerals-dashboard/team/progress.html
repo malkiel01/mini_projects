@@ -1,0 +1,143 @@
+<title>ניהול לוויות חברה קדישא</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&display=swap">
+<style>
+/* פריסה: עמודה אחת צרה, כמו תיק — כותרת, מסלול הפרוסות, ומתחת מה שמחכה לבעלים */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --ink:#1d2523; --muted:#5f6b67; --line:#dde2df;
+  --accent:#2f5d55; --accent-soft:#e3ece9;
+  --ok:#2e7d4f; --ok-soft:#e2f2e8; --run:#b26a00; --run-soft:#fbefd9; --wait:#7a8580; --wait-soft:#eceeed;
+  --f-display:"Frank Ruhl Libre","David",Georgia,serif;
+  --f-body:"Heebo","Segoe UI",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1c2320; --ink:#e7ece9; --muted:#9aa7a2; --line:#2c3632;
+  --accent:#8cc2b6; --accent-soft:#22332f;
+  --ok:#72c993; --ok-soft:#1c3326; --run:#f0b25a; --run-soft:#3a2c14; --wait:#8d9893; --wait-soft:#252c29; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1c2320; --ink:#e7ece9; --muted:#9aa7a2; --line:#2c3632;
+  --accent:#8cc2b6; --accent-soft:#22332f;
+  --ok:#72c993; --ok-soft:#1c3326; --run:#f0b25a; --run-soft:#3a2c14; --wait:#8d9893; --wait-soft:#252c29; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px;display:flex;flex-direction:column;gap:28px}
+h1,h2{font-family:var(--f-display);text-wrap:balance;margin:0}
+h1{font-size:clamp(26px,6vw,36px);line-height:1.15}
+h2{font-size:21px}
+.eyebrow{font-size:12px;letter-spacing:.06em;color:var(--muted)}
+.lead{color:var(--muted);margin:6px 0 0;max-width:60ch}
+.hero{display:flex;flex-direction:column;gap:14px}
+.meter{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.bar span{height:10px;border-radius:3px;background:var(--wait-soft)}
+.bar .ok{background:var(--ok)} .bar .run{background:var(--run)}
+.meter-row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.meter-row b{color:var(--ink);font-variant-numeric:tabular-nums}
+section{display:flex;flex-direction:column;gap:12px}
+.slices{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.slice{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:start;padding:14px 0;border-bottom:1px solid var(--line)}
+.num{font-family:var(--f-display);font-size:22px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.2}
+.slice h3{margin:0;font-size:16px;font-weight:700}
+.slice p{margin:2px 0 0;color:var(--muted);font-size:13.5px;min-width:0}
+.steps{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.step{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--wait-soft);color:var(--wait)}
+.step.ok{background:var(--ok-soft);color:var(--ok)} .step.run{background:var(--run-soft);color:var(--run)}
+.pill{font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.run{background:var(--run-soft);color:var(--run)} .pill.wait{background:var(--wait-soft);color:var(--wait)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.q{display:grid;grid-template-columns:32px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.q:first-of-type{border-top:0;padding-top:0}
+.q .id{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.q b{display:block;font-weight:500}
+.q span{color:var(--muted);font-size:13.5px}
+.task{display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap}
+.task div{min-width:0;flex:1 1 240px}
+.team{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.member{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px}
+.member b{font-size:14px} .member span{font-size:13px;color:var(--muted)}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.log li{display:grid;grid-template-columns:52px 1fr;gap:8px}
+.log time{color:var(--muted);font-variant-numeric:tabular-nums}
+.foot{font-size:12px;color:var(--muted)}
+@media (max-width:420px){.slice{grid-template-columns:34px 1fr}.slice .pill{grid-column:2;justify-self:start}}
+</style>
+
+<div class="wrap" dir="rtl" lang="he">
+  <header class="hero">
+    <div class="eyebrow">מצב הפיתוח · עודכן 24.11.2026, 15:12 UTC</div>
+    <h1>ניהול לוויות חברה קדישא</h1>
+    <p class="lead">כל תיק לוויה כמסלול ברור של מה חסר ומה הושלם, עם קבצים זהים באפליקציה וב‑Dropbox, וכמה חברות קדישא עם עובדים משלהן.</p>
+    <div class="meter" aria-label="התקדמות הבנייה">
+      <div class="bar"><span class="ok"></span><span class="ok"></span><span class="ok"></span><span class="ok"></span><span class="ok"></span><span class="ok"></span></div>
+      <div class="meter-row"><span>בשרת: <b>6 מתוך 6</b></span><span>האפיון: <b>גמור</b></span><span>נשאר: <b>הבדיקות שלך</b></span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>הפרוסות</h2>
+    <ol class="slices">
+      <li class="slice"><div class="num">00</div><div><h3>סקר הקוד הקיים</h3><p>מה קיים מול הכללים ומול הדרישה. 22 התיקים של אוקטובר נשמרים.</p><div class="steps"><span class="step ok">סקר ✓</span><span class="step ok">מוזג ✓</span></div></div><span class="pill ok">הושלם</span></li>
+      <li class="slice"><div class="num">01</div><div><h3>תשתית: ארגונים, עובדים והרשאות</h3><p>שטח · משרד · מנהל · מפתח. מסך מפתח, מטלות ובאגים, גיבוי לפני כל שינוי במסד.</p><div class="steps"><span class="step ok">אפיון ✓</span><span class="step ok">קוד ✓</span><span class="step ok">ביקורת ✓</span><span class="step ok">בשרת ✓</span></div></div><span class="pill ok">בשרת</span></li>
+      <li class="slice"><div class="num">02</div><div><h3>טופס חכם</h3><p>מה חסר ומה הבא בתור, ומאיפה הגיע כל עדכון.</p><div class="steps"><span class="step ok">אפיון ✓</span><span class="step ok">קוד ✓</span><span class="step ok">בשרת ✓</span></div></div><span class="pill ok">בשרת</span></li>
+      <li class="slice"><div class="num">03</div><div><h3>Dropbox בשני הכיוונים</h3><p>העלאה מהאפליקציה לתיקיית התיק, וקבצים מ‑Dropbox שמופיעים בתיק, עם תצוגה מקדימה. מחכה לחיבור שלך.</p><div class="steps"><span class="step ok">אפיון ✓</span><span class="step ok">קוד ✓</span><span class="step ok">ביקורת ✓</span><span class="step ok">בשרת ✓</span></div></div><span class="pill ok">בשרת</span></li>
+      <li class="slice"><div class="num">05</div><div><h3>חיבור ל‑ChatGPT</h3><p>אסימון אישי, קובץ API והנחיות מוכנות להעתקה ל‑GPT מותאם.</p><div class="steps"><span class="step ok">אפיון ✓</span><span class="step ok">קוד ✓</span><span class="step ok">ביקורת ✓</span><span class="step ok">בשרת ✓</span></div></div><span class="pill ok">בשרת</span></li>
+      <li class="slice"><div class="num">04</div><div><h3>עובד שטח בטלפון</h3><p>צילום קבר, העלאת מסמכים ועדכון התיק מהשטח — גם בלי קליטה; נשלח כשהרשת חוזרת.</p><div class="steps"><span class="step ok">אפיון ✓</span><span class="step ok">קוד ✓</span><span class="step ok">ביקורת ✓</span><span class="step ok">בשרת ✓</span></div></div><span class="pill ok">בשרת</span></li>
+      <li class="slice"><div class="num">06</div><div><h3>בינה מלאכותית בתוך האפליקציה</h3><p>צ'אט שסורק את התיקייה ומציע מה למלא. אדם מאשר כל שינוי. מחכה למפתח שלך.</p><div class="steps"><span class="step ok">אפיון ✓</span><span class="step ok">קוד ✓</span><span class="step ok">ביקורת ✓</span><span class="step ok">בשרת ✓</span></div></div><span class="pill ok">בשרת</span></li>
+      <li class="slice"><div class="num">07</div><div><h3>ממשק לתוכנה חיצונית</h3><p>לעתיד בלבד. המקום שמור, ולא בונים עכשיו.</p><div class="steps"><span class="step ok">מוגדר ✓</span></div></div><span class="pill ok">שמור לעתיד</span></li>
+    </ol>
+    <p class="foot">כל הפרוסות בשרת. מה שנשאר — הבדיקות שרק אתה יכול לעשות, למטה.</p>
+  </section>
+
+  <section>
+    <h2>מחכה לך</h2>
+    <div class="panel">
+      <div class="task"><div><b>FD‑T1 + FD‑T2 · חיבור Dropbox</b><br><span class="foot">אפליקציה ב‑App Console, הכתובות מ‑⚙️ הגדרות ← Dropbox, ובדיקה בשני הכיוונים. המפתחות — רק באפליקציה, לא בצ'אט.</span></div><span class="pill run">פתוחה</span></div>
+      <div class="task"><div><b>FD‑T4 · בדיקה ידנית של מה שכבר בשרת</b><br><span class="foot">התיקים, מסך מפתח, ארגון בדיקה, 🐞, הבא בתור והיסטוריה</span></div><span class="pill run">פתוחה</span></div>
+      <div class="task"><div><b>FD‑T3 · חיבור GPT מותאם</b><br><span class="foot">מסך "חיבור ל‑ChatGPT" באפליקציה</span></div><span class="pill run">פתוחה</span></div>
+      <div class="task"><div><b>W8 · עובד שטח בטלפון</b><br><span class="foot">מצב טיסה ← צילום קבר ← רשת חוזרת ← הקובץ ב‑Dropbox</span></div><span class="pill run">פתוחה</span></div>
+      <div class="task"><div><b>F8 · מפתח Claude ובינה מלאכותית</b><br><span class="foot">⚙️ הגדרות ← בינה מלאכותית; ואז 💬 בתיק "מה חסר?"</span></div><span class="pill run">פתוחה</span></div>
+    </div>
+    <div class="panel">
+      <div class="foot">שאלות עקרוניות. עד שתענה, העבודה ממשיכה לפי ברירת המחדל.</div>
+      <div class="q"><span class="id">ש1</span><div><b>Dropbox מחובר לארגון או לכל עובד?</b><span>ברירת מחדל: לארגון</span></div></div>
+      <div class="q"><span class="id">ש2</span><div><b>איפה התיקים של אוקטובר ב‑Dropbox, ובאיזה מבנה?</b><span>צריך ממך שם תיקייה. ברירת מחדל: ראשית ← חודש ← תיק</span></div></div>
+      <div class="q"><span class="id">ש3</span><div><b>איך עובדי שטח נכנסים?</b><span>ברירת מחדל: דרך הכלים הדיגיטליים, ובהמשך כניסה עצמאית</span></div></div>
+      <div class="q"><span class="id">ש4</span><div><b>ספק הבינה המלאכותית</b><span>ברירת מחדל: Claude, מפתח לכל ארגון</span></div></div>
+      <div class="q"><span class="id">ש5</span><div><b>ChatGPT: GPT מותאם או פרויקט?</b><span>ברירת מחדל: GPT מותאם עם Actions</span></div></div>
+      <div class="q"><span class="id">ש6</span><div><b>ענן MBE ותוספים</b><span>ברירת מחדל: לא, הקבצים נשארים ב‑Dropbox</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>הצוות</h2>
+    <div class="team">
+      <div class="member"><b>בקרה (2)</b><span>הלוח, ביקורת, מיזוג ואימות פריסה</span><span class="pill ok" style="align-self:start">פעיל · שעון בכל שעה</span></div>
+      <div class="member"><b>אפיון</b><span>כל הפרוסות מאופיינות</span><span class="pill wait" style="align-self:start">רדום</span></div>
+      <div class="member"><b>קוד</b><span>כל ששת צ'אטי הקוד סיימו</span><span class="pill wait" style="align-self:start">רדומים</span></div>
+      <div class="member"><b>מטלות</b><span>מה שרק אתה יכול לעשות</span><span class="pill ok" style="align-self:start">Dropbox אצלך</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>היום</h2>
+    <ul class="log">
+      <li><time>13:22</time><span>הצוות נפתח, השם הוחלף (#1831)</span></li>
+      <li><time>13:25</time><span>שאלות לבעלים, סקר 00 ורישום הצוות מוזגו (#1832–#1834)</span></li>
+      <li><time>13:31</time><span>האפיון של כל הפרוסות גמור (#1836, #1837)</span></li>
+      <li><time>13:39</time><span>קוד 02, 03 ו‑05 נפתחו במקביל ל‑01</span></li>
+      <li><time>13:52</time><span>01 תשתית מוזגה, אחרי ביקורת עומק ותיקון ששה ממצאים (#1839)</span></li>
+      <li><time>13:56</time><span>02 טופס חכם מוזגה (#1842)</span></li>
+      <li><time>14:00</time><span>קוד 04 (שטח) וקוד 06 (AI) נפתחו — כל הפרוסות בבנייה</span></li>
+      <li><time>14:12</time><span>05 ChatGPT מוזגה אחרי ביקורת עומק (#1840)</span></li>
+      <li><time>14:20</time><span>01, 02 ו‑05 בשרת — אחרי תיקון תקלת פריסה (#1846, #1849)</span></li>
+      <li><time>14:22</time><span>03 Dropbox מוזגה אחרי ביקורת עומק (#1844), סנכרון כל 5 דקות (#1851)</span></li>
+      <li><time>14:28</time><span>בקרה 2 החליפה את בקרה 1; 04 עובד שטח נכנס לביקורת עומק (#1853)</span></li>
+      <li><time>14:32</time><span>03 Dropbox בשרת. מחכה לחיבור שלך</span></li>
+      <li><time>14:40</time><span>תיקון תקלה בבקשות מקבילות שעצרה את הפריסות (#1855)</span></li>
+      <li><time>14:56</time><span>04 עובד שטח בשרת, אחרי ביקורת עומק (#1853)</span></li>
+      <li><time>15:05</time><span>06 בינה מלאכותית בשרת, אחרי ביקורת עומק (#1848) — כל הפרוסות בשרת</span></li>
+    </ul>
+  </section>
+
+  <p class="foot">הדף מתעדכן בכל פעם שפרוסה מתקדמת.</p>
+</div>
