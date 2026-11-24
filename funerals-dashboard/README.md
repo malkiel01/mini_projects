@@ -100,7 +100,10 @@
 - GET api.php?action=list&month=2026-10 — רשומות לפי חודש
 - GET api.php?action=export&month=2026-10 — יצוא JSON
 - POST api.php?action=save — שמירה ידנית דרך ממשק המנהל
-- POST api.php?action=import — ייבוא קובץ מתוך הדשבורד
+- POST api.php?action=import — ייבוא מתוך הדשבורד (📥: הדבקת JSON או קובץ). `{"records":[...], "resolve":{"<אינדקס>":"update"|"new"}}`.
+  **תיק דומה (08):** רשומה בלי `id` שדומה לתיק קיים — אותו חודש, אותו שם (בלי פיסוק, רווחים וסדר מילים) ואותו תאריך או תאריך חסר
+  באחד מהם — לא נוצרת בשקט: 409 `code: similar` עם הרשימה ושום רשומה לא נשמרת, עד שלכל אחת יש בחירה. "לעדכן" שומר את השם של התיק.
+  ב-`ingest.php` (אין מי שיבחר) — ברירת המחדל, לעדכן, והתשובה מדווחת ב-`similar`.
 
 **`ingest.php` — למערכות חיצוניות.** ב-`"public"` של `app.json` (לצד פעולות `devapi-*` של DevLoop), כי מכונה ניגשת אליה בלי כניסה לפלטפורמה. הרשאה: `Authorization: Bearer TOKEN` בלבד (האסימון מ-👤 ← "🔑 אסימון ל-ingest.php"), בלי session ובלי עוגייה. בלי אסימון תקין — 401.
 
@@ -115,6 +118,14 @@
 - כל check כולל status, value, source, note. סטטוסים: verified, document_present, unreadable, missing, unknown, reported, not_applicable.
 - עדכון ידני לא נדרס אוטומטית על ידי ייבוא חדש; כל שינוי נרשם ב-`events` עם מה שהשתנה (`diff`). ה-actor הוא המייל מהשער (או השם, אם אין מייל), `api` לקליטה דרך ingest.php — שכותבת תמיד לארגון 1.
 
+## פרויקט ChatGPT — בלי חיבור (פרוסה 08)
+
+OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, ולכן המסלול הראשון במסך 🤖 (`connect.html`) הוא **פרויקט ChatGPT**:
+📋 ההנחיות (`gpt-project-prompt.md`) בהוראות הפרויקט, 📤 ייצוא החודש כקובץ בפרויקט, וה-JSON שה-GPT מחזיר — 📥 במסך התיקים
+(`index.html#import`). ההנחיות נוצרות מ-`extProjectPrompt()` ב-`ext-lib.php` (אותו `build-ext.php`), ומשקפות את כללי הייבוא: `id` מהייצוא,
+תיק חדש בלי `id`, שדה ריק לא דורס, בדיקה נשלחת שלמה, ואף פעם לא `verified`. האסימונים ו-`openapi.json` — בקפל "מתקדם".
+חיבור ישיר (Plugin / MCP) — פרוסה 09.
+
 ## API לצ'אט חיצוני — `ext.php` (פרוסה 05)
 
 לחיבור GPT מותאם (Actions) או כל צ'אט אחר. **Bearer בלבד** — אסימון אישי `fdx_…`; עוגייה או session לא מתקבלים (401).
@@ -127,7 +138,7 @@
   `case_create`, `files`, `file_text`, `prompt`. הטבלה היחידה — `extActions()` ב-`ext-lib.php`.
 - **"מאומת" דרך הצ'אט נשמר "לאימות"** (`document_present`) — רק אדם מאשר סופית (02, `finalAllowed('api')`). התשובה
   אומרת זאת (`converted`). כל כתיבה — שורה ב-`events` עם `source: api` ו-"<שם> (צ'אט)".
-- **`openapi.json` ו-`gpt-prompt.md` נוצרים מהקוד:** `php funerals-dashboard/tools/build-ext.php`. הבדיקות נכשלות אם
+- **`openapi.json`, `gpt-prompt.md` ו-`gpt-project-prompt.md` נוצרים מהקוד:** `php funerals-dashboard/tools/build-ext.php`. הבדיקות נכשלות אם
   הקבצים שבריפו לא תואמים לקוד.
 - `files` / `file_text` — 501 "Dropbox עוד לא חובר" עד פרוסה 03.
 

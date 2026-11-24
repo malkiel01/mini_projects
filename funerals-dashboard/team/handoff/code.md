@@ -126,3 +126,16 @@
 - **בדיקות:** `tests/ai.sh` (ספק מדומה `tests/ai-mock.php` + Dropbox המדומה של 03, `tests/ai-dbx-fixture.php`). F1–F7, §2.2.2, §2.3, R1–R3.
   כל `php -S` — עם `-d opcache.jit=disable`; הניקוי של `data/` שומר `.htaccess` ו-`.gitignore`; אחרי בלוק שמאפס `pid=0` — לא `kill "$pid"` (= `kill 0`).
 - **פתוח:** F8 — ידני אחרי פריסה ומפתח אמיתי ("מה חסר ב<שם>?", "תמלא מהקבצים").
+
+## פרוסה 08 — תיקונים + פרויקט ChatGPT (ענף `claude/funerals-dashboard-08-fixes`)
+
+- **ייבוא = המסלול של ChatGPT עכשיו.** 📥 הוא חלון הדבקה (`#importDialog`), לא בוחר קבצים. הפענוח ב-`FDForm.parseImport()` (form.js, נבדק ב-node).
+  `index.html#import` / `#ai` פותחים את 📥 / 💬 (`route()` ב-app.js) — מסך 🤖 מקשר לשם.
+- **תיק דומה:** `importSimilar()` ב-`lib.php` רץ לפני הטרנזקציה. רק לרשומה **בלי id** שהמזהה המחושב שלה לא קיים. 409 `{code:'similar', similar:[{index,
+  name, date, match:{id,name,date}}]}`; השליחה החוזרת עם `resolve`. "לעדכן" = `id` ו**שם** של התיק הקיים. ingest.php → `update` אוטומטי.
+  פרוסה 09 (MCP) — אם תכתוב דרך `importRecords`, להחליט אם היא "ui" (שואלת) או כמו ingest.
+- **ההנחיות לפרויקט:** `extProjectPrompt()` + `EXT_PROJECT_STATUSES` ב-`ext-lib.php`. שינוי בכללי `importRecords()` (מה דורס מה) — לעדכן גם שם,
+  ולהריץ `php funerals-dashboard/tools/build-ext.php`. `fixes08.test.php` נועל שמפתחות `EXT_CHECKS` = `labels` של form.js.
+- **הכותרת:** כפתור חדש בכותרת שאינו חיוני בטלפון — `data-more`, והוא עובר ל-⋯ לבד (התפריט נבנה מהכפתורים הגלויים בזמן הלחיצה).
+  ב-≤420px נשארים 💬 ⋯ 🐞 👤, בלי רווח ביניהם, וה-h1 ב-.95rem — כך השם נכנס שלם ב-390px. 🐞 של DevLoop לא שלנו — לא הועבר.
+- `caseDiff()` — `diffSame()`: מספר מול מספר בהשוואה מספרית, השאר מחמיר ("402" מול 402 עדיין שינוי). הסינון ב-`formDiffChanges()` נשאר (לא מזיק).
