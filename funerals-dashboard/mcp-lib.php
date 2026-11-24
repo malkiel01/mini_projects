@@ -24,6 +24,10 @@ const OAUTH_CODE_TTL = 60;
 const OAUTH_ACCESS_TTL = 3600;
 const OAUTH_REFRESH_TTL = 30 * 86400;
 const OAUTH_REG_PER_HOUR = 20;
+/** תקרה כוללת לרישומי DCR בשעה (מכל הכתובות) — מול הצפה מכתובות רבות. */
+const OAUTH_REG_TOTAL_PER_HOUR = 200;
+/** בקשות בתוך batch אחד של JSON-RPC. */
+const MCP_BATCH_MAX = 20;
 const OAUTH_CIMD_TTL = 3600;
 const OAUTH_CIMD_MAX = 65536;
 
@@ -66,6 +70,27 @@ function oauthRow(PDO $pdo, string $sql, array $args): ?array {
 }
 function oauthHash(string $raw): string { return hash('sha256', $raw); }
 function oauthIpKey(string $tag): string { return hash('sha256', $tag . '|' . (string)($_SERVER['REMOTE_ADDR'] ?? '')); }
+/** מפתח הספירה של DCR: IPv4 — הכתובת; IPv6 — ה-/64 (לקוח אחד מחזיק /64 שלם). */
+function oauthRegKey(): string {
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $bin = @inet_pton($ip);
+    if ($bin !== false && strlen($bin) === 16) $ip = bin2hex(substr($bin, 0, 8)) . '::/64';
+    return hash('sha256', 'oauth-reg|' . $ip);
+}
+/**
+ * טרנזקציית כתיבה שתופסת את נעילת הכתיבה מיד (BEGIN IMMEDIATE) — כך בקשה מקבילה ממתינה (busy_timeout) במקום לקבל
+ * BUSY באמצע (שדרוג נעילה מקריאה לכתיבה לא ממתין ב-SQLite). PDO לא יודע עליה, ולכן נסגרת תמיד דרך oauthCommit/oauthRollback.
+ */
+function oauthBegin(PDO $pdo): void { $pdo->exec('BEGIN IMMEDIATE'); }
+function oauthCommit(PDO $pdo): void { $pdo->exec('COMMIT'); }
+function oauthRollback(PDO $pdo): void { try { $pdo->exec('ROLLBACK'); } catch (Throwable) {} }
+/** שם לקוח להצגה: בלי תווי בקרה ותווי עיצוב (bidi, zero-width), עד 80 תווים. ריק → ''. */
+function oauthName(mixed $v): string {
+    if (!is_string($v)) return '';
+    $v = (string)preg_replace('/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/u', '', $v);
+    $v = trim((string)preg_replace('/\s+/u', ' ', $v));
+    return mb_substr($v, 0, 80);
+}
 
 // ───────────────────────── תשובות ─────────────────────────
 
@@ -148,10 +173,12 @@ function oauthRedirectOk(mixed $u): bool {
 /** DCR (RFC 7591): לקוח ציבורי בלבד. מחזיר את מסמך הרישום. */
 function oauthRegister(PDO $pdo, array $p): array {
     $hour = intdiv(time(), 3600);
-    $ip = oauthIpKey('oauth-reg');
-    $r = oauthRow($pdo, 'SELECT hour, n FROM oauth_reg WHERE ip=?', [$ip]);
-    if ($r && (int)$r['hour'] === $hour && (int)$r['n'] >= OAUTH_REG_PER_HOUR) {
-        oauthJson(429, ['error' => 'invalid_client_metadata', 'error_description' => 'יותר מדי רישומים מהכתובת הזו. לנסות בעוד שעה.'], ['Retry-After: 3600']);
+    $ip = oauthRegKey();
+    foreach ([[$ip, OAUTH_REG_PER_HOUR, 'מהכתובת הזו'], ['*', OAUTH_REG_TOTAL_PER_HOUR, 'בשעה האחרונה']] as [$key, $max, $what]) {
+        $r = oauthRow($pdo, 'SELECT hour, n FROM oauth_reg WHERE ip=?', [$key]);
+        if ($r && (int)$r['hour'] === $hour && (int)$r['n'] >= $max) {
+            oauthJson(429, ['error' => 'invalid_client_metadata', 'error_description' => 'יותר מדי רישומים ' . $what . '. לנסות בעוד שעה.'], ['Retry-After: ' . (3600 - time() % 3600)]);
+        }
     }
     $uris = $p['redirect_uris'] ?? null;
     if (!is_array($uris) || !$uris || count($uris) > 10 || !array_is_list($uris)) oauthError(400, 'invalid_redirect_uri', 'redirect_uris — רשימה של 1–10 כתובות');
@@ -161,21 +188,34 @@ function oauthRegister(PDO $pdo, array $p): array {
     foreach ((array)($p['grant_types'] ?? []) as $g) {
         if (!in_array($g, ['authorization_code', 'refresh_token'], true)) oauthError(400, 'invalid_client_metadata', 'grant_types: authorization_code, refresh_token');
     }
-    $name = cleanText($p['client_name'] ?? '', 80);
+    $name = oauthName($p['client_name'] ?? '');
     if ($name === '') $name = (string)parse_url($uris[0], PHP_URL_HOST);
     $id = 'fdc_' . bin2hex(random_bytes(16));
+    // לקוחות DCR שלא הגיעו ל-grant תוך 24 שעות — נמחקים (רישום בלי שימוש; אין בהם נתוני משתמש)
+    $pdo->prepare("DELETE FROM oauth_clients WHERE kind='dcr' AND created_at < ? AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id=oauth_clients.client_id)")
+        ->execute([gmdate('c', time() - 86400)]);
     $now = gmdate('c');
     $pdo->prepare('INSERT INTO oauth_clients(client_id, kind, client_name, redirect_uris, created_at) VALUES(?,?,?,?,?)')
         ->execute([$id, 'dcr', $name, json_encode(array_values($uris), JSON_UNESCAPED_SLASHES), $now]);
-    $pdo->prepare('INSERT INTO oauth_reg(ip, hour, n) VALUES(?,?,1) ON CONFLICT(ip) DO UPDATE SET n = CASE WHEN hour=excluded.hour THEN n+1 ELSE 1 END, hour=excluded.hour')
-        ->execute([$ip, $hour]);
+    $cnt = $pdo->prepare('INSERT INTO oauth_reg(ip, hour, n) VALUES(?,?,1) ON CONFLICT(ip) DO UPDATE SET n = CASE WHEN hour=excluded.hour THEN n+1 ELSE 1 END, hour=excluded.hour');
+    $cnt->execute([$ip, $hour]);
+    $cnt->execute(['*', $hour]);
     return ['client_id' => $id, 'client_id_issued_at' => time(), 'client_name' => $name, 'redirect_uris' => array_values($uris),
         'grant_types' => ['authorization_code', 'refresh_token'], 'response_types' => ['code'], 'token_endpoint_auth_method' => 'none'];
 }
 
 /** כתובת IP ציבורית בלבד (לא פרטית, לא שמורה, לא loopback / link-local). */
 function oauthPublicIp(string $ip): bool {
-    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) return false;
+    $bin = (string)inet_pton($ip);
+    if (strlen($bin) === 4) {
+        $n = unpack('N', $bin)[1];
+        return ($n & 0xFFC00000) !== 0x64400000;   // 100.64.0.0/10 (CGNAT)
+    }
+    // IPv6 שמכיל IPv4 — ::ffff:0:0/96 (mapped), ::/96 (compat), 64:ff9b::/96 ו-64:ff9b:1::/48 (NAT64), 2002::/16 (6to4): נדחים
+    if (str_starts_with($bin, str_repeat("\0", 10) . "\xff\xff") || str_starts_with($bin, str_repeat("\0", 12))) return false;
+    if (str_starts_with($bin, "\x00\x64\xff\x9b") || str_starts_with($bin, "\x20\x02")) return false;
+    return true;
 }
 /** בדיקות מקומיות בלבד (שרת הפיתוח של PHP): תיקיית מסמכי CIMD מדומים במשתנה הסביבה של התהליך — לא מהבקשה. */
 function oauthTestDir(): ?string {
@@ -256,7 +296,7 @@ function oauthClient(PDO $pdo, string $clientId): ?array {
     if (!is_array($uris) || !$uris || count($uris) > 20 || !array_is_list($uris)) return null;
     foreach ($uris as $u) if (!oauthRedirectOk($u)) return null;
     if (($doc['token_endpoint_auth_method'] ?? 'none') !== 'none') return null;
-    $name = cleanText($doc['client_name'] ?? '', 80);
+    $name = oauthName($doc['client_name'] ?? '');
     if ($name === '') $name = $t[0];
     $now = gmdate('c');
     $pdo->prepare('INSERT INTO oauth_clients(client_id, kind, client_name, redirect_uris, created_at, fetched_at) VALUES(?,?,?,?,?,?)
@@ -303,10 +343,11 @@ function oauthTokenFromCode(PDO $pdo, array $p): array {
     $redirect = oauthStr($p, 'redirect_uri', 500);
     if ($code === '' || $verifier === '' || $clientId === '' || $redirect === '') oauthError(400, 'invalid_request', 'חסרים code, code_verifier, client_id או redirect_uri');
     if (!oauthResourceOk(oauthStr($p, 'resource', 500))) oauthError(400, 'invalid_target', 'resource לא מוכר');
-    $pdo->beginTransaction();
+    oauthBegin($pdo);
+    try {
     $c = oauthRow($pdo, 'SELECT * FROM oauth_codes WHERE hash=?', [oauthHash($code)]);
     $bad = static function (string $why) use ($pdo): never {
-        if ($pdo->inTransaction()) $pdo->commit();   // ביטול ה-grant (שימוש שני) נשמר
+        oauthCommit($pdo);   // סימון הקוד כשרוף, וביטול ה-grant (שימוש שני) — נשמרים
         oauthError(400, 'invalid_grant', $why);
     };
     if ($c === null) $bad('קוד לא תקין');
@@ -325,18 +366,20 @@ function oauthTokenFromCode(PDO $pdo, array $p): array {
     $gid = (int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE oauth_codes SET grant_id=? WHERE hash=?')->execute([$gid, $c['hash']]);
     $t = oauthIssueTokens($pdo, $gid);
-    $pdo->commit();
+    oauthCommit($pdo);
     return $t;
+    } catch (Throwable $e) { oauthRollback($pdo); throw $e; }
 }
 /** /token — refresh_token: מתחלף בכל שימוש; שימוש חוזר בישן → כל ה-grant מבוטל. */
 function oauthTokenFromRefresh(PDO $pdo, array $p): array {
     $raw = oauthStr($p, 'refresh_token', 200);
     $clientId = oauthStr($p, 'client_id', 500);
     if ($raw === '' || $clientId === '') oauthError(400, 'invalid_request', 'חסרים refresh_token או client_id');
-    $pdo->beginTransaction();
+    oauthBegin($pdo);
+    try {
     $t = oauthRow($pdo, "SELECT t.*, g.client_id, g.user_id, g.org_id, g.revoked_at FROM oauth_tokens t JOIN oauth_grants g ON g.id=t.grant_id
         WHERE t.hash=? AND t.kind='refresh'", [oauthHash($raw)]);
-    $bad = static function (string $why) use ($pdo): never { $pdo->commit(); oauthError(400, 'invalid_grant', $why); };
+    $bad = static function (string $why) use ($pdo): never { oauthCommit($pdo); oauthError(400, 'invalid_grant', $why); };
     if ($t === null || $t['revoked_at'] !== null) $bad('אסימון רענון לא תקין');
     if (!hash_equals((string)$t['client_id'], $clientId)) $bad('אסימון רענון לא תקין');
     if ($t['used_at'] !== null) {
@@ -344,11 +387,15 @@ function oauthTokenFromRefresh(PDO $pdo, array $p): array {
         $bad('אסימון הרענון כבר נוצל — החיבור בוטל. להתחבר מחדש.');
     }
     if ((int)$t['expires_at'] < time()) $bad('אסימון הרענון פג');
-    if (extMember($pdo, (int)$t['user_id'], (int)$t['org_id']) === null) $bad('המשתמש כבר לא חבר פעיל בארגון');
+    if (extMember($pdo, (int)$t['user_id'], (int)$t['org_id']) === null) {
+        oauthRevokeGrant($pdo, (int)$t['grant_id'], null, 'member_inactive');   // הפעלה מחדש לא מחייה חיבור ישן
+        $bad('המשתמש כבר לא חבר פעיל בארגון');
+    }
     $pdo->prepare('UPDATE oauth_tokens SET used_at=? WHERE hash=?')->execute([gmdate('c'), $t['hash']]);
     $out = oauthIssueTokens($pdo, (int)$t['grant_id']);
-    $pdo->commit();
+    oauthCommit($pdo);
     return $out;
+    } catch (Throwable $e) { oauthRollback($pdo); throw $e; }
 }
 /** RFC 7009: תמיד 200. רענון → כל ה-grant; גישה → האסימון הזה. רק של הלקוח ששלח. */
 function oauthRevoke(PDO $pdo, array $p): void {
@@ -424,7 +471,7 @@ function mcpAuthenticate(PDO $pdo): ?array {
             FROM oauth_tokens t JOIN oauth_grants g ON g.id=t.grant_id WHERE t.hash=? AND t.kind='access'", [oauthHash($raw)]);
         if ($t === null || $t['revoked_at'] !== null || (int)$t['expires_at'] < time()) return null;
         $m = extMember($pdo, (int)$t['user_id'], (int)$t['org_id']);
-        if ($m === null) return null;
+        if ($m === null) { oauthRevokeGrant($pdo, (int)$t['grant_id'], null, 'member_inactive'); return null; }
         extSetContext($m);
         $GLOBALS['fd_ctx']['client'] = (string)$t['client_name'];
         return ['m' => $m, 'rl' => ['oauth_grants', (int)$t['grant_id']]];

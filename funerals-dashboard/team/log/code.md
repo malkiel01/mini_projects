@@ -137,3 +137,9 @@
   CIMD ו-DNS מדומים רק תחת `cli-server`. **סטייה מהאפיון:** כתובת חזרה loopback ב-http מותרת (RFC 8252) — בלעדיה Inspector (K16) לא נרשם.
   **לא נבנה / פתוח:** K16–K18 ידניים; מטא-נתונים בשורש הדומיין — לא נדרשו עד כה (הכותרת 401 מפנה אלינו, ו-openid-configuration בתוך התיקייה),
   יתברר ב-K16.
+- 2026-11-24 — **ביקורת 09 סבב 1 (#1867):** 🟡1 `oauthPublicIp` דוחה גם ::ffff:0:0/96, ::/96, 64:ff9b::/96, 2002::/16 ו-100.64/10;
+  🟡2 DCR — ספירה לפי /64 ב-IPv6, תקרה כוללת 200 לשעה, ניקוי לקוחות dcr בלי grant אחרי 24 שעות; 🟡3 `oauthName()` מסיר \p{Cc}\p{Cf}
+  (bidi, zero-width), ו-`<bdi>` במסך ההסכמה; 🟡4 בדיקות חדשות ב-`mcp.sh`: XSS בשם, 429 ב-DCR, עקיפות loopback, IPv4-mapped / CGNAT /
+  NAT64 / DNS מעורב ב-CIMD, אסימון שפג, רענון אחרי השבתה. ⚪5 `BEGIN IMMEDIATE` בהחלפת קוד/רענון; ⚪6 `revokeOauthGrantsOf()`
+  (lib/access.php) ב-member_active / user_active של api.php, וגם grant של חבר לא פעיל מתבטל בגילוי (MCP / רענון); ⚪7 CSP עם [::1];
+  ⚪8 עד 20 בקשות ב-batch.

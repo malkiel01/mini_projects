@@ -28,7 +28,7 @@ as(){ printf '%s' "$1" > "$id"; }
 as ''
 # מסמכי CIMD מדומים ו-DNS מדומה — רק בשרת הפיתוח (oauthTestDir)
 cimd="$tmp/cimd"; mkdir -p "$cimd"; : > "$cimd/fetch.log"
-printf '%s' '{"client.example.com":["93.184.216.34"],"intranet.example.com":["192.168.1.10"]}' > "$cimd/hosts.json"
+printf '%s' '{"client.example.com":["93.184.216.34"],"intranet.example.com":["192.168.1.10"],"mapped.example.com":["::ffff:10.0.0.1"],"cgnat.example.com":["100.64.1.1"],"nat64.example.com":["64:ff9b::a00:1"],"mixed.example.com":["93.184.216.34","10.1.1.1"]}' > "$cimd/hosts.json"
 CIMD_ID='https://client.example.com/oauth/client.json'
 php -r 'file_put_contents($argv[1]."/".sha1($argv[2]).".json", json_encode(["client_id"=>$argv[2],"client_name"=>"Claude","redirect_uris"=>["https://claude.ai/api/mcp/auth_callback"],"token_endpoint_auth_method"=>"none"]));' "$cimd" "$CIMD_ID"
 
@@ -66,6 +66,8 @@ rpc '{"jsonrpc":"2.0","id":3,"method":"resources/list"}' >/dev/null; test "$(j e
 code="$(rpc 'not json')"; test "$code" = 400 && test "$(j error.code)" = -32700 || fail "parse error ($code)"
 rpc '[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","method":"notifications/x"},{"jsonrpc":"2.0","id":2,"method":"tools/list"}]' >/dev/null
 php -r '$v=json_decode(file_get_contents($argv[1]),true); exit(count($v)===2 && $v[0]["id"]===1 && isset($v[1]["result"]["tools"]) ? 0 : 1);' "$tmp/out" || fail "batch"
+big="$(php -r 'echo json_encode(array_map(fn($i)=>["jsonrpc"=>"2.0","id"=>$i,"method"=>"ping"], range(1,21)));')"
+code="$(rpc "$big")"; test "$code" = 400 || fail "batch מעל 20 ($code)"
 
 # ── K2: tools/list ──
 rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' >/dev/null
@@ -105,6 +107,11 @@ CID="$(j client_id)"; [[ "$CID" =~ ^fdc_[a-f0-9]{32}$ ]] || fail "DCR client_id"
 code="$(reg '{"redirect_uris":["http://evil.example/cb"]}')"; test "$code" = 400 || fail "DCR http ($code)"
 code="$(reg '{"redirect_uris":["https://x.example/cb"],"token_endpoint_auth_method":"client_secret_basic"}')"; test "$code" = 400 || fail "DCR סוד ($code)"
 code="$(reg '{"client_name":"Inspector","redirect_uris":["http://localhost:6274/oauth/callback"]}')"; test "$code" = 201 || fail "DCR loopback (Inspector) ($code)"
+for u in 'http://evil\\@localhost/cb' 'http://evil@localhost/cb' 'http://127.0.0.1.evil.com/cb' 'http://localhost.evil.com/cb' 'http://[::2]/cb' 'https://x.example/cb#frag'; do
+  code="$(reg "{\"redirect_uris\":[\"$u\"]}")"; test "$code" = 400 || fail "DCR עקיפת loopback: $u ($code)"
+done
+code="$(reg '{"client_name":"<script>alert(1)</script>\u202eטקסט\u200b","redirect_uris":["https://x.example/cb"]}')"; test "$code" = 201 || fail "DCR שם עם תגית ($code)"
+XID="$(j client_id)"; test "$(j client_name)" = '<script>alert(1)</script>טקסט' || fail "client_name — תווי bidi/zero-width לא הוסרו ($(j client_name))"
 
 # ── OAuth: authorize ──
 pkce(){ php -r '$v=rtrim(strtr(base64_encode(random_bytes(40)),"+/","-_"),"="); echo $v," ",rtrim(strtr(base64_encode(hash("sha256",$v,true)),"+/","-_"),"=");'; }
@@ -140,6 +147,8 @@ code="$(st "$H/oauth/authorize.php?$(authq "$CID" "$RED/x" "$C")")"; test "$code
 code="$(st "$H/oauth/authorize.php?response_type=code&client_id=$CID&redirect_uri=$(enc "$RED")&state=s")"; test "$code" = 400 && ! grep -qi '^Location:' "$tmp/hdr" || fail "K6 בלי code_challenge ($code)"
 code="$(st "$H/oauth/authorize.php?$(authq "$CID" "$RED" "$C" plain)")"; test "$code" = 400 || fail "K6 plain ($code)"
 code="$(st "$H/oauth/authorize.php?$(authq fdc_00000000000000000000000000000000 "$RED" "$C")")"; test "$code" = 400 || fail "לקוח לא מוכר ($code)"
+code="$(st "$H/oauth/authorize.php?$(authq "$XID" https://x.example/cb "$C")")"; test "$code" = 200 || fail "XSS: מסך ($code)"
+grep -q '&lt;script&gt;alert(1)&lt;/script&gt;' "$tmp/out" && ! grep -q '<script>alert' "$tmp/out" || fail "XSS: שם הלקוח לא מוברח"
 q="$(authq "$CID" "$RED" "$C")"; st -c "$tmp/jx" -b "$tmp/jx" "$H/oauth/authorize.php?$q" >/dev/null
 code="$(st -c "$tmp/jx" -b "$tmp/jx" -X POST --data "$q&csrf=wrong&org=1&decision=approve" "$H/oauth/authorize.php")"; test "$code" = 400 || fail "CSRF שגוי ($code)"
 csrf="$(sed -n 's/.*name="csrf" value="\([a-f0-9]*\)".*/\1/p' "$tmp/out")"
@@ -192,7 +201,7 @@ test "$(j 0.source)" = api && test "$(j 0.actor)" = 'בודק (ChatGPT)' || fail
 
 # ── K9: עובד שטח → תשלום 403; תיק של ארגון אחר → 404 ──
 read V C <<<"$(pkce)"; K="$(consent "$FIELD" "$CID" "$RED" "$C")" || fail "consent שטח"
-token "grant_type=authorization_code&code=$K&code_verifier=$V&client_id=$CID&redirect_uri=$(enc "$RED")" >/dev/null; FT="$(j access_token)"
+token "grant_type=authorization_code&code=$K&code_verifier=$V&client_id=$CID&redirect_uri=$(enc "$RED")" >/dev/null; FT="$(j access_token)"; FR="$(j refresh_token)"
 call "$FT" case_update '{"id":"fd_case_org1_cohen","fields":{"payments":[{"amount":5}]}}' >/dev/null
 test "$(j result.isError)" = true && test "$(j result.structuredContent.status)" = 403 && j result.structuredContent.error | grep -q 'אין לך הרשאה' || fail "K9 תשלום"
 call "$AT" case '{"id":"fd_case_org2_levi"}' >/dev/null
@@ -216,7 +225,16 @@ code="$(token "grant_type=refresh_token&refresh_token=$RT2&client_id=$CID")"; te
 code="$(call "$FT" whoami)"; test "$code" = 200 || fail "K11 לפני השבתה ($code)"
 fx deactivate 9
 code="$(call "$FT" whoami)"; test "$code" = 401 || fail "K11 משתמש שהושבת ($code)"
+code="$(token "grant_type=refresh_token&refresh_token=$FR&client_id=$CID")"; test "$(j error)" = invalid_grant || fail "רענון אחרי השבתה ($code)"
 sql "UPDATE users SET active=1 WHERE sub='9'" >/dev/null
+code="$(token "grant_type=refresh_token&refresh_token=$FR&client_id=$CID")"; test "$(j error)" = invalid_grant || fail "הפעלה מחדש החייתה רענון ישן ($code)"
+code="$(call "$FT" whoami)"; test "$code" = 401 || fail "הפעלה מחדש החייתה אסימון גישה ($code)"
+# השבתה דרך api.php (member_active / user_active) — revokeOauthGrantsOf
+read V C <<<"$(pkce)"; K="$(consent "$FIELD" "$CID" "$RED" "$C")" || fail "consent שטח 2"
+token "grant_type=authorization_code&code=$K&code_verifier=$V&client_id=$CID&redirect_uri=$(enc "$RED")" >/dev/null; FR2="$(j refresh_token)"
+php -r 'chdir($argv[1]); require "lib.php"; $p=db(); revokeOauthGrantsOf($p, 9, 2, 7); if ((int)$p->query("SELECT COUNT(*) FROM oauth_grants WHERE user_id=9 AND revoked_at IS NULL")->fetchColumn()!==1) exit(1);
+  revokeOauthGrantsOf($p, 9, 1, 7); if ((int)$p->query("SELECT COUNT(*) FROM oauth_grants WHERE user_id=9 AND revoked_at IS NULL")->fetchColumn()!==0) exit(2);' "$D" || fail "revokeOauthGrantsOf"
+code="$(token "grant_type=refresh_token&refresh_token=$FR2&client_id=$CID")"; test "$(j error)" = invalid_grant || fail "השבתה בארגון לא ביטלה את החיבור ($code)"
 read V C <<<"$(pkce)"; K="$(consent "$ADMIN" "$CID" "$RED" "$C")" || fail "consent"
 token "grant_type=authorization_code&code=$K&code_verifier=$V&client_id=$CID&redirect_uri=$(enc "$RED")" >/dev/null; AT3="$(j access_token)"; RT3="$(j refresh_token)"
 call "$AT3" whoami >/dev/null
@@ -259,7 +277,7 @@ code="$(rpc '{"jsonrpc":"2.0","id":1,"method":"ping"}' -H 'Origin: https://claud
 : > "$cimd/fetch.log"
 as "$ADMIN"
 read V C <<<"$(pkce)"
-code="$(st "$H/oauth/authorize.php?$(authq "$CIMD_ID" https://claude.ai/api/mcp/auth_callback "$C")")"; test "$code" = 200 && grep -q '<b>Claude</b>' "$tmp/out" || fail "K7 CIMD תקין ($code)"
+code="$(st "$H/oauth/authorize.php?$(authq "$CIMD_ID" https://claude.ai/api/mcp/auth_callback "$C")")"; test "$code" = 200 && grep -q '<bdi>Claude</bdi>' "$tmp/out" || fail "K7 CIMD תקין ($code)"
 test "$(wc -l < "$cimd/fetch.log")" = 1 || fail "K7 CIMD לא הורד"
 code="$(st "$H/oauth/authorize.php?$(authq "$CIMD_ID" https://claude.ai/api/mcp/auth_callback "$C")")"; test "$code" = 200 && test "$(wc -l < "$cimd/fetch.log")" = 1 || fail "K7 מטמון"
 code="$(st "$H/oauth/authorize.php?$(authq "$CIMD_ID" https://evil.example/cb "$C")")"; test "$code" = 400 || fail "K7 redirect שלא במסמך ($code)"
@@ -267,7 +285,7 @@ K="$(consent "$ADMIN" "$CIMD_ID" https://claude.ai/api/mcp/auth_callback "$C")" 
 token "grant_type=authorization_code&code=$K&code_verifier=$V&client_id=$(enc "$CIMD_ID")&redirect_uri=$(enc https://claude.ai/api/mcp/auth_callback)" >/dev/null; CT="$(j access_token)"
 call "$CT" whoami >/dev/null; test "$(j result.structuredContent.user.name)" = 'בודק' || fail "K7 CIMD → whoami"
 : > "$cimd/fetch.log"
-for bad in 'http://client.example.com/c.json' 'https://127.0.0.1/c.json' 'https://10.0.0.5/c.json' 'https://localhost/c.json' 'https://intranet.example.com/c.json' 'https://[::1]/c.json' 'https://client.example.com:8443/c.json' 'https://client.example.com/'; do
+for bad in 'https://[::ffff:127.0.0.1]/c.json' 'https://[::ffff:7f00:1]/c.json' 'https://100.64.0.1/c.json' 'https://mapped.example.com/c.json' 'https://cgnat.example.com/c.json' 'https://nat64.example.com/c.json' 'https://mixed.example.com/c.json' 'http://client.example.com/c.json' 'https://127.0.0.1/c.json' 'https://10.0.0.5/c.json' 'https://localhost/c.json' 'https://intranet.example.com/c.json' 'https://[::1]/c.json' 'https://client.example.com:8443/c.json' 'https://client.example.com/'; do
   code="$(st "$H/oauth/authorize.php?$(authq "$bad" https://claude.ai/api/mcp/auth_callback "$C")")"; test "$code" = 400 || fail "K7 נדחה: $bad ($code)"
 done
 test ! -s "$cimd/fetch.log" || fail "K7 בקשה יוצאת לכתובת שנדחתה: $(cat "$cimd/fetch.log")"
@@ -278,6 +296,10 @@ code="$(st "$H/oauth/authorize.php?$(authq "$CIMD2" https://claude.ai/cb "$C")")
 # ── 60 לדקה לחיבור ──
 sql "UPDATE oauth_grants SET rl_min=$(( $(date +%s) / 60 )), rl_n=60 WHERE revoked_at IS NULL" >/dev/null
 call "$AT5" whoami >/dev/null; test "$(j result.isError)" = true && j result.structuredContent.error | grep -q 'יותר מדי בקשות' || fail "הגבלת קצב"
+
+# אסימון גישה שפג → 401
+sql "UPDATE oauth_tokens SET expires_at=$(( $(date +%s) - 1 )) WHERE kind='access'" >/dev/null
+code="$(call "$AT5" whoami)"; test "$code" = 401 || fail "אסימון שפג ($code)"
 
 # ── K14: שום אסימון ביומן הבקשות, ב-events או בתשובת שגיאה ──
 sql "SELECT action FROM req_log WHERE action LIKE 'mcp:tools/call:%' LIMIT 1" > "$tmp/out"; test "$(j 0.action)" = 'mcp:tools/call:whoami' || fail "req_log mcp:<method>:<tool>"
@@ -291,5 +313,8 @@ code="$(token "grant_type=refresh_token&refresh_token=$RT&client_id=$CID")"; ! g
 code="$(call "$AT" whoami)"; ! grep -qF "$AT" "$tmp/out" || fail "K14 אסימון בתשובת 401"
 sql "SELECT hash FROM oauth_tokens" | grep -qF "$AT5" && fail "K14 אסימון גולמי במסד"
 sql "SELECT hash FROM oauth_codes" | grep -qF "$K" && fail "K14 קוד גולמי במסד"
+# 429 ב-DCR: עד 20 רישומים לשעה לכתובת
+n=0; for i in $(seq 1 25); do code="$(reg '{"redirect_uris":["https://x.example/cb"]}')"; [ "$code" = 429 ] && break; n=$((n+1)); done
+test "$code" = 429 && test "$n" -le 20 && grep -qi '^Retry-After:' "$tmp/hdr" || fail "429 ב-DCR ($code אחרי $n)"
 ! grep -E 'PHP (Fatal|Warning|Notice|Deprecated|Parse)' "$tmp/server.log" || fail "שגיאות PHP בשרת"
 echo "09 MCP + OAuth: K1–K15 עברו"

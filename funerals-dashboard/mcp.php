@@ -49,6 +49,7 @@ if (!is_array($msg)) mcpOut(400, mcpErr(null, -32700, 'Parse error'));
 $batch = array_is_list($msg) && $msg !== [];
 $list = $batch ? $msg : [$msg];
 if ($msg === []) mcpOut(400, mcpErr(null, -32600, 'Invalid Request'));
+if (count($list) > MCP_BATCH_MAX) mcpOut(400, mcpErr(null, -32600, 'עד ' . MCP_BATCH_MAX . ' בקשות ב-batch'));
 
 $pdo = db();   // המיגרציות של 01
 oauthEnsureSchema($pdo);

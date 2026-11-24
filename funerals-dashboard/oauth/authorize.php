@@ -20,7 +20,7 @@ register_shutdown_function(static function () use ($t0, $method): void {
         $GLOBALS['fd_ctx']['user']['id'] ?? null, (string)($GLOBALS['fd_err'] ?? ''));
 });
 header('X-Frame-Options: DENY');
-header("Content-Security-Policy: frame-ancestors 'none'; form-action 'self' https: http://localhost:* http://127.0.0.1:*");
+header("Content-Security-Policy: frame-ancestors 'none'; form-action 'self' https: http://localhost:* http://127.0.0.1:* http://[::1]:*");
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer');
 
@@ -126,7 +126,7 @@ if (count($orgs) > 1) {
     $orgName = (string)$orgs[$first]['org_name'];
 }
 page(200, 'אישור חיבור', '<section class="consent">'
-    . '<p class="ask"><b>' . h($client['client_name']) . '</b> (<span dir="ltr">' . h($host) . '</span>) מבקש גישה לתיקים של <b>' . h($orgName) . '</b> בשמך:</p>'
+    . '<p class="ask"><b><bdi>' . h($client['client_name']) . '</bdi></b> (<bdi dir="ltr">' . h($host) . '</bdi>) מבקש גישה לתיקים של <b><bdi>' . h($orgName) . '</bdi></b> בשמך:</p>'
     . '<ul class="can"><li>לקרוא תיקים וקבצים</li><li>לעדכן — עדכון נשמר "לאימות"</li><li>אין מחיקה</li></ul>'
     . '<p class="hint">ההרשאות הן התפקיד שלך בארגון, ברגע כל בקשה. מנתקים בכל רגע במסך 🤖 חיבור לצ\'אט.</p>'
     . '<form method="post" action="authorize.php" class="actions">' . $hidden . $orgHtml

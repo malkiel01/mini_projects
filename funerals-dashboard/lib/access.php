@@ -107,6 +107,19 @@ function resolveAccess(array $pu): array {
     ];
 }
 
+/**
+ * 09: השבתה (בארגון — $orgId, או גלובלית — null) מבטלת את חיבורי ה-OAuth (oauth_grants) שלו, כדי שהפעלה מחדש לא תחייה
+ * אסימון רענון ישן. הטבלה נוצרת רק בשימוש הראשון ב-MCP — לפני כן אין מה לבטל.
+ */
+function revokeOauthGrantsOf(PDO $pdo, int $uid, ?int $orgId, ?int $by): void {
+    $st = $pdo->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='oauth_grants'");
+    $has = $st->fetchColumn();
+    $st->closeCursor();
+    if (!$has) return;
+    $pdo->prepare('UPDATE oauth_grants SET revoked_at=?, revoked_by=?, revoked_reason=? WHERE user_id=? AND revoked_at IS NULL'
+        . ($orgId === null ? '' : ' AND org_id=' . (int)$orgId))->execute([gmdate('c'), $by, 'member_inactive', $uid]);
+}
+
 /** הארגונים שהמשתמש רשאי לעבוד בהם. מפתח — כולם (role = התפקיד שלו בארגון, אם יש). */
 function userOrgs(int $uid, bool $isDev): array {
     $sql = $isDev
