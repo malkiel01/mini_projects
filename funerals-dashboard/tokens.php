@@ -4,10 +4,12 @@ declare(strict_types=1);
 /**
  * מסך "חיבור ל-ChatGPT" (connect.html) — ניהול אסימונים אישיים מהדפדפן. מאחורי השער (לא ב-public):
  * הזהות, הארגון הפעיל וההרשאות — resolveAccess() של 01; ה-session וה-CSRF — אותם של api.php (fd_session / fd_csrf).
- * פעולות: me (רשימה, הנחיות, כתובת ה-OpenAPI), create, revoke. האסימון מוחזר פעם אחת בלבד, ב-create.
+ * פעולות: me (רשימה, הנחיות, כתובת ה-OpenAPI, כתובת ה-MCP והחיבורים הפעילים), create, revoke, disconnect (09: ניתוק
+ * חיבור OAuth — שלי, ולמנהל כל חיבור בארגון). האסימון מוחזר פעם אחת בלבד, ב-create.
  */
 require __DIR__ . '/lib.php';
 require __DIR__ . '/ext-lib.php';
+require __DIR__ . '/mcp-lib.php';   // 09: החיבורים הפעילים (OAuth) וניתוק
 
 $t0 = microtime(true);
 $action = (string)($_GET['action'] ?? '');
@@ -32,7 +34,7 @@ if ($method !== 'GET' && !hash_equals((string)$_SESSION['fd_csrf'], (string)($_S
 }
 
 $pdo = db();
-extEnsureSchema($pdo);
+oauthEnsureSchema($pdo);   // כולל extEnsureSchema של 05
 $ctx = resolveAccess($pu);   // 01: המשתמש, הארגון הפעיל (מה-session, נבדק מול members) והתפקיד
 need('case.view');
 $orgId = scope();
@@ -52,7 +54,8 @@ if ($action === 'me') {
         'org' => ['id' => $orgId, 'name' => $ctx['org']['name']], 'can_create' => $m !== null,
         'can_manage' => extCan('manage_tokens'), 'tokens' => extListTokens($pdo, $orgId, (int)$ctx['user']['id']),
         'ttl_days' => EXT_TTL_DAYS, 'max_active' => EXT_MAX_ACTIVE_TOKENS,
-        'prompt' => extPrompt(), 'openapi_url' => EXT_PUBLIC_BASE . '/openapi.json', 'ingest' => $ingest]);
+        'prompt' => extPrompt(), 'openapi_url' => EXT_PUBLIC_BASE . '/openapi.json', 'ingest' => $ingest,
+        'mcp_url' => MCP_URL, 'connections' => oauthListGrants($pdo, $orgId, (int)$ctx['user']['id'], extCan('manage_tokens'))]);
 }
 if ($action === 'create') {
     if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
@@ -65,6 +68,12 @@ if ($action === 'revoke') {
     if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
     $p = body();
     extRevokeToken($pdo, $orgId, (int)$ctx['user']['id'], (int)($p['id'] ?? 0));
+    reply(200, ['ok' => true]);
+}
+if ($action === 'disconnect') {
+    if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
+    $p = body();
+    oauthDisconnect($pdo, $orgId, (int)$ctx['user']['id'], extCan('manage_tokens'), (int)($p['id'] ?? 0));
     reply(200, ['ok' => true]);
 }
 reply(404, ['error' => 'פעולה לא מוכרת']);

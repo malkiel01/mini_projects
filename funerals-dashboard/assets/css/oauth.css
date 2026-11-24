@@ -1,0 +1,10 @@
+/* מסך ההסכמה של OAuth (oauth/authorize.php) — פרוסה 09. phone-first, על הטוקנים של app.css. */
+.oauth { max-width: 480px; margin: 0 auto; padding: var(--s4); }
+.consent { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4); box-shadow: var(--shadow); }
+.consent .ask { margin: 0 0 var(--s3); line-height: 1.6; }
+.consent .can { margin: 0 0 var(--s3); padding-inline-start: 20px; line-height: 1.8; }
+.consent .actions { display: grid; gap: var(--s2); margin-top: var(--s4); }
+.consent .orgs { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); margin: 0 0 var(--s2); }
+.consent .orgs legend { padding: 0 var(--s1); color: var(--muted); }
+.consent .org { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); }
+.consent .org small { color: var(--muted); }
