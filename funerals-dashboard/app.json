@@ -10,6 +10,7 @@
   "gate": true,
   "public": [
     "ingest.php",
+    "dropbox-webhook.php",
     "ext.php",
     "openapi.json",
     "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"

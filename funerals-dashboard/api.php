@@ -38,6 +38,13 @@ if (in_array($action, DEVAPI_ACTIONS, true)) runDevloop(fn() => devapiAction($ac
 $pu = platformUser();
 if ($pu === null) reply(401, ['error' => 'אין הרשאה לאפליקציה. יש להיכנס דרך הפלטפורמה ולקבל אישור לאפליקציה.']);
 
+// החזרה מ-Dropbox (OAuth): לפני ה-session — עוגיית fd_session (SameSite=Strict) לא נשלחת בניווט מ-dropbox.com,
+// וה-state נבדק בשרת מול ה-sub של השער (פרוסה 03). לא פותחים session ולא מחליפים אותו.
+if ($action === 'dropbox_callback') {
+    require_once __DIR__ . '/dropbox/actions.php';
+    dbxCallbackNoSession($pu);
+}
+
 $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 session_name('fd_session');
@@ -89,6 +96,10 @@ $post = function () use ($method): array {
     return body();
 };
 $get = function () use ($method): void { if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']); };
+
+/* ===== Dropbox (פרוסה 03) — dropbox/actions.php ===== */
+require_once __DIR__ . '/dropbox/actions.php';
+if (dbxHandles($action)) dbxAction($action, $method, $pu);
 
 /* ===== AI מובנה (פרוסה 06) — ai/actions.php ===== */
 require_once __DIR__ . '/ai/actions.php';
@@ -309,7 +320,7 @@ function healthChecks(PDO $pdo): array {
     usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
     $add('backup', 'הגיבוי האחרון', (bool)$files, $files ? basename($files[0]) . ' · ' . gmdate('c', (int)filemtime($files[0])) : 'אין גיבוי');
     return ['checks' => $c, 'php' => PHP_VERSION, 'external' => [
-        ['name' => 'Dropbox', 'state' => 'פרוסה 03'],
+        dbxHealthRow($pdo),
         ['name' => 'API חיצוני (GPT)', 'state' => 'פרוסה 05'],
         ['name' => 'AI מובנה', 'state' => 'פרוסה 06'],
     ]];

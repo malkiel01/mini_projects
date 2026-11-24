@@ -86,6 +86,7 @@
     if (!$('month').value) $('month').value = defaultMonth();
     await load();
     route();
+    document.dispatchEvent(new Event('fd:ready'));   // dropbox.js: סנכרון בפתיחה, וחזרה מ-OAuth (#dropbox)
   }
   /** הכותרת: הארגון הפעיל (ובורר אם יש יותר מאחד), והכפתורים לפי ההרשאות. */
   function paintHeader() {
@@ -94,7 +95,7 @@
     me.orgs.forEach(o => { const opt = node('option', '', o.name); opt.value = o.id; opt.selected = o.id === me.org.id; pick.append(opt); });
     pick.hidden = me.orgs.length < 2; $('orgName').hidden = !pick.hidden;
     $('importBtn').hidden = !can('case.import'); $('exportBtn').hidden = !can('case.export');
-    $('settingsBtn').hidden = !(can('members.manage') || can('orgs.manage')); $('devBtn').hidden = !can('dev');
+    $('settingsBtn').hidden = !(can('members.manage') || can('orgs.manage') || can('dropbox.manage')); $('devBtn').hidden = !can('dev');
     $('newBtn').hidden = !can('case.edit');
     $('uName').textContent = me.user.name || me.user.email; $('uEmail').textContent = me.user.email || '';
     $('uRole').textContent = me.dev ? 'מפתח' + (me.role ? ' · ' + me.role_label : '') : me.role_label;
@@ -444,14 +445,16 @@
 
   /* ===== ⚙️ הגדרות: חברים, ארגונים ===== */
   let stab = 'members';
-  $('settingsBtn').addEventListener('click', () => { stab = can('members.manage') ? 'members' : 'orgs'; $('settingsDialog').showModal(); paintSettings(); });
+  function openSettings(tab) { stab = tab || (can('members.manage') ? 'members' : can('orgs.manage') ? 'orgs' : 'dropbox'); $('settingsDialog').showModal(); paintSettings(); }
+  $('settingsBtn').addEventListener('click', () => openSettings());
   document.querySelectorAll('[data-stab]').forEach(b => b.addEventListener('click', () => { stab = b.dataset.stab; paintSettings(); }));
   function paintSettings() {
     document.querySelector('[data-stab="members"]').hidden = !can('members.manage');
     document.querySelector('[data-stab="orgs"]').hidden = !can('orgs.manage');
     document.querySelectorAll('[data-stab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.stab === stab)));
-    $('sMembers').hidden = stab !== 'members'; $('sOrgs').hidden = stab !== 'orgs';
-    if (stab === 'members') loadMembers(); else loadOrgs();
+    document.querySelector('[data-stab="dropbox"]').hidden = !can('dropbox.manage');
+    $('sMembers').hidden = stab !== 'members'; $('sOrgs').hidden = stab !== 'orgs'; $('sDropbox').hidden = stab !== 'dropbox';
+    if (stab === 'members') loadMembers(); else if (stab === 'orgs') loadOrgs(); else if (window.FDDropbox) window.FDDropbox.settings($('sDropbox'));
   }
   async function loadMembers(data) {
     try { data = data || await request('members'); } catch (e) { toast(e.message, true); return; }
@@ -549,7 +552,7 @@
         });
         box.append(list, node('h3', 'sec-title', 'חיבורים חיצוניים'));
         const ext = node('ul', 'list');
-        d.external.forEach(x => { const li = node('li', 'card'); li.style.cursor = 'default'; const b = node('div', 'body'); b.append(node('div', 'l1', '⏳ ' + x.name), node('div', 'l2', 'עוד לא מחובר — ' + x.state)); li.append(b); ext.append(li); });
+        d.external.forEach(x => { const li = node('li', 'card'); li.style.cursor = 'default'; const b = node('div', 'body'); b.append(node('div', 'l1', (x.ok === undefined ? '⏳ ' : x.ok ? '✅ ' : '⛔ ') + x.name), node('div', 'l2', x.ok === undefined ? 'עוד לא מחובר — ' + x.state : x.state)); li.append(b); ext.append(li); });
         box.append(ext, node('p', 'hint', 'PHP ' + d.php));
         return;
       }
@@ -592,5 +595,6 @@
       $('userDialog').close(); showSignin('יצאת מהאפליקציה. "כניסה מחדש" תחבר אותך שוב לפי ההרשאה בפלטפורמה.'); }
     catch(e) { toast(e.message, true); }
   });
+  window.FD = {request, toast, csrf: () => csrf, can: p => can(p), openSettings};   // לשימוש dropbox.js
   begin();
 })();

@@ -151,13 +151,14 @@ function extDropboxError(Throwable $e): array {
         default => [502, 'Dropbox לא ענה כרגע. לנסות שוב מאוחר יותר.'],
     };
 }
-/** קבצי התיק מ-03: [רשימה, null] או [null, הסבר]. ההרשאה (case.view + תיק של הארגון) נבדקה לפני. */
+/** קבצי התיק מ-03: [רשימה, null] או [null, הסבר, סטטוס]. ההרשאה (case.view + תיק של הארגון) נבדקה לפני. */
 function extCaseFiles(PDO $pdo, array $case, int $orgId): array {
     if (!extDropboxReady('dropboxCaseFiles')) return [null, 'Dropbox עוד לא חובר'];
     try {
         return [dropboxCaseFiles($pdo, $case + ['org_id' => $orgId]), null];
     } catch (Throwable $e) {
-        return [null, extDropboxError($e)[1]];
+        [$status, $msg] = extDropboxError($e);
+        return [null, $msg, $status];
     }
 }
 
@@ -436,8 +437,8 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
         case 'files':
             if (!extDropboxReady('dropboxCaseFiles')) extFail(501, 'Dropbox עוד לא חובר');
             $c = extCase($pdo, $orgId, (string)($in['id'] ?? ''));
-            [$files, $filesNote] = extCaseFiles($pdo, $c, $orgId);
-            if ($files === null) extFail(502, (string)$filesNote);
+            [$files, $filesNote, $filesStatus] = extCaseFiles($pdo, $c, $orgId) + [2 => 502];
+            if ($files === null) extFail($filesStatus, (string)$filesNote);
             return ['id' => $c['id'], 'files' => $files];
 
         case 'file_text':
