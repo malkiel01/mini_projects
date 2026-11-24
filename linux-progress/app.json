@@ -1,0 +1,11 @@
+{
+  "id": "linux-progress",
+  "name": "ההתקדמות שלי בלינוקס",
+  "icon": "🐧",
+  "description": "מעקב אישי אחרי תרגולי לינוקס: מה תרגלתי, מתי, ומה אומת.",
+  "category": "dev",
+  "entry": "index.html",
+  "version": "0.1",
+  "gate": true,
+  "restricted": true
+}
