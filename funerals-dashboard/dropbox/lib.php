@@ -250,8 +250,11 @@ function dbxUpsertFile(PDO $pdo, int $orgId, array $e, string $via, ?string $by)
             ->execute([$caseId, $e['path_display'], $lower, $e['name'], (int)($e['size'] ?? 0), $e['rev'] ?? null, $e['server_modified'] ?? null, $now, $old['id'], $orgId]);
         return $caseId !== null && ($old['case_id'] !== $caseId || (int)$old['deleted'] === 1);
     }
+    // ON CONFLICT: סנכרון והעלאה (או שני סנכרונים) שרושמים את אותו קובץ באותו רגע — שורה אחת, בלי חריגת UNIQUE
     $pdo->prepare('INSERT INTO files(org_id,case_id,dbx_id,path,path_lower,name,size,rev,server_modified,deleted,added_via,added_by,kind,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,0,?,?,\'\',?,?)')
+        VALUES(?,?,?,?,?,?,?,?,?,0,?,?,\'\',?,?)
+        ON CONFLICT(org_id, dbx_id) DO UPDATE SET case_id=excluded.case_id, path=excluded.path, path_lower=excluded.path_lower,
+            name=excluded.name, size=excluded.size, rev=excluded.rev, server_modified=excluded.server_modified, deleted=0, updated_at=excluded.updated_at')
         ->execute([$orgId, $caseId, $e['id'], $e['path_display'], $lower, $e['name'], (int)($e['size'] ?? 0), $e['rev'] ?? null,
             $e['server_modified'] ?? null, $via, $by, $now, $now]);
     return $caseId !== null;
