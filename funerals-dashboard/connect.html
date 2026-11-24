@@ -17,17 +17,58 @@
 <main id="main" tabindex="-1">
   <p class="error" id="fatal" role="alert" hidden></p>
   <div id="app" hidden>
-    <h2 class="sec-title">שלושה דברים להעתיק</h2>
-    <div class="tiles copy-tiles">
-      <button type="button" class="tile" id="copyPrompt"><span class="tile-ic" aria-hidden="true">📋</span><span class="one">ההנחיות</span></button>
-      <button type="button" class="tile" id="copyApi"><span class="tile-ic" aria-hidden="true">🔗</span><span class="one">קובץ ה-API</span></button>
-      <button type="button" class="tile" id="copyToken" disabled><span class="tile-ic" aria-hidden="true">🔑</span><span class="one">האסימון</span></button>
-    </div>
+    <h2 class="sec-title">שלוש דרכים לעבוד עם צ'אט</h2>
 
-    <section class="summary" aria-labelledby="newTitle">
-      <h2 class="sec-title" id="newTitle">אסימון חדש</h2>
+    <section class="summary route main-route" aria-labelledby="plugTitle">
+      <h3 id="plugTitle"><span aria-hidden="true">🔌</span> חיבור ישיר מ-ChatGPT (Plugin) <span class="chip ok">עכשיו</span></h3>
+      <p class="hint">ChatGPT קורא ומעדכן את התיקים בעצמו, בלי העתקות. מתחברים פעם אחת עם החשבון שלך; עדכון נשמר "לאימות", ואין מחיקה.</p>
+      <div class="row-btns mcp-url"><code id="mcpUrl" dir="ltr"></code><button type="button" class="btn primary" id="copyMcp">📋 העתקת הכתובת</button></div>
+      <ol class="route-steps">
+        <li><span>לפתוח את <b>ChatGPT בדפדפן</b> (לא באפליקציה בטלפון).</span></li>
+        <li><span>להיכנס ל-<b dir="ltr">chatgpt.com/plugins</b>.</span></li>
+        <li><span>ללחוץ <b>➕ ← Add custom MCP server</b>.</span></li>
+        <li><span>להדביק את <b>הכתובת</b> (📋), וב-<b>Authentication</b> לבחור <b>OAuth</b>.</span></li>
+        <li><span>ללחוץ <b>Connect</b>, ובמסך ההסכמה שלנו — <b>אישור</b>. ואז לנסות: "תמצא את התיק של כהן".</span></li>
+      </ol>
+      <p class="hint">ב-Claude: <b>Settings ← Connectors ← Add custom connector</b>, ואותה כתובת.</p>
+      <h4 class="sec-title" id="connTitle">חיבורים פעילים</h4>
+      <ul class="list" id="connections" aria-labelledby="connTitle"></ul>
+    </section>
+
+    <section class="summary route" aria-labelledby="projTitle">
+      <h3 id="projTitle"><span aria-hidden="true">🗂️</span> פרויקט ChatGPT </h3>
+      <p class="hint">ה-GPT קורא את ייצוא החודש ומחזיר JSON, ואותו מדביקים כאן ב-📥. שום דבר לא נכתב לתיקים בלי ההדבקה שלך.</p>
+      <ol class="route-steps">
+        <li><span>ב-ChatGPT: <b>Projects ← New project</b>, בשם <b>ניהול לוויות</b>.</span></li>
+        <li><span>להעתיק את ההנחיות ולהדביק ב-<b>Instructions</b> של הפרויקט.</span>
+          <button type="button" class="btn primary" id="copyProject">📋 העתקת ההנחיות</button></li>
+        <li><span>לייצא את החודש ולהעלות את הקובץ לפרויקט ב-<b>Add files</b>. בכל פעם שהתיקים משתנו — לייצא ולהעלות שוב.</span>
+          <span class="row-btns"><input type="month" id="expMonth" aria-label="חודש לייצוא"><button type="button" class="btn ghost" id="exportMonth">📤 ייצוא</button></span></li>
+        <li><span>את ה-JSON שה-GPT מחזיר — להדביק ב-📥 במסך התיקים. תיק דומה קיים — בוחרים אם לעדכן אותו או ליצור חדש.</span>
+          <a class="btn ghost" href="index.html#import" id="toImport">📥 לייבוא</a></li>
+      </ol>
+    </section>
+
+    <section class="summary route" aria-labelledby="aiTitle">
+      <h3 id="aiTitle"><span aria-hidden="true">💬</span> העוזר בתוך האפליקציה</h3>
+      <p class="hint">קורא את התיקים והמסמכים ישירות ומציע שינויים — כל שינוי נשמר רק אחרי ✓ שלך.</p>
+      <a class="btn ghost" href="index.html#ai">💬 לפתוח את העוזר</a>
+    </section>
+
+    <p class="hint gone">⛔ <b>GPT מותאם (Create GPT)</b> — OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, והשירות נסגר ב-11.12.2026.</p>
+
+    <details class="summary steps" id="advanced">
+      <summary class="sec-title">מתקדם: אסימונים וקובץ API</summary>
+      <p class="hint">לחיבור שעובד עם Actions — ל-GPT מותאם קיים, ולשימוש עתידי.</p>
+      <div class="tiles copy-tiles">
+        <button type="button" class="tile" id="copyPrompt"><span class="tile-ic" aria-hidden="true">📋</span><span class="one">הנחיות ל-Actions</span></button>
+        <button type="button" class="tile" id="copyApi"><span class="tile-ic" aria-hidden="true">🔗</span><span class="one">קובץ ה-API</span></button>
+        <button type="button" class="tile" id="copyToken" disabled><span class="tile-ic" aria-hidden="true">🔑</span><span class="one">האסימון</span></button>
+      </div>
+
+      <h3 class="sec-title" id="newTitle">אסימון חדש</h3>
       <p class="hint" id="noRole" hidden>האסימון עובד בהרשאות התפקיד שלך בארגון, ואין לך תפקיד בארגון הזה. החלפת ארגון — במסך התיקים.</p>
-      <form id="newForm" class="fields" novalidate>
+      <form id="newForm" class="fields" novalidate aria-labelledby="newTitle">
         <label class="f wide"><span>שם (כדי לזהות אותו ברשימה)</span><input id="tName" maxlength="60" placeholder="GPT של משה" autocomplete="off"></label>
         <div class="f wide"><span>תוקף</span>
           <div class="seg" role="radiogroup" aria-label="תוקף">
@@ -43,23 +84,11 @@
         <code id="freshToken" dir="ltr"></code>
         <button type="button" class="btn primary" id="copyFresh">🔑 העתקת האסימון</button>
       </div>
-    </section>
 
-    <details class="summary steps" open>
-      <summary class="sec-title">איך מחברים GPT מותאם (5 צעדים)</summary>
-      <ol>
-        <li>ב-ChatGPT: <b>Explore GPTs ← Create ← Configure</b>.</li>
-        <li><b>Instructions</b> — להדביק את <b>ההנחיות</b> (📋).</li>
-        <li><b>Actions ← Create new action ← Import from URL</b> — להדביק את <b>קובץ ה-API</b> (🔗).</li>
-        <li><b>Authentication ← API Key ← Bearer</b> — להדביק את <b>האסימון</b> (🔑).</li>
-        <li>לשמור (Only me), ולנסות: "תמצא את התיק של כהן".</li>
-      </ol>
-      <p class="hint">בלי GPT מותאם: להדביק את ההנחיות בתחילת שיחה או בפרויקט — אבל אז הצ'אט לא יכול לכתוב לתיקים.</p>
+      <h3 class="sec-title" id="listTitle">האסימונים שלי</h3>
+      <ul class="list" id="tokens" aria-labelledby="listTitle"></ul>
+      <p class="hint" id="ingest" hidden></p>
     </details>
-
-    <h2 class="sec-title" id="listTitle">האסימונים שלי</h2>
-    <ul class="list" id="tokens" aria-labelledby="listTitle"></ul>
-    <p class="hint" id="ingest" hidden></p>
   </div>
 </main>
 <div class="toast" id="toast" role="status" hidden></div>

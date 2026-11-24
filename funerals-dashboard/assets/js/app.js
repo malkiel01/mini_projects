@@ -441,19 +441,67 @@
       toast('הקובץ הורד — לשמור במקום מאובטח');
     } catch(err) { toast(err.message, true); }
   });
-  $('importBtn').addEventListener('click', () => $('importFile').click());
+  /* ===== 📥 ייבוא — הדבקה (תשובת ChatGPT) או קובץ; תיק דומה → בחירה (פרוסה 08, P1/P3) ===== */
+  let similar = [];   // [{index, name, date, match:{id,name,date}}] מה-409 האחרון; מתאפס כשהטקסט משתנה
+  function resetSimilar() { similar = []; $('similarBox').hidden = true; $('similarList').replaceChildren(); $('importRun').textContent = 'ייבוא'; }
+  function renderSimilar() {
+    const list = $('similarList'); list.replaceChildren();
+    for (const s of similar) {
+      const row = node('div', 'similar');
+      const l1 = node('div', 'l1'); l1.append(node('b', '', 'תיק דומה קיים: ' + s.match.name), document.createTextNode(s.match.date ? ' · ' + s.match.date : ''));
+      row.append(l1, node('div', 'l2', 'ברשומה: ' + s.name + (s.date ? ' · ' + s.date : ' · בלי תאריך')));
+      const seg = node('div', 'seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'מה לעשות עם ' + s.name);
+      for (const [val, text] of [['update', 'לעדכן אותו'], ['new', 'ליצור חדש']]) {
+        const lab = node('label'), inp = node('input'); inp.type = 'radio'; inp.name = 'sim' + s.index; inp.value = val; inp.checked = val === 'update';
+        lab.append(inp, node('span', '', text)); seg.append(lab);
+      }
+      row.append(seg); list.append(row);
+    }
+    $('similarBox').hidden = !similar.length;
+    $('importRun').textContent = similar.length ? 'ייבוא עם הבחירות' : 'ייבוא';
+  }
+  async function runImport() {
+    let records;
+    try { records = FDForm.parseImport($('importText').value); } catch (err) { toast(err.message, true); $('importText').focus(); return; }
+    const resolve = {};
+    for (const s of similar) resolve[s.index] = (document.querySelector('input[name="sim' + s.index + '"]:checked') || {}).value || 'update';
+    $('importRun').disabled = true;
+    try {
+      const result = await request('import', 'POST', {records, resolve});
+      const months = [...new Set(records.map(r => r.month).filter(Boolean))];
+      if (months.length === 1) $('month').value = months[0];
+      const merged = (result.similar || []).filter(s => s.choice === 'update').length;
+      $('importDialog').close(); $('importText').value = ''; resetSimilar();
+      toast('נקלטו ' + result.imported + ' תיקים' + (merged ? ' (' + merged + ' עודכנו בתיק דומה)' : '')); await load();
+    } catch (err) {
+      if (err.status === 409 && err.body && err.body.code === 'similar') {
+        similar = similar.concat(err.body.similar.filter(n => !similar.some(s => s.index === n.index)));
+        renderSimilar(); $('similarBox').scrollIntoView({block: 'nearest', behavior: 'smooth'});
+        toast('יש תיקים דומים — לבחור ולייבא שוב', true);
+      } else toast(err.message, true);
+    } finally { $('importRun').disabled = false; }
+  }
+  $('importBtn').addEventListener('click', () => { $('importDialog').showModal(); $('importText').focus(); });
+  $('importText').addEventListener('input', resetSimilar);
+  $('importRun').addEventListener('click', runImport);
+  $('importPick').addEventListener('click', () => $('importFile').click());
   $('importFile').addEventListener('change', async () => {
     const file = $('importFile').files[0]; if (!file) return;
     if (file.size > 1200000) { toast('הקובץ גדול מדי', true); return; }
-    try {
-      const data = JSON.parse(await file.text());
-      if (!Array.isArray(data.records)) throw new Error('קובץ JSON חייב לכלול records');
-      const result = await request('import', 'POST', {records:data.records});
-      const months = [...new Set(data.records.map(r => r && r.month).filter(Boolean))];
-      if (months.length === 1) $('month').value = months[0];
-      toast('נקלטו ' + result.imported + ' תיקים'); await load();
-    } catch(err) { toast(err.message, true); }
-    finally { $('importFile').value = ''; }
+    $('importText').value = await file.text(); $('importFile').value = ''; resetSimilar();
+    runImport();
+  });
+  /* ===== ⋯ — הכפתורים שלא נכנסים בכותרת בטלפון (≤420px, פרוסה 08 P5) ===== */
+  $('moreBtn').addEventListener('click', () => {
+    const list = $('moreList'); list.replaceChildren();
+    for (const el of document.querySelectorAll('header.top [data-more]')) {
+      if (el.hidden) continue;
+      const item = node('button', 'more-item'); item.type = 'button';
+      item.append(node('span', 'ic', el.textContent.trim()), node('span', '', el.getAttribute('title') || el.getAttribute('aria-label') || ''));
+      item.addEventListener('click', () => { $('moreDialog').close(); el.click(); });
+      list.append(item);
+    }
+    $('moreDialog').showModal();
   });
   /* ===== תפריט משתמש, בורר ארגון ===== */
   $('userBtn').addEventListener('click', () => $('userDialog').showModal());
@@ -606,7 +654,14 @@
     } catch (e) { box.replaceChildren(node('p', 'error', e.message)); }
   }
   /** #/dev/tasks[/FD-001] — קישור ישר למטלות (DevLoop, התראות). */
-  function route() { if (me && me.dev && location.hash.startsWith('#/dev/tasks')) openDev('tasks'); }
+  function route() {
+    if (me && me.dev && location.hash.startsWith('#/dev/tasks')) openDev('tasks');
+    // פרוסה 08: מסך 🤖 שולח לכאן — #import (להדביק את תשובת ה-GPT) ו-#ai (העוזר המובנה). אחרי הפתיחה — בלי ה-hash.
+    const go = location.hash === '#import' ? (can('case.import') ? $('importBtn') : null) : location.hash === '#ai' ? $('aiBtn') : undefined;
+    if (go === undefined) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    if (go && !go.hidden) go.click(); else toast('אין לך הרשאה לפעולה הזו בארגון הזה', true);
+  }
   addEventListener('hashchange', route);
 
   $('logoutBtn').addEventListener('click', async () => {

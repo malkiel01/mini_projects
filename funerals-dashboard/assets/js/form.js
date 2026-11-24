@@ -73,7 +73,24 @@
     return JSON.stringify(v);
   }
 
-  const api = {labels, statusLabels, viaLabels, actionLabels, KEYS, TOTAL, ORDER, groupOf, nextUp, caseState, matches, provenance, fieldLabel, valueText};
+  /**
+   * פרוסה 08 — מה שהמשתמש הדביק ב-📥 (תשובה של ChatGPT): {"schema_version":1,"month","records"} או רשימת רשומות.
+   * סובל ```json … ``` וטקסט מסביב — לוקח מה-{ או ה-[ הראשון ועד הסוגר האחרון. מחזיר את הרשומות, או זורק שגיאה בעברית.
+   */
+  function parseImport(text) {
+    const t = String(text || '');
+    const a = t.search(/[{[]/), b = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+    if (a < 0 || b < a) throw new Error('לא נמצא JSON — להדביק את כל מה שה-GPT החזיר');
+    let data;
+    try { data = JSON.parse(t.slice(a, b + 1)); } catch (e) { throw new Error('ה-JSON לא תקין — לבקש מה-GPT להחזיר אותו שוב, בבלוק אחד'); }
+    const records = Array.isArray(data) ? data : data && data.records;
+    if (!Array.isArray(records)) throw new Error('ב-JSON חסר records');
+    if (!records.length) throw new Error('אין רשומות לייבוא');
+    if (records.some(r => !r || typeof r !== 'object' || Array.isArray(r))) throw new Error('רשומה לא תקינה ב-records');
+    return records;
+  }
+
+  const api = {labels, statusLabels, viaLabels, actionLabels, KEYS, TOTAL, ORDER, groupOf, nextUp, caseState, matches, provenance, fieldLabel, valueText, parseImport};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FDForm = api;
 })(typeof self !== 'undefined' ? self : this);

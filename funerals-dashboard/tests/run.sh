@@ -15,7 +15,7 @@ fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונ�
 ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
-for f in api.php lib.php ingest.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php lib/field.php tests/field.test.php tests/field-dropbox.test.php \
+for f in api.php lib.php ingest.php tokens.php ext-lib.php tests/fixes08.test.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php lib/field.php tests/field.test.php tests/field-dropbox.test.php \
     dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
@@ -24,6 +24,9 @@ node --check "$APP/assets/js/form.js" || fail "node --check form.js"
 node --check "$APP/assets/js/dropbox.js" || fail "node --check dropbox.js"
 # פרוסה 02 — בדיקות יחידה (בלי שרת ובלי data/)
 php "$APP/tests/form.test.php" || fail "form.test.php"
+# פרוסה 08 — P2 (הנחיות לפרויקט), P4 (caseDiff), parseImport — בלי שרת
+php "$APP/tests/fixes08.test.php" || fail "fixes08.test.php"
+node --check "$APP/assets/js/connect.js" || fail "node --check connect.js"
 node "$APP/tests/form.test.js" || fail "form.test.js"
 # פרוסה 04 — עובד שטח: הליבה בדפדפן (הקטנה, GPS, תור) — בלי שרת
 node --check "$APP/assets/js/field-core.js" || fail "node --check field-core.js"
@@ -219,6 +222,38 @@ ING="$(sql "SELECT id FROM funerals WHERE name='שם בדיקה בלבד'")"
 test "$(sql "SELECT org_id FROM funerals WHERE id='$ING'")" = 1 || fail "A9: לא בארגון 1"
 test "$(sql "SELECT source||'/'||org_id FROM events WHERE case_id='$ING'")" = import/1 || fail "A9: events source import"
 ok "A9 — האסימון הקיים עובד; ייבוא לארגון 1, source: import"
+
+# ===== פרוסה 08 — P3: תיק דומה בייבוא; P4: 402 מול 402.0 לא נרשם ב-events =====
+n0="$(sql "SELECT COUNT(*) FROM funerals")"
+# שם בסדר אחר ועם רווחים, בלי תאריך ובלי id → המזהה המחושב שונה מ"ייבוא משרד" (2026-10-30), ולכן בלי P3 היה נוצר תיק כפול
+SIM='{"month":"2026-10","name":"  משרד   ייבוא ","notes":"מה-GPT"}'
+code="$(post office import "{\"records\":[$SIM]}")"; test "$code" = 409 || fail "P3: רשומה דומה בלי בחירה → 409 ($code)"
+test "$(jv '$v["code"]')" = "'similar'" && test "$(jv '$v["similar"][0]["match"]["id"]')" = "'$IMP'" && test "$(jv '$v["similar"][0]["index"]')" = 0 || fail "P3: הרשימה ב-409"
+test "$(sql "SELECT COUNT(*) FROM funerals")" = "$n0" || fail "P3: נוצר תיק בלי בחירה"
+code="$(post office import "{\"records\":[{\"month\":\"2026-10\",\"name\":\"אחר לגמרי\"},$SIM],\"resolve\":{\"0\":\"new\"}}")"; test "$code" = 409 || fail "P3: בחירה לרשומה אחרת לא מספיקה ($code)"
+test "$(sql "SELECT COUNT(*) FROM funerals")" = "$n0" || fail "P3: 409 — שום רשומה לא נשמרה"
+code="$(post office import "{\"records\":[$SIM],\"resolve\":{\"0\":\"maybe\"}}")"; test "$code" = 400 || fail "P3: בחירה לא מוכרת → 400 ($code)"
+code="$(post office import "{\"records\":[$SIM],\"resolve\":{\"0\":\"update\"}}")"; test "$code" = 200 || fail "P3: לעדכן ($code)"
+test "$(sql "SELECT COUNT(*) FROM funerals")" = "$n0" || fail "P3: לעדכן — נוצר תיק"
+test "$(sql "SELECT json_extract(body,'\$.notes')||'|'||name||'|'||json_extract(body,'\$.date') FROM funerals WHERE id='$IMP'")" = 'מה-GPT|ייבוא משרד|2026-10-30' || fail "P3: לעדכן — ההערה נכנסה, השם והתאריך של התיק נשארו"
+test "$(jv '$v["similar"][0]["choice"]')" = "'update'" || fail "P3: התשובה מדווחת על העדכון"
+code="$(post office import "{\"records\":[$SIM],\"resolve\":{\"0\":\"new\"}}")"; test "$code" = 200 || fail "P3: ליצור חדש ($code)"
+test "$(sql "SELECT COUNT(*) FROM funerals")" = "$((n0 + 1))" || fail "P3: ליצור חדש — לא נוצר"
+NEWSIM="$(sql "SELECT id FROM funerals WHERE name='משרד   ייבוא'")"; test -n "$NEWSIM" || fail "P3: התיק החדש"
+# עם id — עדכון רגיל, בלי שאלה; ingest.php (אין מי שיבחר) — ברירת המחדל, לעדכן
+code="$(post office import "{\"records\":[{\"id\":\"$IMP\",\"month\":\"2026-10\",\"name\":\"ייבוא משרד\",\"notes\":\"עם id\"}]}")"; test "$code" = 200 || fail "P3: עם id ($code)"
+sql "DELETE FROM funerals WHERE id='$NEWSIM'"
+code="$(st -H 'Content-Type: application/json' -H "Authorization: Bearer $TOK0" --data '{"records":[{"month":"2026-10","name":"ייבוא  משרד","notes":"מ-ingest"}]}' "$ingest?action=import")"
+test "$code" = 200 && test "$(jv '$v["similar"][0]["choice"]')" = "'update'" || fail "P3: ingest — ברירת המחדל לעדכן ($code)"
+test "$(sql "SELECT COUNT(*) FROM funerals")" = "$n0" && test "$(sql "SELECT json_extract(body,'\$.notes') FROM funerals WHERE id='$IMP'")" = 'מ-ingest' || fail "P3: ingest — עדכן ולא יצר"
+ok "P3 — רשומה דומה בלי id: 409 עם הרשימה ושום דבר לא נשמר; לעדכן (השם נשאר) / ליצור חדש; עם id — בלי שאלה; ingest — לעדכן"
+# P4: סכום שמור כמספר שלם (402) מול 402.0 אחרי normalize — שמירה בלי שינוי לא רושמת payments
+sql "UPDATE funerals SET body=json_set(body,'\$.payments',json('[{\"amount\":402,\"purpose\":\"קבר\",\"reference\":\"\",\"source\":\"\"}]')) WHERE id='$IMP'"
+code="$(get office list '&month=2026-10')"
+php -r '$v=json_decode(file_get_contents($argv[1]),true); foreach($v["records"] as $r) if($r["id"]===$argv[3]) { $r["notes"]="P4"; file_put_contents($argv[2], json_encode($r, JSON_UNESCAPED_UNICODE)); }' "$tmp/out" "$tmp/p4.json" "$IMP"
+code="$(post office save "$(cat "$tmp/p4.json")")"; test "$code" = 200 || fail "P4: שמירה ($code)"
+e="$(ev "$IMP")"; php -r '[,,,,$d]=explode("|",$argv[1],5); $d=json_decode($d,true); if(isset($d["payments"]) || !isset($d["notes"])) exit(1);' "$e" || fail "P4: payments נרשם כשינוי: $e"
+ok "P4 — 402 מול 402.0 לא נרשם ב-events"
 
 # ===== A4: הפרדה בין ארגונים =====
 code="$(post dev org_create '{"name":"ארגון בדיקה"}')"; test "$code" = 200 && test "$(jv '$v["created"]')" = 2 || fail "יצירת ארגון ($code)"

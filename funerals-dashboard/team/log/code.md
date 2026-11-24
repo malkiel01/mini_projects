@@ -120,3 +120,16 @@
   ב-`aiDecide` (#1855); בדיקת ה-`base` גם בתוך הטרנזקציה של הכתיבה — `extDo(..., ?callable $guard)` נקרא אחרי `beginTransaction`, לפני
   `formSaveCase`. בדיקות: user_version=4 ב-`run.sh` וב-`dropbox-test.php`; ב-`ai.sh` — v4 על טבלאות AI בצורה הישנה.
 - 2026-11-24 — #1857 מוזג (5c7a910). `team/handoff/code.md` עודכן ("אחרי פרוסה 06"). צ'אט הקוד של 06 יוצא.
+- 2026-11-24 — **פרוסה 08 (תיקונים + פרויקט ChatGPT), ענף `claude/funerals-dashboard-08-fixes`.** P1–P5 לפי `docs/spec/08-fixes-project.md`
+  (P6 הוצא מהאפיון לפרוסה 09). P1 — `connect.html`: שלושה מסלולים (🗂️ פרויקט עם 4 צעדים ו-📋/📤/📥 בתוך הצעדים, 💬, 🔌 "בקרוב"), שורת
+  Create GPT עם התאריך, אסימונים ו-API בקפל "מתקדם"; 📥 במסך התיקים נפתח כחלון הדבקה (`FDForm.parseImport`, סובל ```json וטקסט מסביב),
+  `index.html#import` / `#ai`. P2 — `extProjectPrompt()` → `gpt-project-prompt.md` דרך `build-ext.php` (נבדק ב-`--check`), `tokens.php` מחזיר
+  `project_prompt`. P3 — `importSimilar()` / `similarName()` ב-`lib.php`: 409 `similar` עד בחירה (`resolve`), ingest → לעדכן. P4 — `diffSame()`
+  ב-`caseDiff`. P5 — `[data-more]` + ⋯ ב-≤420px. בדיקות: `tests/fixes08.test.php` (P2, P4, parseImport) וקטע "פרוסה 08" ב-`run.sh` (P3, P4 ב-HTTP).
+- 2026-11-24 — **פרוסה 09 (MCP + OAuth), ענף `claude/funerals-dashboard-09-mcp`.** `mcp.php` + `mcp-lib.php` + `oauth/` (metadata, register,
+  authorize מאחורי השער, token, revoke) + `.htaccess` (`/mcp`, `.well-known/*`) + `assets/css/oauth.css`. הכלים = `extActions()`/`extDo()`;
+  שינוי יחיד ב-`ext-lib.php`: שם הלקוח בשם ביומן (`ctx()['client']`). `tokens.php`: `mcp_url`, `connections`, `disconnect`. `connect.html`
+  (אחרי מיזוג 08): 🔌 פעיל וראשון, הפרויקט שני. בדיקות K1–K15 ב-`tests/mcp.sh` (דרך `tests/mcp-router.php`, שמריץ את כללי `.htaccess`),
+  CIMD ו-DNS מדומים רק תחת `cli-server`. **סטייה מהאפיון:** כתובת חזרה loopback ב-http מותרת (RFC 8252) — בלעדיה Inspector (K16) לא נרשם.
+  **לא נבנה / פתוח:** K16–K18 ידניים; מטא-נתונים בשורש הדומיין — לא נדרשו עד כה (הכותרת 401 מפנה אלינו, ו-openid-configuration בתוך התיקייה),
+  יתברר ב-K16.
