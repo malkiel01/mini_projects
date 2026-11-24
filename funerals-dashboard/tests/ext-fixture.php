@@ -10,7 +10,7 @@ switch ($cmd) {
     case 'setup':
         $pdo->exec('CREATE TABLE IF NOT EXISTS orgs (id INTEGER PRIMARY KEY, name TEXT NOT NULL, created_at TEXT, settings TEXT)');
         $pdo->exec('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, sub TEXT UNIQUE, email TEXT UNIQUE, name TEXT, created_at TEXT, last_seen_at TEXT, active INTEGER NOT NULL DEFAULT 1)');
-        $pdo->exec('CREATE TABLE IF NOT EXISTS members (org_id INTEGER, user_id INTEGER, role TEXT, created_at TEXT, created_by INTEGER, PRIMARY KEY(org_id, user_id))');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS members (org_id INTEGER, user_id INTEGER, role TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT, created_by INTEGER, PRIMARY KEY(org_id, user_id))');
         $pdo->exec('CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER, case_id TEXT, at TEXT, actor_user_id INTEGER, actor TEXT, source TEXT, action TEXT, diff TEXT)');
         $pdo->exec('CREATE TABLE IF NOT EXISTS req_log (at TEXT, method TEXT, action TEXT, status INTEGER, ms INTEGER, user_id INTEGER, error TEXT)');
         $cols = array_column($pdo->query('PRAGMA table_info(funerals)')->fetchAll(PDO::FETCH_ASSOC), 'name');
@@ -30,6 +30,7 @@ switch ($cmd) {
         $case('fd_case_org2_levi', 'דוד לוי', 2);
         break;
     case 'deactivate': $pdo->prepare('UPDATE users SET active=0 WHERE sub=?')->execute([$argv[3]]); break;
+    case 'member_off': $pdo->prepare('UPDATE members SET active=0 WHERE user_id=(SELECT id FROM users WHERE sub=?)')->execute([$argv[3]]); break;
     case 'role': $pdo->prepare('UPDATE members SET role=? WHERE user_id=(SELECT id FROM users WHERE sub=?)')->execute([$argv[4], $argv[3]]); break;
     case 'expire': $pdo->prepare('UPDATE tokens SET expires_at=? WHERE id=?')->execute([gmdate('c', time() - 60), (int)$argv[3]]); break;
     case 'body': $st = $pdo->prepare('SELECT body FROM funerals WHERE id=?'); $st->execute([$argv[3]]); echo $st->fetchColumn(); break;

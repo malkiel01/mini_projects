@@ -134,8 +134,10 @@ function extRequireInfra(PDO $pdo): void {
 }
 /** ADAPTER (01): החבר (משתמש × ארגון × תפקיד) — רק משתמש פעיל, ברגע הבקשה. */
 function extMember(PDO $pdo, int $userId, int $orgId): ?array {
+    // השבתה היא גם לארגון (members.active של 01): חבר פעיל = u.active=1 וגם m.active=1
+    $mActive = extColumnExists($pdo, 'members', 'active') ? ' AND m.active=1' : '';
     $st = $pdo->prepare('SELECT u.id AS user_id, u.name, u.email, u.active, m.org_id, m.role, o.name AS org_name
-        FROM users u JOIN members m ON m.user_id=u.id JOIN orgs o ON o.id=m.org_id WHERE u.id=? AND m.org_id=?');
+        FROM users u JOIN members m ON m.user_id=u.id JOIN orgs o ON o.id=m.org_id WHERE u.id=? AND m.org_id=?' . $mActive);
     $st->execute([$userId, $orgId]);
     $m = $st->fetch();
     if (!$m || (int)$m['active'] !== 1 || !isset(EXT_ROLE_PERMS[$m['role']])) return null;
@@ -150,7 +152,8 @@ function extUserBySub(PDO $pdo, string $sub): ?array {
 }
 /** ADAPTER (01): החברויות של משתמש — לבורר הארגון במסך החיבור. */
 function extMemberships(PDO $pdo, int $userId): array {
-    $st = $pdo->prepare('SELECT m.org_id, m.role, o.name AS org_name FROM members m JOIN orgs o ON o.id=m.org_id WHERE m.user_id=? ORDER BY o.name');
+    $mActive = extColumnExists($pdo, 'members', 'active') ? ' AND m.active=1' : '';
+    $st = $pdo->prepare('SELECT m.org_id, m.role, o.name AS org_name FROM members m JOIN orgs o ON o.id=m.org_id WHERE m.user_id=?' . $mActive . ' ORDER BY o.name');
     $st->execute([$userId]);
     return array_values(array_filter($st->fetchAll(), static fn($m) => isset(EXT_ROLE_PERMS[$m['role']])));
 }

@@ -157,6 +157,10 @@ as "$ORG2"; for i in $(seq 2 10); do mk "$ORG2" "$tmp/cb" "n$i" 30 >/dev/null; d
 st -b "$tmp/cb" "$H/tokens.php?action=me" >/dev/null
 code="$(st -b "$tmp/cb" -H "X-CSRF-Token: $(j csrf)" -H 'Content-Type: application/json' -d '{"name":"11","days":30}' "$H/tokens.php?action=create")"; test "$code" = 400 || fail "אסימון 11 ($code)"
 
+# E5: השבתה בארגון (members.active של 01) — האסימון נופל מיד
+fx member_off 10
+code="$(st -H "Authorization: Bearer $B" "$H/ext.php/whoami")"; test "$code" = 401 || fail "E5 הושבת בארגון ($code)"
+
 # openapi.json ציבורי (קובץ סטטי)
 code="$(st "$H/openapi.json")"; test "$code" = 200 && test "$(j openapi)" = 3.1.0 || fail "openapi.json לא מוגש"
 echo "PASS (05): E1–E10 — Bearer בלבד (בלי/שגוי/פג/בוטל/עוגייה → 401), הפרדת ארגונים (404), הרשאות שטח (403, שום דבר לא נשמר), מאומת → לאימות, השבתה ותפקיד מיד, hash בלבד ולא ביומן, 429 אחרי 60, OpenAPI 3.1 = טבלת הקוד, events עם api ושם, public"

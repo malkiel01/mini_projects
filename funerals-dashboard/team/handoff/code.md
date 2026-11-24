@@ -17,3 +17,9 @@
 **החלטות טכניות:** נתיב `ext.php/<action>` (PATH_INFO) ב-OpenAPI, כי GPT Actions דורש נתיב לכל פעולה ו-OpenAPI אוסר
 `?` בנתיב; `?action=` נתמך גם. אם PATH_INFO לא עובד בשרת (E11) — לעבור לקבצים `ext/<action>.php` או rewrite.
 ולידציית OpenAPI — מבנית ב-PHP (`tests/openapi-check.php`); התקנת ולידטור חיצוני מ-npm נחסמה בסשן.
+
+**החתימות של 01 (מקוד 01, PR #1839):** `recordEvent(?int $orgId, ?string $caseId, array $actor, string $source, string $action, array $diff=[])`
+ב-`lib/events.php` (`$actor=['id'=>…, 'actor'=>…]`, `$diff={שדה:[לפני,אחרי]}`, `caseDiff()`); `logRequest($method,$action,$status,$ms,$userId,$error)`;
+`store(PDO,$v,?$old,int $orgId,array $actor,string $source,string $action)` כותב תיק + אירוע; `existing(PDO,$id,$orgId)`; `normalize($v,int $orgId=1)`.
+`can()/scope()` נשענים על `$GLOBALS['fd_ctx']` — ב-ext.php לבנות מהאסימון. `members.active` (השבתה לארגון) — כבר מסונן ב-`extMember`.
+`tokens` — 01 מעדיפה `migrateV2()` ב-`lib/schema.php`; מספור V2 מול 02/03 — לפי סדר המיזוג (לשאול את הבקרה).
