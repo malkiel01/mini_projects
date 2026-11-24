@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>דשבורד לוויות וחוסרים</title>
+<style>
+:root {font-family:Arial,"Noto Sans Hebrew",sans-serif;color:#203345;background:#f2f5f8;--primary:#194f68;--muted:#64748b;--border:#dae3eb;--card:#fff}
+*{box-sizing:border-box} body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}a{color:#08648d}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #6fbbd9;outline-offset:2px}
+[hidden]{display:none!important}.app{max-width:1550px;margin:auto;padding:22px}.header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}
+h1{margin:0;color:#113e55;font-size:1.65rem}h2{margin:0 0 16px;font-size:1.15rem}h3{margin:0 0 10px;font-size:1rem}
+small,.muted{color:var(--muted)}.eyebrow{font-size:.74rem;color:#5b7588;letter-spacing:.03em}
+.actions,.filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button,.button{border:1px solid var(--border);background:#fff;color:#24465a;border-radius:10px;padding:10px 13px;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+button.primary{background:var(--primary);color:white;border-color:var(--primary)}button:hover{filter:brightness(.96)}button:disabled{opacity:.55;cursor:not-allowed}
+input,select,textarea{border:1px solid #cad6df;border-radius:8px;padding:9px;background:#fff;color:#1a3243;min-width:0;width:100%}
+textarea{resize:vertical;min-height:72px}.month{width:145px} .search{width:min(100%,275px)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:17px 0}
+.stat{background:var(--card);border:1px solid var(--border);padding:18px;border-radius:14px}
+.stat strong{display:block;font-size:1.75rem;color:var(--primary);margin-top:5px}.stat span{color:var(--muted);font-size:.86rem}
+.layout{display:grid;grid-template-columns:minmax(325px,.95fr) minmax(400px,1.35fr);gap:15px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:17px;min-height:200px}
+.panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+.records{max-height:68vh;overflow:auto}.record{display:flex;width:100%;border:1px solid #e3ebf0;align-items:center;justify-content:space-between;padding:12px 10px;text-align:right;border-radius:9px;margin-bottom:7px;gap:8px}
+.record.active{background:#e9f4f7;border-color:#84b5c9}.record strong{display:block}.record small{display:block;margin-top:5px}
+.tag{font-size:.73rem;border-radius:12px;padding:4px 7px;color:#455667;background:#edf1f5;white-space:nowrap}
+.tag.missing{background:#fff0ed;color:#ad3f34}.tag.good{background:#e3f4eb;color:#246e48}.tag.warn{background:#fff4d9;color:#835b09}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+label{display:grid;gap:5px;font-size:.86rem;color:#3d5868}label.wide{grid-column:1/-1}.section{border-top:1px solid var(--border);margin-top:19px;padding-top:16px}
+.check{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;padding:10px 0;border-bottom:1px solid #eef2f5}
+.check>strong{font-size:.87rem;align-self:center}.check .check-note{grid-column:1/-1}.check .check-value{grid-column:1/-1}
+.dynamic{display:grid;gap:10px}.item-editor{background:#f8fafb;border:1px solid #e3ebf0;border-radius:10px;padding:11px}
+.item-editor .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.bar{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.linkline{margin:10px 0;display:flex;gap:8px;flex-wrap:wrap}.message{padding:10px;border-radius:9px;background:#e9f6fa;color:#124761;margin:9px 0}.message.error{background:#fff0ed;color:#aa332f}
+.empty{padding:28px 15px;text-align:center;color:#637b8b}.signin{min-height:100vh;display:grid;place-items:center;padding:18px}
+.signin .panel{width:min(100%,400px)}.signin form{display:grid;gap:14px}.signin h1{margin-bottom:20px}
+#preview{min-height:300px;overflow:hidden;border:1px solid var(--border);border-radius:9px}
+.footer{margin-top:18px;font-size:.8rem;color:#728795;text-align:center}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.records{max-height:310px}}
+@media(max-width:560px){.app{padding:12px}.header{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat{padding:12px}.panel{padding:12px}.grid{grid-template-columns:1fr}.check{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div id="signin" class="signin" hidden>
+  <div class="panel">
+    <div class="eyebrow">מערכת פנימית · חברה קדישא</div>
+    <h1>דשבורד לוויות</h1>
+    <form id="loginForm">
+      <label>שם משתמש <input id="username" autocomplete="username" value="admin" required></label>
+      <label>סיסמה <input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">כניסה מאובטחת</button>
+    </form>
+    <p class="message error" id="loginError" hidden></p>
+  </div>
+</div>
+<main class="app" id="application" hidden>
+  <header class="header">
+    <div><div class="eyebrow">חברה קדישא · בקרת מסמכים ותשלומים</div><h1>דשבורד לוויות וחוסרים</h1>
+      <small>הנתונים נשמרים במערכת. הקבצים המקוריים נשארים ב־Dropbox.</small>
+    </div>
+    <div class="actions">
+      <button id="exportBtn">ייצוא JSON</button>
+      <button id="importBtn">ייבוא ממצאים</button>
+      <button id="logoutBtn">יציאה</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+  <div class="filters">
+    <label>חודש <input class="month" type="month" id="month" value="2026-10"></label>
+    <label>חיפוש נפטר <input class="search" id="search" placeholder="שם או תאריך"></label>
+    <button id="newBtn" class="primary">+ תיק חדש</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>לוויות בחודש</span><strong id="countAll">0</strong></div>
+    <div class="stat"><span>פריטים שסומנו חסרים</span><strong id="countMissing">0</strong></div>
+    <div class="stat"><span>פריטים לא קריאים</span><strong id="countUnreadable">0</strong></div>
+    <div class="stat"><span>תשלומים שתועדו</span><strong id="countPayments">0</strong></div>
+  </div>
+  <div id="notice" hidden></div>
+  <div class="layout">
+    <section class="panel">
+      <div class="panel-head"><h2>תיקי החודש</h2><small id="listCount"></small></div>
+      <div id="records" class="records" aria-live="polite"></div>
+    </section>
+    <section class="panel">
+      <div id="noSelection" class="empty">בחר תיק מהרשימה, או צור תיק חדש כדי להתחיל.</div>
+      <form id="editor" hidden>
+        <div class="panel-head"><h2 id="editorTitle">פרטי לוויה</h2><span id="editorTag" class="tag">עריכה</span></div>
+        <div class="grid">
+          <label>שם הנפטר/ת <input id="fName" required maxlength="160"></label>
+          <label>חודש שיוך <input id="fMonth" type="month" required></label>
+          <label>תאריך לוויה <input id="fDate" type="date"></label>
+          <label>שעת לוויה/קבורה <input id="fTime" type="time"></label>
+          <label>מקום יציאת הלוויה <input id="fOrigin"></label>
+          <label>צוות טהרה/קבורה <input id="fTeam"></label>
+          <label>מיקום הקבר <input id="fGrave"></label>
+          <label class="wide">קישור מוגבל לתיקיית Dropbox <input id="fFolder" placeholder="https://www.dropbox.com/..."></label>
+          <label class="wide">הערות <textarea id="fNotes"></textarea></label>
+        </div>
+        <div class="linkline"><a id="folderLink" target="_blank" rel="noopener noreferrer" hidden>פתיחת תיקייה ב־Dropbox</a></div>
+        <div class="section"><h3>בקרת מסמכים ופעולות</h3><div class="muted">הסטטוס "קיים" אינו מאמת את הנתונים שבתוך המסמך. מידע שהוזן ידנית נשמר כעדות נפרדת.</div><div id="checks"></div></div>
+        <div class="section">
+          <div class="panel-head"><h3>אסמכתאות תשלום</h3><button type="button" id="addPayment">+ תשלום</button></div>
+          <div id="payments" class="dynamic"></div>
+        </div>
+        <div class="section">
+          <div class="panel-head"><h3>מסמכים וקישורים</h3><button type="button" id="addDocument">+ קישור מסמך</button></div>
+          <div class="muted">מומלץ להשתמש רק בקישור צפייה מוגבל לבעלי הרשאה, שאומת ב־Dropbox.</div>
+          <div id="documents" class="dynamic"></div>
+        </div>
+        <div class="bar"><button type="submit" class="primary">שמור עדכונים</button><small>כל שינוי נשמר במסד הנתונים</small></div>
+      </form>
+    </section>
+  </div>
+  <footer class="footer">תצוגת Dropbox כפופה להרשאות הקישור ולהגבלות הדפדפן. הדשבורד אינו מאחסן את הקבצים המקוריים.</footer>
+</main>
+<dialog id="previewDialog" style="width:min(94vw,1000px);max-height:92vh;border:0;border-radius:15px;padding:16px;">
+  <div class="panel-head"><h2>תצוגת מסמך ב־Dropbox</h2><button id="closePreview">סגירה</button></div>
+  <div id="preview"></div>
+  <p class="muted">אם Dropbox חוסמת תצוגה מוטמעת, פתח את המסמך בקישור המקורי.</p>
+</dialog>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const fields = {name:'fName',month:'fMonth',date:'fDate',time:'fTime',origin:'fOrigin',team:'fTeam',grave:'fGrave',notes:'fNotes',folder_url:'fFolder'};
+  const labels = {license_document:'רישיון קבורה',license_number:'מספר רישיון קבורה',identity_document:'מסמך זיהוי נפטר',identity_source:'מקור הזיהוי',payment_evidence:'אסמכתת תשלום',hall_service:'שירות בית ההספדים',grave_purchase:'רכישת קבר נוסף',partner_identity:'זיהוי בן/בת זוג',national_insurance:'דיווח לביטוח לאומי'};
+  const statusLabels = {unknown:'טרם נבדק',document_present:'מסמך קיים',verified:'מאומת',unreadable:'לא קריא',missing:'חסר',reported:'עודכן ידנית',not_applicable:'לא רלוונטי'};
+  let items = [], current = null, csrf = '', embedKey = '';
+  function node(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = String(text);
+    return e;
+  }
+  function message(text, error=false) {
+    const box = $('notice'); box.className = 'message' + (error ? ' error' : ''); box.textContent = text; box.hidden = false;
+  }
+  function newRecord() {
+    return {id:'',month:$('month').value,name:'',date:'',time:'',origin:'',team:'',grave:'',notes:'',folder_url:'',documents:[],payments:[],checks:{}};
+  }
+  async function request(action, method='GET', data=null) {
+    const opts = {method,credentials:'same-origin',headers:{}};
+    if (data !== null) { opts.headers['Content-Type']='application/json'; opts.headers['X-CSRF-Token']=csrf; opts.body=JSON.stringify(data); }
+    const res = await fetch('api.php?action=' + encodeURIComponent(action), opts);
+    const response = await res.json().catch(()=>({error:'תגובת שרת לא תקינה'}));
+    if (!res.ok) throw new Error(response.error || 'שגיאה בבקשה');
+    return response;
+  }
+  function showLogin(error='') {
+    $('signin').hidden = false; $('application').hidden = true;
+    $('loginError').hidden = !error; $('loginError').textContent = error;
+  }
+  async function begin() {
+    try {
+      const auth = await request('me');
+      csrf = auth.csrf; embedKey = auth.embed_key || '';
+      $('signin').hidden = true; $('application').hidden = false;
+      await load();
+    } catch (e) { showLogin(e.message.includes('הוגדרה') ? e.message : 'יש להתחבר כדי לצפות בנתונים'); }
+  }
+  async function load(preferredId='') {
+    try {
+      const month = $('month').value;
+      const data = await request('list&month=' + encodeURIComponent(month));
+      items = data.records || [];
+      renderList();
+      const select = items.find(x=>x.id===preferredId || (current && x.id===current.id));
+      if (select) edit(select);
+      else {current=null; $('editor').hidden=true; $('noSelection').hidden=false;}
+    } catch(e) {message(e.message,true);}
+  }
+  function renderList() {
+    const target = $('records'); target.replaceChildren();
+    const q = $('search').value.trim();
+    const filtered = items.filter(x=>(x.name+' '+x.date).includes(q));
+    $('countAll').textContent=items.length;
+    $('countMissing').textContent=items.reduce((n,x)=>n+Object.values(x.checks||{}).filter(c=>c.status==='missing').length,0);
+    $('countUnreadable').textContent=items.reduce((n,x)=>n+Object.values(x.checks||{}).filter(c=>c.status==='unreadable').length,0);
+    $('countPayments').textContent=items.reduce((n,x)=>n+(x.payments||[]).length,0);
+    $('listCount').textContent=filtered.length+' תיקים';
+    if (!filtered.length) target.append(node('div','empty','אין תיקים להצגה. ניתן לייבא דוח ממצאים או להוסיף תיק.'));
+    filtered.forEach(x=>{
+      const b=node('button','record'+(current && current.id===x.id?' active':'')); b.type='button';
+      const info=node('span'); info.append(node('strong','',x.name),node('small','',[(x.date||'ללא תאריך'),(x.time||''),(x.origin||'')].filter(Boolean).join(' · ')));
+      const missing=Object.values(x.checks||{}).filter(c=>c.status==='missing'||c.status==='unreadable').length;
+      b.append(info,node('span','tag'+(missing?' missing':''),missing?missing+' לטיפול':'פרטי תיק'));
+      b.addEventListener('click',()=>edit(x)); target.append(b);
+    });
+  }
+  function edit(item) {
+    current=JSON.parse(JSON.stringify(item));
+    $('editor').hidden=false; $('noSelection').hidden=true;
+    $('editorTitle').textContent=current.name || 'תיק חדש';
+    for (const [field,id] of Object.entries(fields)) $(id).value=current[field]||'';
+    $('folderLink').hidden=!current.folder_url;
+    if(current.folder_url) $('folderLink').href=current.folder_url;
+    renderChecks(); renderPayments(); renderDocuments(); renderList();
+  }
+  function inputField(labelText,value,change,type='text') {
+    const wrap=node('label'); wrap.append(node('span','',labelText));
+    const input=node('input'); input.type=type; input.value=value===null || value===undefined?'':String(value);
+    input.addEventListener('input',()=>change(input.value)); wrap.append(input); return wrap;
+  }
+  function renderChecks() {
+    const box=$('checks'); box.replaceChildren();
+    for (const [key,label] of Object.entries(labels)) {
+      const check = current.checks[key] || {status:'unknown',value:'',source:'',note:''};
+      current.checks[key]=check;
+      const row=node('div','check');row.append(node('strong','',label));
+      const sel=node('select');sel.setAttribute('aria-label','סטטוס '+label);
+      for(const [value,title] of Object.entries(statusLabels)){const opt=node('option','',title);opt.value=value;sel.append(opt);}
+      sel.value=check.status||'unknown';sel.addEventListener('change',()=>check.status=sel.value);row.append(sel);
+      const detail=inputField('ערך/מספר',check.value||'',v=>check.value=v);detail.className='check-value';row.append(detail);
+      const note=inputField('מקור/הערה',check.note||'',v=>check.note=v);note.className='check-note';row.append(note);
+      if(check.source) row.append(node('small','muted','מקור: '+check.source));
+      box.append(row);
+    }
+  }
+  function renderPayments() {
+    const box=$('payments');box.replaceChildren();
+    (current.payments||[]).forEach((p,i)=>{
+      const row=node('div','item-editor');
+      const fieldsEl=node('div','fields');
+      fieldsEl.append(inputField('סכום ₪',p.amount,v=>p.amount=v===''?null:Number(v),'number'),
+        inputField('מטרה',p.purpose||'',v=>p.purpose=v),
+        inputField('אסמכתה',p.reference||'',v=>p.reference=v),
+        inputField('מקור',p.source||'',v=>p.source=v));
+      row.append(fieldsEl);
+      const remove=node('button','','הסר תשלום');remove.type='button';remove.addEventListener('click',()=>{current.payments.splice(i,1);renderPayments();});row.append(remove);
+      box.append(row);
+    });
+    if(!current.payments.length) box.append(node('small','muted','לא הוזנו אסמכתאות תשלום.'));
+  }
+  function renderDocuments() {
+    const box=$('documents');box.replaceChildren();
+    (current.documents||[]).forEach((d,i)=>{
+      const row=node('div','item-editor'), controls=node('div','fields');
+      controls.append(inputField('תיאור מסמך',d.label||'',v=>d.label=v),
+        inputField('סוג מסמך',d.kind||'',v=>d.kind=v),
+        inputField('קישור Dropbox (HTTPS)',d.url||'',v=>d.url=v));
+      row.append(controls);
+      const acts=node('div','bar');
+      if(d.url){const a=node('a','button','פתח ב־Dropbox');a.href=d.url;a.target='_blank';a.rel='noopener noreferrer';acts.append(a);
+        const preview=node('button','','הצג כאן');preview.type='button';preview.addEventListener('click',()=>previewFile(d.url));acts.append(preview);}
+      const remove=node('button','','הסר קישור');remove.type='button';remove.addEventListener('click',()=>{current.documents.splice(i,1);renderDocuments();});acts.append(remove);
+      row.append(acts);box.append(row);
+    });
+    if(!current.documents.length) box.append(node('small','muted','אין קישורי מסמכים שמורים.'));
+  }
+  async function previewFile(url) {
+    if (!embedKey) {message('כדי להפעיל הטמעת Dropbox, יש להגדיר App Key ודומיין מורשה. בינתיים השתמש בפתיחה ב־Dropbox.');return;}
+    const p = new URL(url);
+    if (p.protocol!=='https:' || !['www.dropbox.com','dropbox.com'].includes(p.hostname)) {message('מותר להציג רק קישורי Dropbox מאומתים.',true);return;}
+    const box=$('preview');box.replaceChildren();$('previewDialog').showModal();
+    try {
+      if (!window.Dropbox) {
+        await new Promise((resolve,reject)=>{
+          const s=document.createElement('script');
+          s.src='https://www.dropbox.com/static/api/2/dropins.js';s.id='dropboxjs';s.dataset.appKey=embedKey;
+          s.onload=resolve;s.onerror=()=>reject(new Error('לא ניתן לטעון את רכיב Dropbox'));document.head.append(s);
+        });
+      }
+      if (!window.Dropbox || !window.Dropbox.isBrowserSupported()) throw new Error('התצוגה המוטמעת אינה נתמכת בדפדפן זה');
+      window.Dropbox.embed({link:url,file:{zoom:'best'},folder:{view:'list'}},box);
+    } catch(e) {box.append(node('p','message error',e.message));const a=node('a','button','פתח בדרופבוקס');a.href=url;a.target='_blank';a.rel='noopener noreferrer';box.append(a);}
+  }
+  $('loginForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    try {
+      const res=await request('login','POST',{username:$('username').value,password:$('password').value});
+      csrf=res.csrf; $('password').value=''; await begin();
+    } catch(err){showLogin(err.message);}
+  });
+  $('month').addEventListener('change',()=>load());
+  $('search').addEventListener('input',renderList);
+  $('newBtn').addEventListener('click',()=>edit(newRecord()));
+  $('addPayment').addEventListener('click',()=>{current.payments.push({amount:null,purpose:'',reference:'',source:''});renderPayments();});
+  $('addDocument').addEventListener('click',()=>{current.documents.push({label:'',kind:'',url:''});renderDocuments();});
+  $('fFolder').addEventListener('input',()=>{const val=$('fFolder').value; $('folderLink').hidden=!val;if(val) $('folderLink').href=val;});
+  $('editor').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const record=JSON.parse(JSON.stringify(current));
+    for (const [key,id] of Object.entries(fields)) record[key]=$(id).value;
+    try {
+      const result=await request('save','POST',record);
+      current=result.record; message('השינויים נשמרו');$('month').value=current.month;await load(current.id);
+    } catch(err){message(err.message,true);}
+  });
+  $('exportBtn').addEventListener('click',async ()=>{
+    try {
+      const data=await request('export&month='+encodeURIComponent($('month').value));
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob), a=node('a');a.href=url;a.download='funerals-'+$('month').value+'.json';document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
+      message('קובץ JSON הורד. יש לשמור אותו במקום מאובטח.');
+    } catch(err){message(err.message,true);}
+  });
+  $('importBtn').addEventListener('click',()=>$('importFile').click());
+  $('importFile').addEventListener('change',async()=>{
+    const file=$('importFile').files[0];if(!file)return;
+    if(file.size>1200000){message('הקובץ גדול מדי',true);return;}
+    try {
+      const data=JSON.parse(await file.text());
+      if(!Array.isArray(data.records)) throw new Error('קובץ JSON חייב לכלול records');
+      const result=await request('import','POST',{records:data.records});
+      message('נקלטו '+result.imported+' תיקי לוויות');await load();
+    }catch(err){message(err.message,true);}
+    finally{$('importFile').value='';}
+  });
+  $('logoutBtn').addEventListener('click',async()=>{try{await request('logout','POST',{});csrf='';current=null;items=[];showLogin();}catch(e){message(e.message,true);}});
+  $('closePreview').addEventListener('click',()=>$('previewDialog').close());
+  begin();
+})();
+</script>
+</body>
+</html>
