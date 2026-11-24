@@ -69,6 +69,8 @@ function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): 
     $tracks = [];
     $totalAll = 0; $doneAll = 0; $verAll = 0;
     foreach ($curriculum['tracks'] as $tid => $title) {
+        // מפתחות כמו "10" הופכים למספרים שלמים ב-PHP. ההשוואה למזהה מודול דורשת מחרוזת.
+        $tid = (string) $tid;
         $mods = array_filter($curriculum['modules'], fn($m) => $m['trackId'] === $tid);
         $total = count($mods);
         if ($total === 0) continue;
