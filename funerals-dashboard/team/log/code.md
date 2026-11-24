@@ -62,3 +62,5 @@
   `window.FD`, הלשונית, ושורת חיבור חיצוני עם ✅/⛔), `tests/run.sh` (מריץ את `dropbox-test.php` בסוף).
 - בדיקות: C1–C11, C13 מול Dropbox מדומה — עוברות, עם משתמשים וארגונים אמיתיים של 01 (הזמנות). C12 ידני בשרת.
 - נדרש מהבקרה: השורה `funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log` ב-`CRONS`.
+- 2026-11-24 14:21 — #1844 מוזג (f3064a0) אחרי סבב ביקורת אחד (🔴1 OAuth בלי session, 🔴2 files לפי ארגון, 🟡3–6, ⚪7–8 — כולם תוקנו עם בדיקה).
+  handoff עודכן. צ'אט קוד 03 מסיים.
