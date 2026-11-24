@@ -4,17 +4,11 @@
     "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
     "branch": "claude/funerals-dashboard-spec"
   },
-  "code": [
-    {
-      "session": "session_018g4NYFCroPuhEYVJhHMcqh",
-      "branch": "claude/funerals-dashboard-08-fixes",
-      "slice": "08"
-    }
-  ],
+  "code": [],
   "control": {
-    "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
+    "session": "session_018g4NYEtyGfJPB3ADzV5Upg",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_01FteeWPuFwKcA4ZoRitKQAU"
+    "clock": "trig_013zPmsBMZiHTC9V8S7SdN1V"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -55,6 +49,18 @@
       "session": "session_018g4NYDuym4xhnQbP7pp88K",
       "slice": "06",
       "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYFCroPuhEYVJhHMcqh",
+      "branch": "claude/funerals-dashboard-08-fixes",
+      "slice": "08",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYF5aVunXTh4CjYUphS",
+      "branch": "claude/funerals-dashboard-09-mcp",
+      "slice": "09",
+      "state": "רדום"
     }
   ],
   "control_done": [
@@ -66,6 +72,11 @@
     {
       "session": "session_018g4NYES4G3kVk57413GPnM",
       "role": "בקרה 2",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
+      "role": "בקרה 3",
       "state": "רדום"
     }
   ]

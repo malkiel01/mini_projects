@@ -205,6 +205,7 @@ switch ($action) {
         if (!$active && $cur === 'admin' && adminCount($org) <= 1) reply(400, ['error' => 'זה המנהל הפעיל האחרון של הארגון']);
         // השבתה בארגון הזה בלבד (members.active) — לא נוגעת בחברות שלו בארגונים אחרים
         $pdo->prepare('UPDATE members SET active = ? WHERE org_id = ? AND user_id = ?')->execute([$active, $org, $uid]);
+        if (!$active) revokeOauthGrantsOf($pdo, $uid, $org, (int)$ctx['user']['id']);   // 09: חיבורי ChatGPT/Claude שלו בארגון
         recordEvent($org, null, $actor, 'ui', $active ? 'member_enabled' : 'member_disabled', ['user_id' => [$uid, $uid], 'active' => [1 - $active, $active]]);
         reply(200, membersOf($org));
     case 'user_active':
@@ -217,6 +218,7 @@ switch ($action) {
         $st = $pdo->prepare('UPDATE users SET active = ? WHERE id = ?');
         $st->execute([$active, $uid]);
         if (!$st->rowCount()) reply(404, ['error' => 'המשתמש לא נמצא']);
+        if (!$active) revokeOauthGrantsOf($pdo, $uid, null, (int)$ctx['user']['id']);   // 09: כל חיבורי ה-OAuth שלו
         recordEvent(null, null, $actor, 'ui', $active ? 'user_enabled' : 'user_disabled', ['user_id' => [$uid, $uid], 'active' => [1 - $active, $active]]);
         reply(200, ['ok' => true]);
 

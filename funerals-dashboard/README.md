@@ -24,7 +24,7 @@
 - **פרוסה 01 (גרסה 1.0.0):** ארגונים (חברות קדישא), משתמשים משלה (לפי `sub`/מייל מהשער), תפקידים `admin` / `office` /
   `field`, הזמנה במייל, מפתח = `platform_admin`; מסך מפתח (תקינות, יומן בקשות, יומן פעולות) ו-DevLoop (`FD-`)
 
-- **פרוסה 04 — עובד שטח בטלפון** (`docs/spec/04-field.md`): מסך "היום" (תיקי היום ומחר, מה חסר מהשטח, חיפוש בשם בכל
+- **פרוסה 04 — עובד שטח בטלפון** (האפיון הישן — בהיסטוריה; החדש: `docs/spec/`): מסך "היום" (תיקי היום ומחר, מה חסר מהשטח, חיפוש בשם בכל
   החודשים), ובתיק שלושה כפתורים — 📷 צילום קבר, 📎 שליחת קובץ עם סוג, ✏️ עדכון (בדיקות, הערה, מיקום קבר). ברירת המחדל
   לתפקיד `field`; לכל אחד אחר — `index.html#/field` (ותיק: `#/field/<id>`).
 
@@ -100,7 +100,10 @@
 - GET api.php?action=list&month=2026-10 — רשומות לפי חודש
 - GET api.php?action=export&month=2026-10 — יצוא JSON
 - POST api.php?action=save — שמירה ידנית דרך ממשק המנהל
-- POST api.php?action=import — ייבוא קובץ מתוך הדשבורד
+- POST api.php?action=import — ייבוא מתוך הדשבורד (📥: הדבקת JSON או קובץ). `{"records":[...], "resolve":{"<אינדקס>":"update"|"new"}}`.
+  **תיק דומה (08):** רשומה בלי `id` שדומה לתיק קיים — אותו חודש, אותו שם (בלי פיסוק, רווחים וסדר מילים) ואותו תאריך או תאריך חסר
+  באחד מהם — לא נוצרת בשקט: 409 `code: similar` עם הרשימה ושום רשומה לא נשמרת, עד שלכל אחת יש בחירה. "לעדכן" שומר את השם של התיק.
+  ב-`ingest.php` (אין מי שיבחר) — ברירת המחדל, לעדכן, והתשובה מדווחת ב-`similar`.
 
 **`ingest.php` — למערכות חיצוניות.** ב-`"public"` של `app.json` (לצד פעולות `devapi-*` של DevLoop), כי מכונה ניגשת אליה בלי כניסה לפלטפורמה. הרשאה: `Authorization: Bearer TOKEN` בלבד (האסימון מ-👤 ← "🔑 אסימון ל-ingest.php"), בלי session ובלי עוגייה. בלי אסימון תקין — 401.
 
@@ -115,6 +118,37 @@
 - כל check כולל status, value, source, note. סטטוסים: verified, document_present, unreadable, missing, unknown, reported, not_applicable.
 - עדכון ידני לא נדרס אוטומטית על ידי ייבוא חדש; כל שינוי נרשם ב-`events` עם מה שהשתנה (`diff`). ה-actor הוא המייל מהשער (או השם, אם אין מייל), `api` לקליטה דרך ingest.php — שכותבת תמיד לארגון 1.
 
+## פרויקט ChatGPT — בלי חיבור (פרוסה 08)
+
+OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, ולכן המסלול הראשון במסך 🤖 (`connect.html`) הוא **פרויקט ChatGPT**:
+📋 ההנחיות (`gpt-project-prompt.md`) בהוראות הפרויקט, 📤 ייצוא החודש כקובץ בפרויקט, וה-JSON שה-GPT מחזיר — 📥 במסך התיקים
+(`index.html#import`). ההנחיות נוצרות מ-`extProjectPrompt()` ב-`ext-lib.php` (אותו `build-ext.php`), ומשקפות את כללי הייבוא: `id` מהייצוא,
+תיק חדש בלי `id`, שדה ריק לא דורס, בדיקה נשלחת שלמה, ואף פעם לא `verified`. האסימונים ו-`openapi.json` — בקפל "מתקדם".
+חיבור ישיר (Plugin / MCP) — פרוסה 09, למטה.
+
+## חיבור ישיר — שרת MCP ו-OAuth (פרוסה 09)
+
+ChatGPT בדפדפן (chatgpt.com/plugins ← Add custom MCP server) או Claude (Custom connector) מתחברים לכתובת אחת —
+`https://mbe-plus.com/mini_projects/funerals-dashboard/mcp` — עם **OAuth**, ומאז קוראים ומעדכנים תיקים בלי JSON ובלי 📥.
+
+- **`mcp.php`** — Streamable HTTP בלי SSE ובלי session: `POST` עם JSON-RPC 2.0 (גם מערך), `GET` → 405, התראות → 202. `initialize`,
+  `ping`, `tools/list` — בלי אסימון; `tools/call` — Bearer `fdo_` (OAuth) או `fdx_` (05), אחרת 401 עם `WWW-Authenticate: Bearer
+  resource_metadata=…`. `Origin` זר → 403. **הכלים = `extActions()` חוץ מ-`prompt`**, והביצוע — `extDo(..., 'api')`: אותן הרשאות, אותו
+  "לאימות", אותו יומן; שגיאת פעולה → `isError` עם ההודעה בעברית. ביומן: "<שם> (<client_name>)", למשל "בודק (ChatGPT)". 60 קריאות
+  לדקה לחיבור.
+- **OAuth 2.1** (`oauth/`, `mcp-lib.php`): מטא-נתונים (`.well-known/oauth-protected-resource`, `…/oauth-authorization-server`,
+  `…/openid-configuration` — rewrite ב-`.htaccess` אל `oauth/metadata.php`), DCR (`register.php`, לקוח ציבורי, 20 לשעה ל-IP), CIMD
+  (`client_id` שהוא כתובת https: 5 שניות, 64KB, בלי הפניות, בלי IP פרטי/מקומי, מטמון שעה), `authorize.php` **מאחורי השער** — מסך
+  הסכמה עם CSRF (עוגייה נפרדת `fd_oauth`), `token.php` (PKCE S256 חובה; קוד 60 שניות חד-פעמי; גישה שעה, רענון 30 יום שמתחלף, שימוש
+  חוזר → כל החיבור מבוטל), `revoke.php`. הכול נשמר רק כ-SHA-256 בטבלאות `oauth_*` של `data/funerals.sqlite`.
+- **כתובת חזרה** — https, וגם `http://localhost` / `127.0.0.1` (RFC 8252) — בשביל MCP Inspector.
+- **מסך 🤖** — המסלול הראשון: הכתובת עם 📋, חמשת הצעדים, ו"חיבורים פעילים" עם "ניתוק" (מנהל רואה ומנתק את כל הארגון).
+- **בדיקה ידנית אחרי פריסה:** `npx @modelcontextprotocol/inspector` ← Streamable HTTP ← הכתובת ← Open Auth Settings ← Quick OAuth Flow;
+  או `curl -sX POST <base>/mcp -H 'Authorization: Bearer fdx_…' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{}}}'`.
+- **סיכון פתוח:** לפי RFC 8414 המטא-נתונים של issuer עם נתיב יושבים בשורש הדומיין
+  (`/.well-known/oauth-authorization-server/mini_projects/funerals-dashboard`) — מחוץ לתיקייה. לקוחות MCP מנסים גם
+  `<issuer>/.well-known/openid-configuration` (אצלנו). אם ChatGPT / Inspector לא מוצאים — בקשה לפלטפורמה, לא כאן.
+
 ## API לצ'אט חיצוני — `ext.php` (פרוסה 05)
 
 לחיבור GPT מותאם (Actions) או כל צ'אט אחר. **Bearer בלבד** — אסימון אישי `fdx_…`; עוגייה או session לא מתקבלים (401).
@@ -127,7 +161,7 @@
   `case_create`, `files`, `file_text`, `prompt`. הטבלה היחידה — `extActions()` ב-`ext-lib.php`.
 - **"מאומת" דרך הצ'אט נשמר "לאימות"** (`document_present`) — רק אדם מאשר סופית (02, `finalAllowed('api')`). התשובה
   אומרת זאת (`converted`). כל כתיבה — שורה ב-`events` עם `source: api` ו-"<שם> (צ'אט)".
-- **`openapi.json` ו-`gpt-prompt.md` נוצרים מהקוד:** `php funerals-dashboard/tools/build-ext.php`. הבדיקות נכשלות אם
+- **`openapi.json`, `gpt-prompt.md` ו-`gpt-project-prompt.md` נוצרים מהקוד:** `php funerals-dashboard/tools/build-ext.php`. הבדיקות נכשלות אם
   הקבצים שבריפו לא תואמים לקוד.
 - `files` / `file_text` — 501 "Dropbox עוד לא חובר" עד פרוסה 03.
 
@@ -139,7 +173,7 @@
 
 ## AI מובנה (פרוסה 06)
 
-האפיון: `docs/spec/06-ai.md`. 💬 במסך הראשי (הקשר: הארגון והחודש) ובתיק (הקשר: התיק). העוזר עונה, ומציע עדכונים בכרטיס
+האפיון החדש: `docs/spec/04-ai.md`. 💬 במסך הראשי (הקשר: הארגון והחודש) ובתיק (הקשר: התיק). העוזר עונה, ומציע עדכונים בכרטיס
 "לפני ← אחרי" עם מקור; **שום דבר לא נכתב בלי ✓**.
 
 | קובץ | תפקיד |
@@ -170,7 +204,7 @@
 ## מה עדיין לא חובר
 
 - **F8 (06) — פתוח, ידני אחרי פריסה ומפתח אמיתי:** "מה חסר ב<שם>?" → תשובה נכונה; "תמלא מהקבצים" → הצעות עם מקור.
-- עדכוני צ'אט ישירים: קיימת נקודת קליטת API, אבל חיבור כלי הצ'אט אל כתובת האפליקציה יוגדר בשלב נפרד.
+- **K16–K18 (09) — ידני אחרי פריסה:** MCP Inspector, ChatGPT (Add custom MCP server) ו-Claude (custom connector).
 - מסד הנתונים בשרת יתחיל ריק. נתוני אוקטובר 2026 לא נכתבים לקוד ציבורי.
 - לא בוצעה בדיקת הרשאות אמיתית של Embedder עד שיוגדרו דומיין ואפליקציית Dropbox.
 - רישיון קבורה, אישור העברה מחו"ל ואישור שמירת חלקת קבר הם מסמכים שונים ואינם מסומנים כאותו סוג.

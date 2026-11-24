@@ -21,6 +21,19 @@ function recordEvent(?int $orgId, ?string $caseId, array $actor, string $source,
 /**
  * מה השתנה בתיק: {שדה: [לפני, אחרי]}. בדיקות — לכל בדיקה בנפרד (checks.<key>). תיק חדש — כל השדות שאינם ריקים.
  */
+/**
+ * שווים לצורך היומן: השוואה מחמירה, חוץ ממספרים — 402 ו-402.0 (סכום שחזר מ-JSON) אותו ערך (פרוסה 08, P4).
+ * רקורסיבי, כדי לתפוס סכום בתוך payments. מחרוזת "402" מול 402 — עדיין שינוי.
+ */
+function diffSame(mixed $a, mixed $b): bool {
+    if ((is_int($a) || is_float($a)) && (is_int($b) || is_float($b))) return (float)$a === (float)$b;
+    if (is_array($a) && is_array($b)) {
+        if (count($a) !== count($b) || array_keys($a) !== array_keys($b)) return false;
+        foreach ($a as $k => $x) if (!diffSame($x, $b[$k])) return false;
+        return true;
+    }
+    return $a === $b;
+}
 function caseDiff(?array $old, array $new): array {
     $diff = [];
     $skip = ['checks', 'manual_fields'];
@@ -28,7 +41,7 @@ function caseDiff(?array $old, array $new): array {
         if (in_array($k, $skip, true)) continue;
         $before = $old[$k] ?? null;
         if ($old === null && ($v === '' || $v === [] || $v === null)) continue;
-        if ($before !== $v) $diff[$k] = [$before, $v];
+        if (!diffSame($before, $v)) $diff[$k] = [$before, $v];
     }
     foreach (($new['checks'] ?? []) as $k => $c) {
         $b = $old['checks'][$k] ?? null;

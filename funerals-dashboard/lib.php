@@ -232,12 +232,68 @@ function listMonth(PDO $pdo, string $action, string $method, int $orgId): never 
     }
     reply(200, ['month'=>$month, 'records'=>$items]);
 }
+/** שם לצורך "תיק דומה": בלי גרשיים, פיסוק ורווחים כפולים, ובלי תלות בסדר המילים ("כהן משה" = "משה כהן"). */
+function similarName(string $name): string {
+    $words = preg_split('/\s+/u', trim(preg_replace('/["\'`״׳.,()\-]+/u', ' ', mb_strtolower($name))), -1, PREG_SPLIT_NO_EMPTY);
+    sort($words);
+    return implode(' ', $words);
+}
+/**
+ * התיק הקיים שרשומה בלי id דומה לו: אותו חודש, אותו שם (similarName) ואותו תאריך — או שבאחד מהם אין תאריך.
+ * null — יש לרשומה id, המזהה המחושב שלה כבר קיים (זה עדכון רגיל), או שאין תיק דומה.
+ */
+function importSimilar(PDO $pdo, array $raw, int $orgId): ?array {
+    if (cleanText($raw['id'] ?? '', 100) !== '') return null;
+    $item = normalize($raw, $orgId);
+    if (existing($pdo, $item['id'], $orgId) !== null) return null;
+    $name = similarName($item['name']);
+    $st = $pdo->prepare('SELECT body FROM funerals WHERE org_id=? AND month=? ORDER BY name, id');
+    $st->execute([$orgId, $item['month']]);
+    foreach ($st as $row) {
+        $c = json_decode($row['body'], true);
+        if (!is_array($c) || similarName((string)($c['name'] ?? '')) !== $name) continue;
+        $d = (string)($c['date'] ?? '');
+        if ($d === '' || $item['date'] === '' || $d === $item['date']) return $c;
+    }
+    return null;
+}
 /** $source — 'import' (ingest.php) או 'ui' (ייבוא קובץ מהמסך). */
 function importRecords(PDO $pdo, string $method, int $orgId, array $actor, string $source): never {
     if ($method !== 'POST') reply(405, ['error'=>'שיטה לא מורשית']);
     $payload = body();
     $records = $payload['records'] ?? null;
     if (!is_array($records) || count($records) > 60) reply(400, ['error'=>'נדרשת רשימת רשומות (עד 60)']);
+    // פרוסה 08 (P3): רשומה בלי id שדומה לתיק קיים לא יוצרת תיק בשקט. מהדפדפן — 409 עם הרשימה, והמשתמש בוחר
+    // (resolve: {אינדקס: update|new}); ingest.php, שאין לו מי שיבחר — ברירת המחדל, לעדכן, ומדווח בתשובה.
+    $resolve = $payload['resolve'] ?? [];
+    if (!is_array($resolve)) reply(400, ['error'=>'resolve לא תקין']);
+    $similar = [];
+    foreach ($records as $i => $raw) {
+        if (!is_array($raw)) reply(400, ['error'=>'רשומה לא תקינה']);
+        $match = importSimilar($pdo, $raw, $orgId);
+        if ($match === null) continue;
+        $choice = $resolve[(string)$i] ?? ($source === 'ui' ? null : 'update');
+        if ($choice !== null && !in_array($choice, ['update', 'new'], true)) reply(400, ['error'=>'resolve: update או new']);
+        $similar[] = ['index'=>$i, 'name'=>cleanText($raw['name'] ?? '', 160), 'date'=>cleanText($raw['date'] ?? '', 10),
+            'match'=>['id'=>$match['id'], 'name'=>$match['name'], 'date'=>$match['date'] ?? ''], 'choice'=>$choice];
+        if ($choice === 'update') { $raw['id'] = $match['id']; $raw['name'] = $match['name']; $records[$i] = $raw; }
+    }
+    // ⚪2 (ביקורת 08): שתי רשומות חדשות דומות באותו קובץ — הראשונה עוד לא במסד, ולכן importSimilar לא תופס אותה.
+    // אותו מזהה מחושב (אותו שם, חודש ותאריך) הוא עדכון של אותו תיק; מזהה אחר — היה נוצר תיק כפול, ולכן 400 עם השמות.
+    $fresh = [];
+    foreach ($records as $i => $raw) {
+        if (cleanText($raw['id'] ?? '', 100) !== '') continue;
+        $item = normalize($raw, $orgId);
+        foreach ($fresh as [$j, $other]) {
+            if ($other['id'] !== $item['id'] && $other['month'] === $item['month'] && similarName($other['name']) === similarName($item['name'])
+                && ($other['date'] === '' || $item['date'] === '' || $other['date'] === $item['date'])) {
+                reply(400, ['error'=>'אותו תיק פעמיים בקובץ: "' . $other['name'] . '" ו-"' . $item['name'] . '" — לאחד לרשומה אחת', 'code'=>'duplicate', 'index'=>[$j, $i]]);
+            }
+        }
+        $fresh[] = [$i, $item];
+    }
+    $undecided = array_values(array_filter($similar, static fn($x) => $x['choice'] === null));
+    if ($undecided) reply(409, ['error'=>'יש תיקים דומים — לבחור לעדכן או ליצור חדש', 'code'=>'similar', 'similar'=>$undecided]);
     $pdo->beginTransaction();
     // reply() בתוך הלולאה (רשומה לא תקינה, תיק של ארגון אחר) יוצא מהתהליך — והטרנזקציה שלא נסגרה מתבטלת לבד
     try {
@@ -266,7 +322,7 @@ function importRecords(PDO $pdo, string $method, int $orgId, array $actor, strin
             $count++;
         }
         $pdo->commit();
-        reply(200, ['ok'=>true, 'imported'=>$count]);
+        reply(200, ['ok'=>true, 'imported'=>$count] + ($similar ? ['similar'=>$similar] : []));
     } catch (Throwable $e) {
         $pdo->rollBack();
         reply(500, ['error'=>'שמירת הנתונים נכשלה']);

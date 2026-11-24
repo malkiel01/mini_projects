@@ -3,7 +3,7 @@
 של הסוכן המנהל (הסקיל `app-team`, `references/manager.md`). המצב של כל צוות — ב-`<app>/team/STATE.md`.
 מעדכן את הרשימה מי שפותח צוות, סוגר אותו או מחליף בקרה — באותו PR.
 
-**מנהל הצוותים:** `session_018g4NYCbBPFt8wcKkYCTSP9` (מנהל (5), מ-2026-11-16 ~13:22 UTC) — שעון `trig_016wU15GJpyQAkCeTbJ6QkU5`, כל שעה בדקה 13. (הקודמים: `session_018g4NYFBib6zieTUP467tex` (4), שעון `trig_016SiPhMTUW2wVw2Q73PHzRg` — כבוי; `session_018g4NYGVHYR6Kruh7ktecg3` (3), שעון `trig_01BNGJ8SmxZdndUqBsepanVL` — כבוי; `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
+**מנהל הצוותים:** `session_018g4NYCk7ewEb3ryfYPAaoA` (מנהל (6), מ-2026-11-24 ~18:45 UTC) — שעון `trig_01UiWD41TAbAXkitcgLTeANf`, כל שעתיים בדקה 13. (הקודמים: `session_018g4NYCbBPFt8wcKkYCTSP9` (5), שעון `trig_016wU15GJpyQAkCeTbJ6QkU5` — כבוי; `session_018g4NYFBib6zieTUP467tex` (4), שעון `trig_016SiPhMTUW2wVw2Q73PHzRg` — כבוי; `session_018g4NYGVHYR6Kruh7ktecg3` (3), שעון `trig_01BNGJ8SmxZdndUqBsepanVL` — כבוי; `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
 
 **דף ההתקדמות של כל הצוותים:** https://claude.ai/artifact/5p12Fsrc2EeQtkWrNaAWRu (Artifact פרטי). המקור: `.claude/teams/progress.html`, נבנה ב-`python3 .claude/teams/progress-build.py` מהקבצים של כל צוות; מה שאי אפשר לקרוא מגיט (שעון דולק, בבנייה עכשיו) — ב-`progress-overrides.json`. מנהל הצוותים בונה ומפרסם מחדש לאותה כתובת בכל סבב שיש בו שינוי.
 
@@ -17,7 +17,8 @@
 | `org-budget-proposals` הצעות תקציב לארגונים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי. היה: פעיל — B1 מוזג #1635; B1.2 (אזעקות שווא בניצול) #1648; שעון — דקה 38 (`trig_018qY4uvqcdJKapxU9pU8kcu`, נוצר בידי מנהל הצוותים (4); הישן `trig_013qCk9g1qS7xKb8qLpQrDgX` כבוי) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2; קודם בקרה 1 `session_018g4NYFsGrFQCUGf3CgaSYk`) |
 | `grave-prices` מחירוני קברים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי; פרוסות 01–05 באתר; GP-02 עד GP-05 אצל הבעלים. היה: פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) PR #1666 בביקורת; שעון — דקה 53 (`trig_01Ecqo638xYguboqngvZbKWx`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
 | `sforno` ספורנו | פעיל — קוד ברצף עד סיום; 01–10 ב-main (10: #1799); 11 השקה — חלק לא-חי בלבד עד "עוברים"; cron אצל הבעלים — חוסם תזכורות; שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51) | `session_018g4NYFaERcGPs7d3j8QKsZ` (בקרה 3) |
-| `funerals-dashboard` ניהול לוויות חברה קדישא | פעיל — **טורבו**; כל 6 הפרוסות בשרת (פריסה 1883 success); ממתין לבדיקות הידניות FD-T1…T6; פתוח: פרוסת תיקונים ו-50MB; שעון `trig_01FteeWPuFwKcA4ZoRitKQAU` (דקה 22) | `session_018g4NYDegWrLYkRkfQRRfVQ` (בקרה 3; קודם בקרה 2 `session_018g4NYES4G3kVk57413GPnM`) |
+| `funerals-dashboard` ניהול לוויות חברה קדישא | פעיל — **טורבו**; כל 6 הפרוסות בשרת (פריסה 1883 success); ממתין לבדיקות הידניות FD-T1…T6; פתוח: פרוסת תיקונים ו-50MB; שעון `trig_01FteeWPuFwKcA4ZoRitKQAU` (דקה 22) | `session_018g4NYEtyGfJPB3ADzV5Upg` (בקרה 4, Sonnet, 24.11; קודם בקרה 3 `session_018g4NYDegWrLYkRkfQRRfVQ`, בקרה 2 `session_018g4NYES4G3kVk57413GPnM`) |
+| `claude-tasks` מטלות לקלוד | פעיל — צוות חדש לאפליקציה קיימת (24.11); פרוסה ראשונה: סקר `dev/audit.md`; אפיון מחדש לפי `docs/owner-brief.md` (צ'אט בפלטפורמה ↔ Claude Code, גשר על המחשב של הבעלים); שעון `trig_013ioXFENB6BAZ6HQa8V1hU5` (דקה 47) | `session_018g4NYEu2Vj9Rytz6qezZ8Z` (בקרה 1, Sonnet) |
 
 ## ממתין לבעלים
 

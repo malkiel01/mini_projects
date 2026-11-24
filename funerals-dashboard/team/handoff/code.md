@@ -126,3 +126,46 @@
 - **בדיקות:** `tests/ai.sh` (ספק מדומה `tests/ai-mock.php` + Dropbox המדומה של 03, `tests/ai-dbx-fixture.php`). F1–F7, §2.2.2, §2.3, R1–R3.
   כל `php -S` — עם `-d opcache.jit=disable`; הניקוי של `data/` שומר `.htaccess` ו-`.gitignore`; אחרי בלוק שמאפס `pid=0` — לא `kill "$pid"` (= `kill 0`).
 - **פתוח:** F8 — ידני אחרי פריסה ומפתח אמיתי ("מה חסר ב<שם>?", "תמלא מהקבצים").
+
+## פרוסה 08 — תיקונים + פרויקט ChatGPT (ענף `claude/funerals-dashboard-08-fixes`)
+
+- **ייבוא = המסלול של ChatGPT עכשיו.** 📥 הוא חלון הדבקה (`#importDialog`), לא בוחר קבצים. הפענוח ב-`FDForm.parseImport()` (form.js, נבדק ב-node).
+  `index.html#import` / `#ai` פותחים את 📥 / 💬 (`route()` ב-app.js) — מסך 🤖 מקשר לשם.
+- **תיק דומה:** `importSimilar()` ב-`lib.php` רץ לפני הטרנזקציה. רק לרשומה **בלי id** שהמזהה המחושב שלה לא קיים. 409 `{code:'similar', similar:[{index,
+  name, date, match:{id,name,date}}]}`; השליחה החוזרת עם `resolve`. "לעדכן" = `id` ו**שם** של התיק הקיים. ingest.php → `update` אוטומטי.
+  פרוסה 09 (MCP) — אם תכתוב דרך `importRecords`, להחליט אם היא "ui" (שואלת) או כמו ingest.
+- **ההנחיות לפרויקט:** `extProjectPrompt()` + `EXT_PROJECT_STATUSES` ב-`ext-lib.php`. שינוי בכללי `importRecords()` (מה דורס מה) — לעדכן גם שם,
+  ולהריץ `php funerals-dashboard/tools/build-ext.php`. `fixes08.test.php` נועל שמפתחות `EXT_CHECKS` = `labels` של form.js.
+- **הכותרת:** כפתור חדש בכותרת שאינו חיוני בטלפון — `data-more`, והוא עובר ל-⋯ לבד (התפריט נבנה מהכפתורים הגלויים בזמן הלחיצה).
+  ב-≤420px נשארים 💬 ⋯ 🐞 👤, בלי רווח ביניהם, וה-h1 ב-.95rem — כך השם נכנס שלם ב-390px. 🐞 של DevLoop לא שלנו — לא הועבר.
+- `caseDiff()` — `diffSame()`: מספר מול מספר בהשוואה מספרית, השאר מחמיר ("402" מול 402 עדיין שינוי). הסינון ב-`formDiffChanges()` נשאר (לא מזיק).
+
+## אחרי פרוסה 09 — MCP + OAuth (PR #1867, מוזג 5016c65)
+
+**מה נבנה ואיפה:** `mcp.php` (JSON-RPC, Streamable HTTP בלי SSE), `mcp-lib.php` (כל הלוגיקה: טבלאות `oauth_*`, DCR, CIMD, קודים,
+אסימונים, הכלים), `oauth/` (metadata, register, authorize — **מאחורי השער**, token, revoke), `.htaccess` (`/mcp`, `.well-known/*`),
+`tokens.php` (`mcp_url`, `connections`, `disconnect`), `connect.html` (🔌 ראשון). הכלים = `extActions()` / `extDo(..., 'api')` — לא לשכפל.
+השם ביומן "<שם> (<client_name>)" — דרך `ctx()['client']` ב-`extDo`. השבתה ב-`api.php` קוראת ל-`revokeOauthGrantsOf()` (lib/access.php).
+
+**נבדק אוטומטית** (`tests/mcp.sh`, מתוך `run.sh`, דרך `tests/mcp-router.php` שמריץ את כללי `.htaccess`): K1–K15, וגם XSS בשם, 429 ב-DCR,
+עקיפות loopback, SSRF ב-CIMD (mapped / CGNAT / NAT64 / DNS מעורב), רענון אחרי השבתה והפעלה מחדש, batch ≤ 20. CIMD ו-DNS מדומים
+(`FD_TEST_CIMD_DIR`) רק תחת `cli-server`.
+
+**ידני אחרי פריסה (אצל הבעלים):**
+- K16 — `npx @modelcontextprotocol/inspector` ← Streamable HTTP ← `https://mbe-plus.com/mini_projects/funerals-dashboard/mcp` ← Open Auth
+  Settings ← Quick OAuth Flow, עד `tools/list`.
+- K17 — chatgpt.com/plugins ← ➕ Add custom MCP server ← אותה כתובת, OAuth ← מסך ההסכמה ← "תוסיף ל<שם>: הערה בדיקה" → בתיק, ביומן "(ChatGPT)".
+- K18 — Claude: Settings ← Connectors ← Add custom connector ← אותה כתובת ← `whoami`.
+
+**אם ChatGPT / Inspector לא מוצאים את המטא-נתונים — לבדוק לפי הסדר:**
+1. `curl -si -X POST <base>/mcp -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{}}}'`
+   → 401 עם `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`. אין 401 / אין כותרת → השער חוסם
+   את `mcp.php` (לבדוק `public` ב-`app.json`) או שה-rewrite לא עובד (לנסות `<base>/mcp.php`).
+2. `curl -s <base>/.well-known/oauth-protected-resource` ו-`…/oauth-authorization-server`, `…/openid-configuration` → JSON. 404 / HTML →
+   LiteSpeed לא מריץ את כללי `.htaccess` לנתיב שמתחיל בנקודה, או שבלוק השער שנוסף בפריסה מעליו עוצר. עקיפה בתוך התיקייה: לשנות את
+   הכתובת ב-`MCP_PRM_URL` ל-`oauth/metadata.php?doc=resource` (ה-issuer עצמו לא משתנה).
+3. 1–2 תקינים ועדיין נכשל — הלקוח מחפש לפי RFC 8414 בשורש הדומיין:
+   `https://mbe-plus.com/.well-known/oauth-authorization-server/mini_projects/funerals-dashboard`. זה מחוץ לתיקייה → **בקשה לפלטפורמה**
+   דרך הבקרה (`.claude/teams/requests/`): הפניה כללית לכל אפליקציה אל `<app>/.well-known/oauth-authorization-server`. לא נוגעים מכאן.
+4. CORS — Inspector עושה גילוי ו-token מהדפדפן. `oauthCors()` כבר עונה `*` ו-OPTIONS 204; לבדוק שהשרת לא מוחק את הכותרת.
+5. `redirect_uri` של ChatGPT לא https או משתנה → `oauthRedirectOk()`. ההתאמה ב-authorize — מדויקת, בכוונה.
