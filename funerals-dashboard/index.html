@@ -5,27 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#2d4a8a">
 <meta name="referrer" content="no-referrer">
-<title>דשבורד לוויות וחוסרים</title>
+<title>ניהול לוויות חברה קדישא</title>
 <link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/devloop.css">
 </head>
 <body>
 <div id="signin" class="center" hidden>
   <div class="summary">
-    <h1>🕯️ דשבורד לוויות</h1>
+    <h1>🕯️ ניהול לוויות חברה קדישא</h1>
     <p class="muted">הכניסה דרך הפלטפורמה, לפי אישור לאפליקציה בממשק המנהל.</p>
     <p class="error" id="signinError" role="alert" hidden></p>
     <button type="button" id="retryBtn" class="btn primary">כניסה מחדש</button>
   </div>
 </div>
 
+<div id="noorg" class="center" hidden>
+  <div class="summary">
+    <h1>🕯️ ניהול לוויות חברה קדישא</h1>
+    <p id="noorgText" role="alert"></p>
+  </div>
+</div>
+
 <div id="application" hidden>
   <a class="skip" href="#main">דילוג לתוכן</a>
   <header class="top">
-    <div class="titles"><h1>🕯️ לוויות וחוסרים</h1><div class="sub" id="topSub">בקרת מסמכים ותשלומים</div></div>
-    <button class="icon-btn" id="importBtn" aria-label="ייבוא ממצאים (JSON)" title="ייבוא ממצאים">📥</button>
-    <button class="icon-btn" id="exportBtn" aria-label="ייצוא החודש (JSON)" title="ייצוא החודש">📤</button>
-    <button class="icon-btn" id="tokenBtn" aria-label="יצירת אסימון API" title="יצירת אסימון API">🔑</button>
-    <button class="icon-btn" id="logoutBtn" aria-label="יציאה" title="יציאה">⎋</button>
+    <div class="titles"><h1>🕯️ ניהול לוויות חברה קדישא</h1>
+      <div class="sub"><span id="orgName"></span><select id="orgPick" class="org-pick" aria-label="בחירת ארגון" hidden></select> · <span id="topSub"></span></div></div>
+    <button class="icon-btn" id="importBtn" aria-label="ייבוא ממצאים (JSON)" title="ייבוא ממצאים" hidden>📥</button>
+    <button class="icon-btn" id="exportBtn" aria-label="ייצוא החודש (JSON)" title="ייצוא החודש" hidden>📤</button>
+    <button class="icon-btn" id="settingsBtn" aria-label="הגדרות" title="הגדרות" hidden>⚙️</button>
+    <button class="icon-btn" id="devBtn" aria-label="מסך מפתח" title="מסך מפתח" hidden>🛠️</button>
+    <button class="icon-btn" id="userBtn" aria-label="תפריט משתמש" title="תפריט משתמש">👤</button>
     <input id="importFile" type="file" accept=".json,application/json" hidden>
   </header>
 
@@ -129,353 +139,86 @@
   </form>
 </dialog>
 
+<dialog id="userDialog" aria-labelledby="userTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="userTitle">המשתמש</h2>
+    </header>
+    <div class="sheet-body">
+      <div class="summary">
+        <div class="line"><b id="uName"></b></div>
+        <div class="line"><span class="muted" id="uEmail" dir="ltr"></span></div>
+        <div class="line"><span class="chip" id="uRole"></span><span class="muted" id="uOrg"></span></div>
+        <div class="line"><span class="muted">גרסה <bdi id="uVersion"></bdi></span></div>
+      </div>
+      <button type="button" class="btn" id="tokenBtn" hidden>🔑 אסימון ל-ingest.php</button>
+      <button type="button" class="btn danger" id="logoutBtn">⎋ יציאה</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDialog" aria-labelledby="settingsTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="settingsTitle">⚙️ הגדרות</h2>
+    </header>
+    <div class="sheet-body">
+      <div class="seg-tabs" role="tablist" aria-label="הגדרות">
+        <button role="tab" type="button" data-stab="members" aria-selected="true">חברים</button>
+        <button role="tab" type="button" data-stab="orgs" aria-selected="false">ארגונים</button>
+      </div>
+      <section id="sMembers">
+        <div class="group">
+          <h3>הזמנה במייל</h3>
+          <p class="hint">מי שמוזמן נהיה חבר כשהוא נכנס במייל הזה. ההרשאה בפלטפורמה היא האישור.</p>
+          <div class="fields two">
+            <label class="f wide"><span>מייל</span><input id="invEmail" type="email" dir="ltr" inputmode="email" autocomplete="off"></label>
+            <label class="f"><span>תפקיד</span><select id="invRole"></select></label>
+            <div class="f"><span>&nbsp;</span><button type="button" class="btn primary" id="invSend">הזמנה</button></div>
+          </div>
+        </div>
+        <h3 class="sec-title">חברים</h3>
+        <ul class="list" id="membersList"></ul>
+        <h3 class="sec-title">הזמנות פתוחות</h3>
+        <ul class="list" id="invitesList"></ul>
+      </section>
+      <section id="sOrgs" hidden>
+        <div class="group">
+          <h3>ארגון חדש</h3>
+          <div class="fields two">
+            <label class="f wide"><span>שם</span><input id="orgNew" maxlength="120"></label>
+            <div class="f"><span>&nbsp;</span><button type="button" class="btn primary" id="orgCreate">יצירה</button></div>
+          </div>
+        </div>
+        <ul class="list" id="orgsList"></ul>
+      </section>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="devDialog" aria-labelledby="devTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="devTitle">🛠️ מפתח</h2>
+      <button type="button" class="icon-btn" id="devReload" aria-label="רענון" title="רענון">⟳</button>
+    </header>
+    <div class="sheet-body">
+      <div class="seg-tabs" role="tablist" aria-label="מסך מפתח">
+        <button role="tab" type="button" data-dtab="health" aria-selected="true">תקינות</button>
+        <button role="tab" type="button" data-dtab="requests" aria-selected="false">בקשות</button>
+        <button role="tab" type="button" data-dtab="events" aria-selected="false">פעולות</button>
+        <button role="tab" type="button" data-dtab="tasks" aria-selected="false">מטלות</button>
+      </div>
+      <div id="devBody"></div>
+    </div>
+  </form>
+</dialog>
+
 <div class="toast" id="toast" role="status" hidden></div>
-<script>
-(function () {
-  'use strict';
-  const $ = id => document.getElementById(id);
-  const fields = {name:'fName',month:'fMonth',date:'fDate',time:'fTime',origin:'fOrigin',team:'fTeam',grave:'fGrave',notes:'fNotes',folder_url:'fFolder'};
-  const labels = {license_document:'רישיון קבורה',license_number:'מספר רישיון קבורה',identity_document:'מסמך זיהוי נפטר',identity_source:'מקור הזיהוי',payment_evidence:'אסמכתת תשלום',hall_service:'שירות בית ההספדים',grave_purchase:'רכישת קבר נוסף',partner_identity:'זיהוי בן/בת זוג',national_insurance:'דיווח לביטוח לאומי'};
-  const statusLabels = {unknown:'טרם נבדק',document_present:'מסמך קיים',verified:'מאומת',unreadable:'לא קריא',missing:'חסר',reported:'עודכן ידנית',not_applicable:'לא רלוונטי'};
-  // תצוגה בלבד: איך כל סטטוס נספר במסלול. "הושלם" — רק מאומת או לא רלוונטי.
-  const groupOf = s => (s === 'missing' || s === 'unreadable') ? 'bad'
-    : (s === 'document_present' || s === 'reported') ? 'verify'
-    : (s === 'verified' || s === 'not_applicable') ? 'done' : 'open';
-  const groups = {bad:{icon:'⛔', chip:'bad'}, open:{icon:'❔', chip:''}, verify:{icon:'🔎', chip:'warn'}, done:{icon:'✅', chip:'ok'}};
-  const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-  const TOTAL = Object.keys(labels).length;
-  let items = [], current = null, csrf = '', embedKey = '', filter = 'todo';
-  try { filter = sessionStorage.getItem('fd_filter') || 'todo'; } catch (e) {}
-
-  (() => { const vv = window.visualViewport; if (!vv) return;
-    const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
-    vv.addEventListener('resize', set); set(); })();
-
-  function node(tag, cls, text) {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text !== undefined && text !== null) e.textContent = String(text);
-    return e;
-  }
-  // שדה טקסט שגדל לפי התוכן — רואים את כל ההערה בלי לגלול בתוכה
-  function grow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
-  document.addEventListener('input', e => { if (e.target.matches && e.target.matches('textarea.grow')) grow(e.target); });
-  function toast(text, error=false) {
-    const el = $('toast'); el.textContent = text; el.classList.toggle('err', error); el.hidden = false;
-    clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, error ? 5000 : 2600);
-  }
-  function newRecord() {
-    return {id:'',month:$('month').value,name:'',date:'',time:'',origin:'',team:'',grave:'',notes:'',folder_url:'',documents:[],payments:[],checks:{}};
-  }
-  // הפעולה והפרמטרים נבנים בנפרד — אחרת "&" מקודד לתוך שם הפעולה והשרת עונה "פעולה לא מוכרת"
-  async function request(action, method='GET', data=null, params={}) {
-    const opts = {method,credentials:'same-origin',headers:{}};
-    if (data !== null) { opts.headers['Content-Type']='application/json'; opts.headers['X-CSRF-Token']=csrf; opts.body=JSON.stringify(data); }
-    const res = await fetch('api.php?' + new URLSearchParams({action, ...params}), opts);
-    const response = await res.json().catch(()=>({error:'תגובת שרת לא תקינה'}));
-    if (!res.ok) throw new Error(response.error || 'שגיאה בבקשה');
-    return response;
-  }
-  function showSignin(error='') {
-    $('signin').hidden = false; $('application').hidden = true;
-    $('signinError').hidden = !error; $('signinError').textContent = error;
-    $('signinError').className = error && error.startsWith('יצאת') ? 'hint' : 'error';
-  }
-  function monthLabel(m) { const [y, mm] = (m || '').split('-'); return mm ? monthNames[+mm - 1] + ' ' + y : ''; }
-  function defaultMonth() {
-    try { const s = sessionStorage.getItem('fd_month'); if (/^\d{4}-\d\d$/.test(s || '')) return s; } catch (e) {}
-    const d = new Date(); d.setMonth(d.getMonth() - 1);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-  }
-  async function begin() {
-    try {
-      const auth = await request('me');
-      csrf = auth.csrf; embedKey = auth.embed_key || '';
-      $('signin').hidden = true; $('application').hidden = false;
-      if (!$('month').value) $('month').value = defaultMonth();
-      await load();
-    } catch (e) { showSignin(e.message); }
-  }
-  async function load() {
-    const month = $('month').value;
-    try { sessionStorage.setItem('fd_month', month); } catch (e) {}
-    $('topSub').textContent = monthLabel(month) + ' · בקרת מסמכים ותשלומים';
-    try {
-      const data = await request('list', 'GET', null, {month});
-      items = (data.records || []).sort((a, b) => ((a.date || '9') + (a.time || '')).localeCompare((b.date || '9') + (b.time || '')) || a.name.localeCompare(b.name, 'he'));
-      renderList();
-    } catch(e) { toast(e.message, true); }
-  }
-  /** מצב התיק: כמה בדיקות בכל קבוצה, וכמה קישורים חסרים (מסמכים + תיקייה). */
-  function state(x) {
-    const n = {bad:0, open:0, verify:0, done:0};
-    for (const k of Object.keys(labels)) n[groupOf(((x.checks || {})[k] || {}).status || 'unknown')]++;
-    const noLinks = (x.documents || []).filter(d => !d.url).length + (x.folder_url ? 0 : 1);
-    return {n, noLinks, complete: n.done === TOTAL};
-  }
-  function chipsFor(n) {
-    const out = [];
-    if (n.bad) out.push(node('span', 'chip bad', n.bad + ' חסר / לא קריא'));
-    if (n.verify) out.push(node('span', 'chip warn', n.verify + ' לאימות'));
-    if (n.open) out.push(node('span', 'chip', n.open + ' טרם נבדקו'));
-    if (!out.length) out.push(node('span', 'chip ok', 'הושלם'));
-    return out;
-  }
-  function renderList() {
-    const target = $('records'); target.replaceChildren();
-    const q = $('search').value.trim();
-    const all = items.map(x => ({x, s: state(x)}));
-    const tot = {bad:0, open:0, verify:0, done:0}; let noLinks = 0;
-    all.forEach(({s}) => { for (const g in tot) tot[g] += s.n[g]; noLinks += s.noLinks; });
-    const doneCases = all.filter(a => a.s.complete).length;
-    const pct = items.length ? Math.round(tot.done * 100 / (items.length * TOTAL)) : 0;
-    $('sumDone').textContent = doneCases;
-    $('sumOf').textContent = 'מתוך ' + items.length + ' תיקים הושלמו';
-    $('sumPct').textContent = items.length ? pct + '% מהבדיקות' : '';
-    $('trackBar').style.inlineSize = pct + '%'; $('track').setAttribute('aria-valuenow', pct);
-    const sc = $('sumChips'); sc.replaceChildren();
-    if (items.length) {
-      if (tot.bad) sc.append(node('span', 'chip bad', tot.bad + ' חסר / לא קריא'));
-      if (tot.verify) sc.append(node('span', 'chip warn', tot.verify + ' לאימות'));
-      if (tot.open) sc.append(node('span', 'chip', tot.open + ' טרם נבדקו'));
-      if (noLinks) sc.append(node('span', 'chip warn', '🔗 ' + noLinks + ' בלי קישור'));
-    }
-    $('nTodo').textContent = items.length - doneCases; $('nDone').textContent = doneCases; $('nAll').textContent = items.length;
-    document.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.filter === filter)));
-    const shown = all.filter(({x, s}) => (filter === 'all' || (filter === 'done') === s.complete)
-      && [x.name, x.date, x.team, x.origin].join(' ').includes(q));
-    if (!shown.length) {
-      target.append(node('li', 'empty', !items.length ? 'אין תיקים ב' + monthLabel($('month').value) + '. 📥 לייבוא ממצאים, או "+ תיק".'
-        : q ? 'אין תוצאות לחיפוש.' : filter === 'done' ? 'עוד אין תיקים שהושלמו.' : 'כל התיקים הושלמו 🎉'));
-      return;
-    }
-    shown.forEach(({x, s}) => {
-      const li = node('li', 'card case'); li.tabIndex = 0; li.setAttribute('role', 'button');
-      li.dataset.g = s.n.bad ? 'bad' : s.complete ? 'done' : 'open';
-      const ring = node('span', 'ring', s.n.done + '/' + TOTAL); ring.style.setProperty('--p', Math.round(s.n.done * 100 / TOTAL));
-      ring.setAttribute('aria-label', s.n.done + ' מתוך ' + TOTAL + ' בדיקות הושלמו');
-      const body = node('div', 'body');
-      const l1 = node('div', 'l1'); l1.append(node('span', '', x.name), node('span', 't', [x.date ? x.date.slice(8) + '/' + x.date.slice(5, 7) : '', x.time].filter(Boolean).join(' ')));
-      const l3 = node('div', 'chips'); chipsFor(s.n).forEach(c => l3.append(c));
-      body.append(l1, node('div', 'l2', [x.origin, x.team, x.grave].filter(Boolean).join(' · ') || 'אין פרטי לוויה'), l3);
-      li.append(ring, body, node('span', 'use-go', '‹'));
-      const open = () => edit(x);
-      li.addEventListener('click', open);
-      li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-      target.append(li);
-    });
-  }
-  function edit(item) {
-    current = JSON.parse(JSON.stringify(item));
-    current.checks = current.checks || {}; current.payments = current.payments || []; current.documents = current.documents || [];
-    $('editorTitle').textContent = current.name || 'תיק חדש';
-    for (const [field, id] of Object.entries(fields)) $(id).value = current[field] || '';
-    renderSummary(); renderChecks(); renderPayments(); renderDocuments();
-    if (!$('editDialog').open) $('editDialog').showModal();
-    grow($('fNotes'));
-    $('editDialog').querySelector('.sheet-body').scrollTop = 0;
-  }
-  /** בראש התיק: כמה הושלם, ומה הדבר הבא לטפל בו. */
-  function renderSummary() {
-    current.folder_url = $('fFolder').value;
-    const s = state(current), box = $('caseSummary'); box.replaceChildren();
-    const line = node('div', 'line'); line.append(node('b', '', s.n.done + ' מתוך ' + TOTAL), node('span', 'muted', 'בדיקות הושלמו'));
-    if (current.date) line.append(node('span', 'pct', [current.date.slice(8) + '/' + current.date.slice(5, 7), current.time].filter(Boolean).join(' ')));
-    const track = node('span', 'track'); const bar = node('span'); bar.style.inlineSize = Math.round(s.n.done * 100 / TOTAL) + '%'; track.append(bar);
-    const chips = node('div', 'chips'); chipsFor(s.n).forEach(c => chips.append(c));
-    if (s.noLinks) chips.append(node('span', 'chip warn', '🔗 ' + s.noLinks + ' בלי קישור'));
-    box.append(line, track, chips);
-    const keys = Object.keys(labels), g = k => groupOf((current.checks[k] || {}).status);
-    const next = keys.find(k => g(k) === 'bad') || keys.find(k => g(k) === 'verify') || keys.find(k => g(k) === 'open');
-    if (next) box.append(node('div', 'hint', '👉 הבא בתור: ' + labels[next]));
-  }
-  function field(labelText, value, change, opts={}) {
-    const wrap = node('label', 'f' + (opts.wide ? ' wide' : '')); wrap.append(node('span', '', labelText));
-    const input = node(opts.area ? 'textarea' : 'input');
-    if (opts.area) { input.className = 'grow'; input.rows = 1; } else input.type = opts.type || 'text';
-    input.value = value === null || value === undefined ? '' : String(value);
-    if (opts.ltr) input.dir = 'ltr';
-    if (opts.inputmode) input.inputMode = opts.inputmode;
-    input.addEventListener('input', () => change(input.value)); wrap.append(input); return wrap;
-  }
-  function iconBtn(icon, label, onClick) {
-    const b = node('button', 'icon-btn', icon); b.type = 'button'; b.setAttribute('aria-label', label); b.title = label;
-    b.addEventListener('click', onClick); return b;
-  }
-  /** הבדיקות כמסלול: בעיות, לאימות, טרם נבדק, הושלם. ההערה גלויה במלואה; לחיצה על השורה פותחת עדכון. */
-  function renderChecks() {
-    const box = $('checks'); box.replaceChildren();
-    const keys = Object.keys(labels);
-    keys.forEach(k => { current.checks[k] = current.checks[k] || {status:'unknown', value:'', source:'', note:''}; });
-    const order = ['bad', 'verify', 'open', 'done'];
-    keys.slice().sort((a, b) => order.indexOf(groupOf(current.checks[a].status)) - order.indexOf(groupOf(current.checks[b].status)))
-      .forEach(key => box.append(checkRow(key)));
-  }
-  function checkRow(key) {
-    const check = current.checks[key], wrap = node('div', 'ck');
-    const head = node('button', 'use-row'); head.type = 'button'; head.setAttribute('aria-expanded', 'false');
-    const ic = node('span', 'use-ic'), tx = node('span', 'use-tx'), sub = node('small'), st = node('span', 'chip');
-    tx.append(node('b', '', labels[key]), sub); head.append(ic, tx, st);
-    const info = node('div', 'ck-info');
-    const editBox = node('div', 'ck-edit'); editBox.hidden = true;
-    const paint = () => {
-      const g = groupOf(check.status); wrap.dataset.g = g; ic.textContent = groups[g].icon;
-      st.className = 'chip ' + groups[g].chip; st.textContent = statusLabels[check.status] || check.status;
-      sub.textContent = check.value || (g === 'open' ? 'לא נבדק עדיין' : ''); sub.hidden = !sub.textContent;
-      info.replaceChildren();
-      if (check.note) info.append(node('p', 'ck-note', check.note));
-      if (check.source) { const src = node('small', 'src', 'מקור: '), b = node('bdi', '', check.source); b.dir = 'ltr'; src.append(b); info.append(src); }
-      info.hidden = !info.childNodes.length;
-    };
-    const seg = node('fieldset', 'seg grid'); seg.style.setProperty('--cols', 4); seg.setAttribute('aria-label', 'סטטוס ' + labels[key]);
-    for (const [value, t] of Object.entries(statusLabels)) {
-      const l = node('label'), r = node('input'); r.type = 'radio'; r.name = 'st_' + key; r.value = value; r.checked = check.status === value;
-      r.addEventListener('change', () => { check.status = value; paint(); renderSummary(); });
-      l.append(r, node('span', '', t)); seg.append(l);
-    }
-    const f = node('div', 'fields two');
-    f.append(field('ערך / מספר', check.value || '', v => { check.value = v; paint(); }, {wide:true}),
-      field('הערה', check.note || '', v => { check.note = v; paint(); }, {wide:true, area:true}));
-    editBox.append(seg, f);
-    head.addEventListener('click', () => {
-      editBox.hidden = !editBox.hidden; head.setAttribute('aria-expanded', String(!editBox.hidden));
-      if (!editBox.hidden) editBox.querySelectorAll('textarea.grow').forEach(grow);
-    });
-    paint(); wrap.append(head, info, editBox); return wrap;
-  }
-  function renderPayments() {
-    const box = $('payments'); box.replaceChildren();
-    current.payments.forEach((p, i) => {
-      const row = node('div', 'item'), f = node('div', 'fields');
-      f.append(field('סכום ₪', p.amount, v => p.amount = v === '' ? null : Number(v), {inputmode:'decimal', ltr:true}),
-        field('אסמכתה', p.reference || '', v => p.reference = v, {ltr:true}),
-        field('מטרה', p.purpose || '', v => p.purpose = v),
-        field('מקור', p.source || '', v => p.source = v));
-      const acts = node('div', 'acts');
-      acts.append(iconBtn('🗑️', 'הסרת התשלום', () => { current.payments.splice(i, 1); renderPayments(); }));
-      row.append(f, acts); box.append(row);
-    });
-    if (!current.payments.length) box.append(node('p', 'empty', 'לא הוזנו אסמכתאות תשלום.'));
-  }
-  /** מסמכים כשורות. בלי קישור — מסומן, כי אי אפשר לפתוח אותו מכאן. ✏️ — עדכון. */
-  function renderDocuments() {
-    const box = $('documents'); box.replaceChildren();
-    const folder = $('fFolder').value, linked = current.documents.filter(d => d.url).length, missing = current.documents.length - linked;
-    const st = $('docsState'); st.replaceChildren();
-    if (!folder || missing) {
-      st.append(node('p', 'warn-box', '🔗 ' + [!folder ? 'אין קישור לתיקייה ב-Dropbox' : '',
-        missing ? missing + ' מתוך ' + current.documents.length + ' מסמכים בלי קישור, ולכן אי אפשר לפתוח אותם מכאן' : ''].filter(Boolean).join(' · ')
-        + '. קישור שיתוף מוסיפים ב-✏️ של המסמך, או ב"פרטי הלוויה" לתיקייה.'));
-    }
-    if (folder) {
-      const a = node('a', 'use-row'); a.href = folder; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      const tx = node('span', 'use-tx'); tx.append(node('b', '', 'התיקייה ב-Dropbox'), node('small', '', 'כל המסמכים של התיק'));
-      a.append(node('span', 'use-ic', '📁'), tx, node('span', 'use-go', '↗'));
-      box.append(a);
-    }
-    current.documents.forEach((d, i) => {
-      const wrap = node('div', 'ck'); wrap.dataset.g = d.url ? 'done' : 'verify';
-      const row = node('div', 'use-row');
-      const tx = node('span', 'use-tx'), name = node('b'); name.append(node('bdi', '', d.label || 'מסמך'));
-      tx.append(name, node('small', '', d.url ? (d.kind || 'מסמך') : 'אין קישור' + (d.kind ? ' · ' + d.kind : '')));
-      row.append(node('span', 'use-ic', /\.pdf$/i.test(d.label || '') ? '📄' : '🖼️'), tx);
-      if (d.url) {
-        row.append(iconBtn('👁️', 'תצוגה', () => previewFile(d.url)));
-        const a = node('a', 'icon-btn', '↗'); a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.setAttribute('aria-label', 'פתיחה ב-Dropbox'); row.append(a);
-      }
-      const ed = node('div', 'ck-edit'); ed.hidden = true;
-      const f = node('div', 'fields two');
-      f.append(field('תיאור', d.label || '', v => d.label = v, {wide:true}), field('סוג', d.kind || '', v => d.kind = v, {ltr:true}),
-        field('קישור Dropbox (HTTPS)', d.url || '', v => d.url = v, {ltr:true, inputmode:'url'}));
-      const del = node('button', 'btn danger sm', '🗑️ הסרת המסמך'); del.type = 'button';
-      del.addEventListener('click', () => { current.documents.splice(i, 1); renderDocuments(); });
-      ed.append(f, del);
-      row.append(iconBtn('✏️', 'עדכון המסמך', () => { ed.hidden = !ed.hidden; if (ed.hidden) renderDocuments(); }));
-      wrap.append(row, ed); box.append(wrap);
-    });
-    if (!current.documents.length && !folder) box.append(node('p', 'empty', 'אין מסמכים בתיק.'));
-  }
-  async function previewFile(url) {
-    if (!embedKey) { toast('תצוגה מוטמעת דורשת App Key של Dropbox. בינתיים — ↗ פתיחה ב-Dropbox.'); return; }
-    const p = new URL(url);
-    if (p.protocol !== 'https:' || !['www.dropbox.com','dropbox.com'].includes(p.hostname)) { toast('מותר להציג רק קישורי Dropbox מאומתים.', true); return; }
-    const box = $('preview'); box.replaceChildren(); $('previewDialog').showModal();
-    try {
-      if (!window.Dropbox) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://www.dropbox.com/static/api/2/dropins.js'; s.id = 'dropboxjs'; s.dataset.appKey = embedKey;
-          s.onload = resolve; s.onerror = () => reject(new Error('לא ניתן לטעון את רכיב Dropbox')); document.head.append(s);
-        });
-      }
-      if (!window.Dropbox || !window.Dropbox.isBrowserSupported()) throw new Error('התצוגה המוטמעת אינה נתמכת בדפדפן זה');
-      window.Dropbox.embed({link:url, file:{zoom:'best'}, folder:{view:'list'}}, box);
-    } catch(e) {
-      box.append(node('p', 'error', e.message));
-      const a = node('a', 'btn ghost', '↗ פתיחה ב-Dropbox'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; box.append(a);
-    }
-  }
-
-  document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
-  document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
-    filter = b.dataset.filter; try { sessionStorage.setItem('fd_filter', filter); } catch (e) {} renderList(); }));
-  $('editDialog').addEventListener('close', () => { current = null; });
-  $('retryBtn').addEventListener('click', () => begin());
-  $('tokenBtn').addEventListener('click', async () => {
-    if (!confirm('ליצור אסימון API חדש? האסימון הקיים יבוטל, ומערכות שמשתמשות בו יפסיקו לעבוד.')) return;
-    try { const res = await request('api_token', 'POST', {}); $('tokenValue').value = res.token; $('tokenDialog').showModal(); $('tokenValue').select(); }
-    catch(e) { toast(e.message, true); }
-  });
-  $('copyToken').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('tokenValue').value); toast('האסימון הועתק'); } catch(e) { $('tokenValue').select(); } });
-  $('tokenDialog').addEventListener('close', () => { $('tokenValue').value = ''; });
-  $('month').addEventListener('change', () => load());
-  $('search').addEventListener('input', renderList);
-  $('newBtn').addEventListener('click', () => edit(newRecord()));
-  $('addPayment').addEventListener('click', () => { current.payments.push({amount:null, purpose:'', reference:'', source:''}); renderPayments(); });
-  $('addDocument').addEventListener('click', () => { current.documents.push({label:'', kind:'', url:''}); renderDocuments();
-    const eds = $('documents').querySelectorAll('.ck-edit'); if (eds.length) eds[eds.length - 1].hidden = false; });
-  $('fFolder').addEventListener('change', () => { renderDocuments(); renderSummary(); });
-  $('editor').addEventListener('submit', async e => {
-    e.preventDefault();
-    if (!$('fName').value.trim()) { toast('נדרש שם נפטר', true); $('fName').focus(); return; }
-    const record = JSON.parse(JSON.stringify(current));
-    for (const [key, id] of Object.entries(fields)) record[key] = $(id).value;
-    try {
-      const result = await request('save', 'POST', record);
-      $('editDialog').close();
-      toast('נשמר'); $('month').value = result.record.month; await load();
-    } catch(err) { toast(err.message, true); }
-  });
-  $('exportBtn').addEventListener('click', async () => {
-    try {
-      const month = $('month').value;
-      const data = await request('export', 'GET', null, {month});
-      const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-      const url = URL.createObjectURL(blob), a = node('a'); a.href = url; a.download = 'funerals-' + month + '.json'; document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      toast('הקובץ הורד — לשמור במקום מאובטח');
-    } catch(err) { toast(err.message, true); }
-  });
-  $('importBtn').addEventListener('click', () => $('importFile').click());
-  $('importFile').addEventListener('change', async () => {
-    const file = $('importFile').files[0]; if (!file) return;
-    if (file.size > 1200000) { toast('הקובץ גדול מדי', true); return; }
-    try {
-      const data = JSON.parse(await file.text());
-      if (!Array.isArray(data.records)) throw new Error('קובץ JSON חייב לכלול records');
-      const result = await request('import', 'POST', {records:data.records});
-      const months = [...new Set(data.records.map(r => r && r.month).filter(Boolean))];
-      if (months.length === 1) $('month').value = months[0];
-      toast('נקלטו ' + result.imported + ' תיקים'); await load();
-    } catch(err) { toast(err.message, true); }
-    finally { $('importFile').value = ''; }
-  });
-  $('logoutBtn').addEventListener('click', async () => {
-    try { await request('logout', 'POST', {}); csrf = ''; current = null; items = [];
-      showSignin('יצאת מהדשבורד. "כניסה מחדש" תחבר אותך שוב לפי ההרשאה בפלטפורמה.'); }
-    catch(e) { toast(e.message, true); }
-  });
-  begin();
-})();
-</script>
+<script src="assets/js/devloop.js"></script>
+<script src="assets/js/app.js"></script>
 </body>
 </html>
