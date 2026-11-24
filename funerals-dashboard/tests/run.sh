@@ -55,7 +55,7 @@ test "$(wc -l < "$tmp/cases0")" = 22 || fail "fixture: 22 תיקים"
 idf="$tmp/identity.json"
 as(){ printf '%s' "$1" > "$idf"; }
 as ''
-FD_TEST_IDENTITY_FILE="$idf" php -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
+FD_TEST_IDENTITY_FILE="$idf" php -d opcache.jit=disable -S 127.0.0.1:18964 -t "$APP" -d auto_prepend_file="$PWD/$APP/tests/gate-prepend.php" > "$tmp/server.log" 2>&1 &
 pid=$!
 for i in $(seq 1 30); do curl -sf http://127.0.0.1:18964/index.html >/dev/null && break || sleep .2; done
 base="http://127.0.0.1:18964/api.php"
