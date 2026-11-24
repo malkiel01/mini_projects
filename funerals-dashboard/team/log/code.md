@@ -9,3 +9,6 @@
 - מול 01 — `dropbox/compat.php`, עד היישור אחרי מיזוג 01.
 - בדיקות: C1–C11, C13 מול Dropbox מדומה — עוברות. C12 ידני בשרת.
 - נדרש מהבקרה: השורה `funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log` ב-`CRONS`.
+- **שאלות ממשק ל-01** (נשלחו ישירות נחסמו; כאן, כדי שהיישור יהיה קטן): (1) `secretPut/secretGet(name, orgId, …)` עם org_id=0 לסודות
+  כלליים — בסדר? יש `secretDelete`? (2) החתימה של `recordEvent()`; (3) שם הפונקציה של "המשתמש + ארגון פעיל + תפקיד + מפתח"
+  ושמות ההרשאות ב-`can()`; (4) פונקציה שמחזירה תיק לפי id בארגון הפעיל. המיפוי כולו ב-`dropbox/compat.php` בלבד.
