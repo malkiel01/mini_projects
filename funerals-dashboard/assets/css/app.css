@@ -202,24 +202,44 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .center .summary { width: min(100%, 380px); gap: var(--s3); padding: var(--s4); text-align: center; }
 .center h1 { font-size: 1.2rem; }
 
-/* בדיקה: שורה — שם + סטטוס, ומתחת ערך והערה */
-.check { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px); gap: 6px var(--s2); align-items: center; padding: var(--s2) 0; border-top: 1px solid var(--line); }
-.check:first-of-type { border-top: 0; }
-.check > b { font-size: .9rem; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.check > b::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--line)); }
-.check[data-s="verified"] { --c: var(--ok); } .check[data-s="document_present"], .check[data-s="reported"] { --c: var(--brand); }
-.check[data-s="missing"], .check[data-s="unreadable"] { --c: var(--danger); }
-.check .wide { grid-column: 1 / -1; }
-.check .src { grid-column: 1 / -1; font-size: .78rem; color: var(--muted); overflow-wrap: anywhere; }
+/* שורת תיק: טבעת התקדמות, שם, פרטים, ותגיות מה חסר */
+.card.case { align-items: flex-start; }
+.card.case .chips { margin-top: 4px; gap: 4px; }
+.card.case .use-go { align-self: center; }
+.card.case[data-g="bad"] { box-shadow: inset -3px 0 0 var(--danger); }
+.card.case[data-g="open"] { box-shadow: inset -3px 0 0 var(--star); }
+.card.case[data-g="done"] { box-shadow: inset -3px 0 0 var(--ok); }
+.ring { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; font-size: .72rem; font-weight: 600;
+    background: radial-gradient(closest-side, var(--surface) 76%, transparent 78%),
+                conic-gradient(var(--ok) calc(var(--p, 0) * 1%), var(--line) 0); }
 
-/* פריט בתוך קבוצה (תשלום / מסמך) */
-.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2); align-items: start; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); }
+/* בדיקה / מסמך: שורה לחיצה, מתחתיה ההערה במלואה, ועדכון שנפתח בלחיצה */
+.ck { border-top: 1px solid var(--line); }
+.ck:first-child { border-top: 0; }
+.ck .use-row { min-block-size: 52px; }
+.ck .use-row > .chip { margin-inline-start: auto; }
+.ck[data-g="bad"] .use-ic { background: var(--danger-soft); }
+.ck[data-g="verify"] .use-ic { background: color-mix(in srgb, var(--star) 16%, var(--surface)); }
+.ck[data-g="done"] .use-ic { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); }
+.ck-info { padding: 0 var(--s3) var(--s2); padding-inline-start: calc(var(--s3) + 36px + var(--s2)); display: grid; gap: 2px; }
+.ck-note { font-size: .88rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ck-info .src { font-size: .76rem; color: var(--muted); overflow-wrap: anywhere; }
+.ck-edit { display: grid; gap: var(--s2); padding: var(--s2) var(--s3) var(--s3); background: var(--bg); }
+.ck-edit .btn.danger { justify-self: start; }
+.use-tx b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+textarea.grow { resize: none; overflow: hidden; min-height: var(--tap); line-height: 1.45; padding-block: var(--s2); }
+.warn-box { font-size: .85rem; padding: var(--s2) var(--s3); border-radius: var(--r); margin-bottom: var(--s2);
+    background: color-mix(in srgb, var(--star) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--star) 40%, transparent); }
+#caseSummary .hint { margin: 0; color: var(--ink); font-weight: 500; }
+
+/* פריט בתוך קבוצה (תשלום) */
+.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2); align-items: start; padding: var(--s2) var(--s3); }
+.item + .item { border-top: 1px solid var(--line); }
 .item .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.sheet-body input[type="date"], .sheet-body input[type="time"], .sheet-body input[type="month"], .toolbar .month-pick { padding-inline: 6px; }
 .item .acts { display: grid; gap: var(--s1); }
 .group-head { display: flex; align-items: center; gap: var(--s2); }
 .group-head h3 { flex: 1; }
-.doc-links { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.sheet-body input[type="date"], .sheet-body input[type="time"], .sheet-body input[type="month"], .toolbar .month-pick { padding-inline: 6px; }
 
 #preview { min-height: 50dvh; }
 #tokenDialog .sheet-body input { font-family: ui-monospace, monospace; }
