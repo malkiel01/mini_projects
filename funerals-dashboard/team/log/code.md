@@ -29,3 +29,14 @@
   `formApplyChecks($new,$old,'api',$by)` (או `formSaveCase`) במקום מימוש משלו. לא יכולתי לענות ל-05 — send_message חסום בהרשאה.
 - 2026-11-24 — 01 מוזג (#1839, 8eb9a9f). `main` מוזג לענף 02 (הגרסה של `main` לכל קבצי 01 + ה-diff של 02 מעליה); `caseChangeNeeds`
   מקבל `normalize($old)` כמו ב-`main`. כל A ו-B1–B7 ירוקים. PR טיוטה ל-`main`.
+
+## פרוסה 04 — עובד שטח (ענף `claude/funerals-dashboard-04-field`)
+
+- 2026-11-24 — נבנה בקבצים חדשים: `lib/field.php` (היום/מחר, חיפוש, תיק, עדכון `via: field`, העלאה עם `upload_id` בטבלה
+  `field_uploads`, שיוך סוג קובץ לבדיקה), `assets/js/field-core.js` (הקטנה ל-2,560, GPS נשמר, תור), `assets/js/field.js`,
+  `assets/css/field.css`. נגיעות בקבצים משותפים: `api.php` (+3 שורות), `assets/js/app.js` (+1: אירוע `fd:me`), `index.html` (+3), `run.sh`.
+- ההעלאה ל-Dropbox — מרכיבה את הפונקציות של 03 (`dbxReadyOrg`, `dbxCreateCaseFolder`, `dbxUploadFile`, `dbxLowerInRoot`,
+  `dbxUpsertFile`) מאחורי `function_exists`; עד המיזוג — 409 "לא מחובר". W2–W4 נבדקים עם העלאה מדומה.
+- **ניסיון send_message לקוד 03 לתיאום החתימה — נחסם בהרשאה.** לכן לא ביקשתי שינוי ב-03; ה-idempotency אצלי. אחרי מיזוג 03:
+  `git merge origin/main`, ובדיקה של `fieldDropboxUploader` מול `tests/dropbox-mock.php` (W2 עם קובץ אמיתי במדומה).
+- בדיקות: `tests/field.test.php`, `tests/field.test.js`, W1/W5/W7 ב-`run.sh` — כולן ירוקות. W8 — ידני בטלפון.
