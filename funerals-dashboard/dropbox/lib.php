@@ -23,32 +23,9 @@ final class DbxError extends RuntimeException {
     }
 }
 
-/* ---------- טבלאות (מוסיפות בלבד) ---------- */
+/* ---------- טבלאות: migrateV2() ב-lib/schema.php (מוסיפה בלבד) ---------- */
 
-function dbxSchema(PDO $pdo): void {
-    static $done = false;
-    if ($done) return;
-    $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_orgs (
-        org_id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT \'disconnected\', account_id TEXT, account_name TEXT,
-        root_id TEXT, root_path TEXT, root_lower TEXT, cursor TEXT, sync_pending INTEGER NOT NULL DEFAULT 0,
-        lock_token TEXT, lock_until INTEGER NOT NULL DEFAULT 0, last_sync_at TEXT, last_webhook_at TEXT, last_error TEXT,
-        last_error_at TEXT, connected_by TEXT, connected_at TEXT)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS dbx_folders (
-        org_id INTEGER NOT NULL, dbx_id TEXT NOT NULL, path TEXT NOT NULL, path_lower TEXT NOT NULL, PRIMARY KEY(org_id, dbx_id))');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_dbx_folders_path ON dbx_folders(org_id, path_lower)');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS case_folders (
-        org_id INTEGER NOT NULL, case_id TEXT NOT NULL, dbx_folder_id TEXT NOT NULL, dbx_path TEXT NOT NULL,
-        linked_at TEXT NOT NULL, linked_by TEXT, PRIMARY KEY(org_id, case_id), UNIQUE(org_id, dbx_folder_id))');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, case_id TEXT, dbx_id TEXT NOT NULL UNIQUE,
-        path TEXT NOT NULL, path_lower TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, rev TEXT,
-        server_modified TEXT, deleted INTEGER NOT NULL DEFAULT 0, added_via TEXT NOT NULL, added_by TEXT, kind TEXT NOT NULL DEFAULT \'\',
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
-    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_files_case ON files(org_id, case_id)');
-    $done = true;
-}
 function dbxOrg(PDO $pdo, int $orgId): array {
-    dbxSchema($pdo);
     $st = $pdo->prepare('SELECT * FROM dbx_orgs WHERE org_id=?');
     $st->execute([$orgId]);
     $row = $st->fetch();
@@ -367,7 +344,6 @@ function dbxSync(PDO $pdo, int $orgId, float $budget): array {
 
 /** כל הארגונים המחוברים שיש להם תיקייה ראשית. */
 function dbxConnectedOrgs(PDO $pdo): array {
-    dbxSchema($pdo);
     return array_map('intval', $pdo->query("SELECT org_id FROM dbx_orgs WHERE status='connected' AND root_id IS NOT NULL AND root_id<>'' ORDER BY org_id")
         ->fetchAll(PDO::FETCH_COLUMN));
 }

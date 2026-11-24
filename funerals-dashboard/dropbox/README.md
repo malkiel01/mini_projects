@@ -13,14 +13,14 @@
 | `assets/js/dropbox.js`, `assets/css/dropbox.css` | קבצי התיק, ולשונית "Dropbox" ב-⚙️ הגדרות (מנהל; App key/secret — למפתח) |
 | `tests/dropbox-test.php`, `tests/dropbox-mock.php` | C1–C11, C13 מול Dropbox מדומה, בלי רשת (רץ מ-`tests/run.sh`) |
 
-## נתונים (כולם ב-`data/funerals.sqlite`, מוסיפים בלבד)
+## נתונים (כולם ב-`data/funerals.sqlite`; הטבלאות — `migrateV2()` ב-`lib/schema.php`, `SCHEMA_VERSION = 2`)
 
 - `dbx_orgs` — לכל ארגון: מצב (`connected` / `reauth` / `disconnected`), `account_id`, הראשית (`root_id` + נתיב), `cursor`,
   נעילה (`lock_until`), הסנכרון / webhook / שגיאה האחרונים. **בלי סודות.**
 - `dbx_folders` — התיקיות שהסנכרון ראה בתוך הראשית (לפי `id`); בסיס לסריקת ההתאמה ולבדיקת "בתוך הראשית" בלי קריאה ל-Dropbox.
 - `case_folders` — תיק ↔ תיקייה (`dbx_folder_id`, `dbx_path`). בטבלה נפרדת ולא בגוף התיק, כדי ש-`normalize()` לא ימחק את
   הקישור בשמירה הבאה. שינוי שם ב-Dropbox מעדכן את הנתיב; הקישור לפי `id`.
-- `files` — לפי האפיון 3.5.1, `dbx_id` ייחודי; `deleted=1` במקום מחיקה.
+- `files` — לפי האפיון 3.5.1, `dbx_id` ייחודי; `deleted=1` במקום מחיקה; `upload_id` — מזהה חד-פעמי של העלאה (חוזרת → אותה שורה).
 - `secrets` — `dropbox_app_key` / `dropbox_app_secret` (ארגון 0 = כללי), `dropbox_refresh` לכל ארגון. מוצפנים.
 - `data/cache/thumbs/` — מטמון תמונות ממוזערות, עד 200MB.
 
@@ -40,7 +40,21 @@
 האפיון §2: אפליקציה ב-App Console (Full Dropbox; `files.metadata.read`, `files.content.read`, `files.content.write`,
 `account_info.read`), Redirect URI ו-Webhook URI (מוצגים למפתח ב-⚙️ הגדרות ← Dropbox, להעתקה), ו-App key / App secret באותו מקום.
 
-## מה טרם הוכרע / נשאר ל-C12 (ידני בשרת)
+## ממשק לפרוסות אחרות (ב-`dropbox/actions.php`; ההרשאה — באחריות הקורא)
 
-- `upload_max_filesize` / `post_max_size` בשרת — צריכים להיות ≥ 50MB כדי שהגבול של האפיון יעבוד; פחות מזה → 413 עם הודעה.
+| פונקציה | מה |
+| --- | --- |
+| `dropboxUploadToCase(PDO, int $orgId, array $case, string $tmp, string $name, array $actor, string $via, ?string $uploadId)` | העלאה לתיקיית התיק (נפתחת אם אין) ורישום ב-`files`; `$via` = `ui` / `field` / `api`; `$uploadId` חוזר → אותה שורה בלי העלאה שנייה. מחזיר שורת `files` |
+| `dropboxCaseFiles(PDO, array $case)` | קבצי התיק (`$case` עם `id`, `org_id`), בצורה של `case_files` |
+| `dropboxFileContent(PDO, int $orgId, int $fileId, int $maxBytes = 10MB)` | `name`, `mime`, `size`, `bytes`; ארגון אחר / נמחק → `null` |
+| `dropboxFileText(PDO, int $orgId, int $fileId)` | טקסט עד 200KB — txt/csv/md/json בלבד; אחר → `DbxError('not_text')` |
+
+שגיאות: `DbxError` עם `tag` (`not_connected`, `reauth`, `no_root`, `outside_root`, `too_large`, `not_text`, או `error_summary` של Dropbox).
+
+## מגבלת ההעלאה
+
+`.user.ini` בתיקיית האפליקציה: `upload_max_filesize = 50M`, `post_max_size = 55M`. הערכים בפועל — בשורת Dropbox בבדיקות התקינות
+(⛔ אם פחות מ-50M).
+
+## נשאר ל-C12 (ידני בשרת)
 - השורה ב-`CRONS` של `deploy.yml` — של הבקרה.

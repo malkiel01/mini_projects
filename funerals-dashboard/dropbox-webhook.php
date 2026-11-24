@@ -31,7 +31,6 @@ $data = json_decode($raw, true);
 $accounts = is_array($data['list_folder']['accounts'] ?? null) ? $data['list_folder']['accounts'] : [];
 $accounts = array_values(array_unique(array_filter($accounts, static fn($a) => is_string($a) && preg_match('/^dbid:[A-Za-z0-9_-]{1,100}$/D', $a))));
 $pdo = db();
-dbxSchema($pdo);
 $orgs = [];
 if ($accounts) {
     $in = implode(',', array_fill(0, count($accounts), '?'));

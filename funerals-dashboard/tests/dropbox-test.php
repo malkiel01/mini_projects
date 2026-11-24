@@ -108,8 +108,19 @@ file_put_contents($identity, '');     // webhook ציבורי — גם בלי ז
 [$st, $b] = http('GET', "$base/dropbox-webhook.php?challenge=xyz");
 ok($st === 200 && $b === 'xyz', 'C1 בלי זהות');
 
-/* ---------- חברים (פרוסה 01): המפתח הראשון = מנהל ארגון 1; מנהל ושטח בארגון 1, מנהל בארגון ב' ---------- */
+/* ---------- מיגרציה v1 → v2: מסד בגרסה 1 עם תיק → הטבלאות של 03 נוספות, גיבוי -v1, שום תיק לא משתנה ---------- */
 login($DEV);
+pdo()->exec('DROP TABLE dbx_orgs; DROP TABLE dbx_folders; DROP TABLE case_folders; DROP TABLE files; PRAGMA user_version=1');
+pdo()->exec("INSERT INTO funerals(id,month,name,body,updated_at,org_id) VALUES('fd_v1case000001','2026-09','תיק ישן','{\"id\":\"fd_v1case000001\",\"month\":\"2026-09\",\"name\":\"תיק ישן\"}','2026-09-01',1)");
+$before = q('SELECT id, body FROM funerals ORDER BY id');
+login($DEV);
+ok((int)q1('PRAGMA user_version') === 2, 'v2: user_version=2');
+ok((int)q1("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('dbx_orgs','dbx_folders','case_folders','files')") === 4, 'v2: הטבלאות נוספו');
+ok(q('SELECT id, body FROM funerals ORDER BY id') === $before, 'v2: התיקים לא השתנו');
+ok(count(glob("$data/backup/funerals-*-v1.sqlite")) === 1, 'v2: גיבוי לפני הקפיצה');
+pdo()->exec("DELETE FROM funerals WHERE id='fd_v1case000001'");
+
+/* ---------- חברים (פרוסה 01): המפתח הראשון = מנהל ארגון 1; מנהל ושטח בארגון 1, מנהל בארגון ב' ---------- */
 foreach ([['admin@example.com', 'admin'], ['field@example.com', 'field']] as [$e, $r]) {
     [$st] = api('POST', 'invite', [], ['email' => $e, 'role' => $r]);
     ok($st === 200, "הזמנה $e ($st)");
@@ -285,6 +296,14 @@ mock('clear_calls');
 [$st, $j] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'file' => new CURLFile($small, 'image/png', 'קבר.png')]]);
 ok($st === 200 && in_array('files/upload', mstate()['calls'], true), "העלאה קטנה ב-files/upload ($st)");
 $imgId = $j['file']['id'];
+// upload_id: אותה העלאה פעמיים (שטח עם רשת חלשה) → שורה אחת, העלאה אחת ל-Dropbox
+mock('clear_calls');
+[$st, $j1] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'upload_id' => 'u-1234567890', 'file' => new CURLFile($small, 'image/png', 'פעמיים.png')]]);
+[$st2, $j2] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'upload_id' => 'u-1234567890', 'file' => new CURLFile($small, 'image/png', 'פעמיים.png')]]);
+ok($st === 200 && $st2 === 200 && $j1['file']['id'] === $j2['file']['id'], 'upload_id — אותה שורה');
+ok(count(array_filter(mstate()['calls'], static fn($c) => $c === 'files/upload')) === 1, 'upload_id — העלאה אחת ל-Dropbox');
+[$st] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'upload_id' => 'x', 'file' => new CURLFile($small, 'image/png', 'a.png')]]);
+ok($st === 400, "upload_id לא תקין ($st)");
 file_put_contents("$tmp/x.svg", '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 [$st] = api('POST', 'dropbox_upload', [], null, ['body' => ['case_id' => $cases['שרה כהן'], 'file' => new CURLFile("$tmp/x.svg", 'image/svg+xml', 'x.svg')]]);
 ok($st === 415, "SVG נדחה ($st)");
@@ -322,6 +341,23 @@ ok(mstate()['calls'] === [], 'C6 שום קריאה ל-Dropbox: ' . json_encode(m
 // id של קובץ בתוך הראשית — מותר
 [$st] = api('GET', 'file_view', ['id' => $f1]);
 ok($st === 200, "id של קובץ בתוך הראשית ($st)");
+
+/* ---------- הממשק לפרוסות 04/05/06 ---------- */
+$php = 'require ' . var_export("$app/lib.php", true) . '; require ' . var_export("$app/dropbox/actions.php", true) . ';';
+$run = static fn(string $code) => shell_exec('DBX_API_BASE=' . escapeshellarg($mockBase) . ' php -r ' . escapeshellarg($php . $code) . ' 2>&1');
+$out = $run('$p=db(); echo json_encode(array_column(dropboxCaseFiles($p, ["id"=>' . var_export($cases['ישראל ישראלי'], true) . ',"org_id"=>1]), "name"), JSON_UNESCAPED_UNICODE);');
+ok(str_contains((string)$out, 'רישיון.pdf'), 'dropboxCaseFiles: ' . $out);
+$out = $run('$c=dropboxFileContent(db(), 1, ' . $pdfId . '); echo $c["name"], "|", $c["mime"], "|", substr($c["bytes"],0,4);');
+ok($out === 'רישיון.pdf|application/pdf|%PDF', 'dropboxFileContent: ' . $out);
+$out = $run('var_export(dropboxFileContent(db(), 2, ' . $pdfId . '));');
+ok($out === 'NULL', 'dropboxFileContent — ארגון אחר → null: ' . $out);
+$out = $run('try { dropboxFileText(db(), 1, ' . $pdfId . '); echo "no"; } catch (DbxError $e) { echo $e->tag; }');
+ok($out === 'not_text', 'dropboxFileText — PDF → not_text: ' . $out);
+login($DEV);
+[$st, $j] = api('GET', 'dev_health');
+$row = array_values(array_filter($j['external'], static fn($x) => $x['name'] === 'Dropbox'))[0] ?? [];
+ok(isset($row['ok']) && str_contains($row['state'], 'upload_max_filesize='), 'שורת Dropbox בבדיקות התקינות, עם מגבלת ההעלאה');
+login($ADMIN);
 
 /* ---------- C7: ארגון אחר ---------- */
 login($OTHER);
@@ -377,7 +413,7 @@ ok((int)q1("SELECT COUNT(*) FROM secrets WHERE name='dropbox_refresh'") === 0, '
 ok(mstate()['revoked'] === 1, 'ניתוק — token/revoke');
 [$st, $j] = api('GET', 'case_files', ['case_id' => $cases['ישראל ישראלי']]);
 ok($j['connected'] === false && count($j['files']) === 2, 'ניתוק — רשימת הקבצים נשארת, מסומנת מנותק');
-ok(count(array_filter(mstate()['entries'], static fn($e) => $e['tag'] === 'file')) === 6, 'ניתוק — שום קובץ לא נמחק ב-Dropbox');
+ok(count(array_filter(mstate()['entries'], static fn($e) => $e['tag'] === 'file')) === 7, 'ניתוק — שום קובץ לא נמחק ב-Dropbox');
 
 /* ---------- C9: סודות ---------- */
 $db = pdo();

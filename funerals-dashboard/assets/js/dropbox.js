@@ -85,6 +85,7 @@
         if (file.size > 50 * 1024 * 1024) { FD().toast(file.name + ': גדול מ-50MB', true); continue; }
         FD().toast('מעלה ' + file.name + '…');
         const fd = new FormData(); fd.append('case_id', caseId); fd.append('file', file, file.name);
+        fd.append('upload_id', 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
         const res = await fetch('api.php?action=dropbox_upload', {method: 'POST', credentials: 'same-origin', headers: {'X-CSRF-Token': FD().csrf()}, body: fd});
         const j = await res.json().catch(() => ({error: 'תגובת שרת לא תקינה'}));
         if (!res.ok) throw new Error(file.name + ': ' + (j.error || 'ההעלאה נכשלה'));

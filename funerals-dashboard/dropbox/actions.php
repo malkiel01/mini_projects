@@ -76,7 +76,6 @@ function dbxAction(string $action, string $method, array $pu): never {
     $who = dbxWho();
     if ($who === null) reply(403, ['error' => 'אין שיוך לארגון']);
     $pdo = db();
-    dbxSchema($pdo);
     $orgId = $who['org_id'];
     try {
         match ($action) {
@@ -317,7 +316,7 @@ function dbxActCaseFiles(PDO $pdo, array $who, string $method): never {
 }
 
 /**
- * העלאה מהתיק: multipart (case_id, file). עד 50MB; תמונה / PDF / Office. הקובץ עובר בשרת ל-Dropbox ונרשם ב-files
+ * העלאה מהתיק: multipart (case_id, file, upload_id אופציונלי — מזהה חד-פעמי מהלקוח; חוזר → אותה שורה, בלי העלאה שנייה). עד 50MB; תמונה / PDF / Office. הקובץ עובר בשרת ל-Dropbox ונרשם ב-files
  * מתשובת Dropbox מיד. בלי עותק קבוע בשרת — הקובץ הזמני נמחק בסוף הבקשה, גם בכישלון.
  */
 function dbxActUpload(PDO $pdo, array $who, string $method): never {
@@ -336,20 +335,9 @@ function dbxActUpload(PDO $pdo, array $who, string $method): never {
         if ($size > DBX_MAX_FILE) reply(413, ['error' => 'הקובץ גדול מ-50MB']);
         $name = cleanText($f['name'] ?? '', 200);
         if ($name === '' || !dbxAllowedUpload($name, $tmp)) reply(415, ['error' => 'סוג קובץ לא נתמך (תמונה, PDF או מסמך Office)']);
-        $org = dbxReadyOrg($pdo, $who['org_id']);
-        $st = $pdo->prepare('SELECT cf.dbx_folder_id, COALESCE(df.path, cf.dbx_path) AS path FROM case_folders cf
-            LEFT JOIN dbx_folders df ON df.org_id=cf.org_id AND df.dbx_id=cf.dbx_folder_id WHERE cf.org_id=? AND cf.case_id=?');
-        $st->execute([$who['org_id'], $case['id']]);
-        $folder = $st->fetch();
-        $folderPath = $folder ? (string)$folder['path'] : dbxCreateCaseFolder($pdo, $org, $case, $who['actor'])[1];
-        $meta = dbxUploadFile($pdo, $org, $folderPath, $tmp, $name);
-        if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new DbxError('upload_result');
-        dbxUpsertFile($pdo, $who['org_id'], $meta, 'ui', $who['actor_label']);
-        $pdo->prepare("UPDATE files SET added_via='ui', added_by=COALESCE(added_by, ?) WHERE dbx_id=?")->execute([$who['actor_label'], $meta['id']]);
-        dbxEvent($who['org_id'], (string)$case['id'], 'ui', 'file_uploaded', ['file' => [null, $meta['name']], 'via' => [null, 'ui'], 'size' => [null, (int)$meta['size']]], $who['actor']);
-        $row = $pdo->prepare('SELECT * FROM files WHERE dbx_id=?');
-        $row->execute([$meta['id']]);
-        reply(200, ['ok' => true, 'file' => dbxFileRow($row->fetch())]);
+        $uploadId = dbxUploadId($_POST['upload_id'] ?? null);
+        $row = dropboxUploadToCase($pdo, $who['org_id'], $case, $tmp, $name, $who['actor'], 'ui', $uploadId);
+        reply(200, ['ok' => true, 'file' => dbxFileRow($row)]);
     } finally {
         if ($tmp !== '' && is_file($tmp)) @unlink($tmp);
     }
@@ -449,7 +437,6 @@ function dbxActAppSet(PDO $pdo, array $who, string $method, array $user): never 
 
 /** שורת "Dropbox" בבדיקות התקינות של מסך המפתח (אפיון 03 §3.6): App key, ולכל ארגון — מצב, סנכרון, webhook ושגיאה. */
 function dbxHealthRow(PDO $pdo): array {
-    dbxSchema($pdo);
     $appOk = DbxClient::appKey() !== null && DbxClient::appSecret() !== null;
     $orgs = $pdo->query('SELECT d.*, o.name FROM dbx_orgs d LEFT JOIN orgs o ON o.id = d.org_id ORDER BY d.org_id')->fetchAll();
     $label = ['connected' => 'מחובר', 'reauth' => 'צריך חיבור מחדש', 'disconnected' => 'לא מחובר'];
@@ -459,6 +446,90 @@ function dbxHealthRow(PDO $pdo): array {
             . ($o['last_sync_at'] ? ' · סנכרון ' . $o['last_sync_at'] : '') . ($o['last_webhook_at'] ? ' · webhook ' . $o['last_webhook_at'] : '')
             . ($o['last_error'] ? ' · שגיאה: ' . $o['last_error'] : '');
     }
-    $ok = $appOk && !array_filter($orgs, static fn($o) => $o['status'] === 'reauth');
+    $up = dbxIniBytes((string)ini_get('upload_max_filesize')); $post = dbxIniBytes((string)ini_get('post_max_size'));
+    $limitsOk = $up >= DBX_MAX_FILE && $post > DBX_MAX_FILE;
+    $parts[] = 'העלאה: upload_max_filesize=' . ini_get('upload_max_filesize') . ', post_max_size=' . ini_get('post_max_size') . ($limitsOk ? '' : ' (נדרש ≥ 50M)');
+    $ok = $appOk && $limitsOk && !array_filter($orgs, static fn($o) => $o['status'] === 'reauth');
     return ['name' => 'Dropbox', 'ok' => $ok, 'state' => implode(' | ', $parts)];
+}
+
+/** upload_id מהלקוח: 8–64 תווים [A-Za-z0-9_-], או null. ערך אחר → 400. */
+function dbxUploadId(mixed $v): ?string {
+    if ($v === null || $v === '') return null;
+    if (!is_string($v) || !preg_match('/^[A-Za-z0-9_-]{8,64}$/D', $v)) reply(400, ['error' => 'מזהה העלאה לא תקין']);
+    return $v;
+}
+
+/* ===== ממשק יציב לפרוסות 04 (שטח), 05 (API חיצוני) ו-06 (AI). ההרשאה — באחריות הקורא. ===== */
+
+/**
+ * העלאה לתיקיית התיק (נפתחת אם אין), ורישום ב-files מתשובת Dropbox. $tmp — קובץ מקומי שכבר נבדק (סוג וגודל);
+ * הקורא מוחק אותו. $via: ui / field / api. $uploadId — חד-פעמי לארגון: אם כבר הועלה — מחזיר את השורה הקיימת.
+ * @param array $actor ['id','actor'] @return array שורת files. זורק DbxError.
+ */
+function dropboxUploadToCase(PDO $pdo, int $orgId, array $case, string $tmp, string $name, array $actor, string $via, ?string $uploadId = null): array {
+    $one = static function (string $sql, array $args) use ($pdo): ?array { $st = $pdo->prepare($sql); $st->execute($args); return $st->fetch() ?: null; };
+    if ($uploadId !== null && ($old = $one('SELECT * FROM files WHERE org_id=? AND upload_id=?', [$orgId, $uploadId]))) return $old;
+    $org = dbxReadyOrg($pdo, $orgId);
+    $folder = $one('SELECT COALESCE(df.path, cf.dbx_path) AS path FROM case_folders cf
+        LEFT JOIN dbx_folders df ON df.org_id=cf.org_id AND df.dbx_id=cf.dbx_folder_id WHERE cf.org_id=? AND cf.case_id=?', [$orgId, $case['id']]);
+    $folderPath = $folder ? (string)$folder['path'] : dbxCreateCaseFolder($pdo, $org, $case, $actor)[1];
+    $meta = dbxUploadFile($pdo, $org, $folderPath, $tmp, $name);
+    if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new DbxError('upload_result');
+    $by = (string)$actor['actor'];
+    dbxUpsertFile($pdo, $orgId, $meta, $via, $by);
+    $pdo->prepare('UPDATE files SET added_via=?, added_by=COALESCE(added_by, ?), upload_id=COALESCE(upload_id, ?) WHERE dbx_id=?')
+        ->execute([$via, $by, $uploadId, $meta['id']]);
+    dbxEvent($orgId, (string)$case['id'], $via === 'api' ? 'api' : 'ui', 'file_uploaded',
+        ['file' => [null, $meta['name']], 'via' => [null, $via], 'size' => [null, (int)$meta['size']]], $actor);
+    return $one('SELECT * FROM files WHERE dbx_id=?', [$meta['id']]);
+}
+
+/** קבצי התיק (לא מחוקים), בצורה של case_files. $case — עם id ו-org_id (כמו מ-existing()). */
+function dropboxCaseFiles(PDO $pdo, array $case): array {
+    $st = $pdo->prepare('SELECT * FROM files WHERE org_id=? AND case_id=? AND deleted=0 ORDER BY COALESCE(server_modified, created_at) DESC');
+    $st->execute([(int)$case['org_id'], (string)$case['id']]);
+    return array_map('dbxFileRow', $st->fetchAll());
+}
+
+/**
+ * התוכן של קובץ בארגון (מספר השורה ב-files, כמו ב-case_files): ['name','mime','size','bytes'], עד $maxBytes.
+ * קובץ של ארגון אחר / נמחק / בלי תיק → null. גדול מ-$maxBytes → DbxError('too_large'). זורק DbxError גם כש-Dropbox לא מחובר.
+ */
+function dropboxFileContent(PDO $pdo, int $orgId, int $fileId, int $maxBytes = 10485760): ?array {
+    $st = $pdo->prepare('SELECT * FROM files WHERE id=? AND org_id=? AND deleted=0 AND case_id IS NOT NULL');
+    $st->execute([$fileId, $orgId]);
+    $f = $st->fetch();
+    if (!$f) return null;
+    if ((int)$f['size'] > $maxBytes) throw new DbxError('too_large');
+    $org = dbxReadyOrg($pdo, $orgId);
+    if (!dbxLowerInRoot($org, (string)$f['path_lower'])) return null;
+    $sink = fopen('php://temp/maxmemory:' . $maxBytes, 'w+b');
+    (new DbxClient($pdo, $orgId))->content('files/download', ['path' => $f['dbx_id']], '', $sink);
+    rewind($sink);
+    $bytes = (string)stream_get_contents($sink, $maxBytes + 1);
+    fclose($sink);
+    if (strlen($bytes) > $maxBytes) throw new DbxError('too_large');
+    return ['name' => $f['name'], 'mime' => (string)(new finfo(FILEINFO_MIME_TYPE))->buffer($bytes), 'size' => strlen($bytes), 'bytes' => $bytes];
+}
+
+/**
+ * טקסט של קובץ, עד 200KB — רק לקובצי טקסט (txt, csv, md, json). PDF / תמונה / Office → DbxError('not_text'):
+ * חילוץ טקסט מהם אינו של פרוסה 03 (06 שולחת את dropboxFileContent לספק ה-AI). לא קיים → null.
+ */
+function dropboxFileText(PDO $pdo, int $orgId, int $fileId): ?string {
+    $st = $pdo->prepare('SELECT name FROM files WHERE id=? AND org_id=? AND deleted=0');
+    $st->execute([$fileId, $orgId]);
+    $name = $st->fetchColumn();
+    if ($name === false) return null;
+    if (!in_array(strtolower(pathinfo((string)$name, PATHINFO_EXTENSION)), ['txt', 'csv', 'md', 'json'], true)) throw new DbxError('not_text');
+    $c = dropboxFileContent($pdo, $orgId, $fileId, 204800);
+    return $c === null ? null : mb_convert_encoding($c['bytes'], 'UTF-8', 'UTF-8');
+}
+
+/** "50M" / "8M" / "1G" / בתים → בתים. */
+function dbxIniBytes(string $v): int {
+    $v = trim($v);
+    $n = (int)$v;
+    return match (strtoupper(substr($v, -1))) { 'G' => $n << 30, 'M' => $n << 20, 'K' => $n << 10, default => $n };
 }
