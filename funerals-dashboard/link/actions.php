@@ -11,7 +11,7 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/lib.php';
 
-const LINK_ACTIONS = ['link_questions', 'link_answer', 'link_rules', 'link_rule_save', 'link_rule_delete', 'link_run'];
+const LINK_ACTIONS = ['link_questions', 'link_answer', 'link_rules', 'link_rule_save', 'link_rule_delete', 'link_run', 'link_undo'];
 
 function linkHandles(string $action): bool { return in_array($action, LINK_ACTIONS, true); }
 
@@ -37,6 +37,14 @@ function linkAction(PDO $pdo, string $action, string $method): never {
             $run = linkRun($pdo, $orgId, ['read' => false, 'budget' => 5]);
             reply(200, ['ok' => true, 'rule' => $r['rule'], 'run' => $run, 'questions' => linkQuestionsOpen($pdo, $orgId)]);
 
+        case 'link_undo':
+            // L2א: ביטול בלחיצה של קישור אוטומטי (case_id). התיקייה חוזרת לשאלה
+            $want('POST');
+            need('case.edit');
+            $in = body();
+            $r = linkUndo($pdo, dbxOrg($pdo, $orgId), (string)($in['case_id'] ?? ''), $c['actor']);
+            if (!$r['ok']) reply((int)$r['status'], ['error' => $r['error']]);
+            reply(200, ['ok' => true, 'questions' => linkQuestionsOpen($pdo, $orgId)]);
         case 'link_rules':
             $want('GET');
             need('case.view');
@@ -59,7 +67,7 @@ function linkAction(PDO $pdo, string $action, string $method): never {
             if (!isset(LINK_RULE_KINDS[$kind])) reply(400, ['error' => 'סוג כלל לא מוכר']);
             if (linkNorm($pattern) === '') reply(400, ['error' => 'נדרש תוכן לכלל']);
             if ($kind === 'month' && $value !== '' && !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/D', $value)) reply(400, ['error' => 'חודש בצורה YYYY-MM']);
-            if ($kind === 'file_kind' && $value !== '' && !in_array($value, linkDocKinds(), true)) reply(400, ['error' => 'סוג מסמך לא מוכר']);
+            if ($kind === 'file_kind' && $value !== '' && !in_array($value, linkDocKinds($pdo, $layer === 0 ? 0 : $orgId), true)) reply(400, ['error' => 'סוג מסמך לא מוכר']);
             if ($value === '' && $layer === 0) reply(400, ['error' => 'כלל משותף צריך ערך (למחיקה — מחיקה)']);
             // "מאשר לבד" — רק בכלל סוג מסמך, ורק כשאדם מסמן (כאן)
             $auto = $kind === 'file_kind' ? !empty($in['auto']) : false;

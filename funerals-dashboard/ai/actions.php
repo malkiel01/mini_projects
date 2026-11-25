@@ -28,7 +28,7 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 need('case.view');
                 $s = aiSettings($pdo, $org);
                 reply(200, ['has_key' => aiKey($org) !== null, 'key_source' => aiKeySource($org), 'used' => aiUsed($pdo, $org), 'cap' => $s['monthly_cap'],
-                    'tokens' => aiTokensUsed($pdo, $org), 'token_cap' => $s['token_cap'],
+                    'tokens' => aiTokensUsed($pdo, $org), 'token_cap' => $s['token_cap'], 'cost_month_usd' => aiCostMonth($pdo, $org),
                     'model' => $s['model'], 'can_manage' => can('members.manage'), 'tools_ready' => aiToolsReady(),
                     'auto_approve' => $s['auto_approve']]);
 

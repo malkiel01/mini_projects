@@ -390,19 +390,37 @@ function dbxNormName(string $s): string {
     return mb_strtolower(trim((string)preg_replace('/[\s_]+/u', ' ', $s)));
 }
 
-/** פותח `<ראשית>/YYYY-MM/YYYY-MM-DD <שם>/` לתיק (כפילות → " (2)") ומקשר. מחזיר [dbx_folder_id, path]. */
+/** תבנית ברירת המחדל לתיקיית תיק חדש (L3). הארגון משנה ב-orgs.settings.dropbox_folder_template. */
+const DBX_FOLDER_TEMPLATE = '{month}/{date} {name}';
+/**
+ * הנתיב היחסי לראשית לתיקיית תיק, לפי תבנית הארגון. משתנים: {year} {month} (YYYY-MM) {date} (YYYY-MM-DD) {dm} (14.10) {name}.
+ * כל קטע עובר dbxSafeName — אין יציאה מהראשית ואין תווים אסורים. תבנית ריקה/פגומה — ברירת המחדל.
+ */
+function dbxCaseFolderRel(string $tpl, array $case): string {
+    $tpl = trim($tpl) === '' || !str_contains($tpl, '{name}') ? DBX_FOLDER_TEMPLATE : $tpl;
+    $date = preg_match('/^\d{4}-\d\d-\d\d$/D', (string)($case['date'] ?? '')) ? (string)$case['date'] : '';
+    $month = preg_match('/^\d{4}-\d\d$/D', (string)($case['month'] ?? '')) ? (string)$case['month'] : substr($date, 0, 7);
+    if (!preg_match('/^\d{4}-\d\d$/D', $month)) $month = gmdate('Y-m');
+    $vars = ['{year}' => substr($month, 0, 4), '{month}' => $month, '{date}' => $date,
+        '{dm}' => $date !== '' ? (int)substr($date, 8, 2) . '.' . (int)substr($date, 5, 2) : '', '{name}' => (string)$case['name']];
+    $parts = [];
+    foreach (explode('/', $tpl) as $seg) {
+        $seg = trim((string)preg_replace('/\s+/u', ' ', strtr($seg, $vars)));
+        if ($seg !== '' && $seg !== '.' && $seg !== '..') $parts[] = dbxSafeName($seg);
+    }
+    return $parts ? implode('/', $parts) : dbxSafeName((string)$case['name']);
+}
+/** פותח `<ראשית>/<תבנית הארגון>` לתיק (כפילות → " (2)") ומקשר. מחזיר [dbx_folder_id, path]. */
 /** @param array $actor ['id','actor'] — המבצע ליומן */
 function dbxCreateCaseFolder(PDO $pdo, array $org, array $case, array $actor): array {
     $orgId = (int)$org['org_id'];
     $st = $pdo->prepare('SELECT dbx_folder_id, dbx_path FROM case_folders WHERE org_id=? AND case_id=?');
     $st->execute([$orgId, $case['id']]);
     if ($row = dbxRow($st)) return [$row['dbx_folder_id'], $row['dbx_path']];
-    $month = preg_match('/^\d{4}-\d\d$/D', (string)($case['month'] ?? '')) ? $case['month'] : substr((string)($case['date'] ?? ''), 0, 7);
-    if (!preg_match('/^\d{4}-\d\d$/D', (string)$month)) $month = gmdate('Y-m');
-    $base = trim(((string)($case['date'] ?? '') !== '' ? $case['date'] . ' ' : '') . dbxSafeName((string)$case['name']));
+    $rel = dbxCaseFolderRel(function_exists('orgSettings') ? (string)(orgSettings($pdo, $orgId)['dropbox_folder_template'] ?? '') : '', $case);
     $client = new DbxClient($pdo, $orgId);
     for ($n = 1; $n <= 30; $n++) {
-        $path = dbxPathInRoot($org, $org['root_path'] . '/' . $month . '/' . $base . ($n > 1 ? " ($n)" : ''));
+        $path = dbxPathInRoot($org, $org['root_path'] . '/' . $rel . ($n > 1 ? " ($n)" : ''));
         try {
             $meta = $client->rpc('files/create_folder_v2', ['path' => $path, 'autorename' => false])['metadata'] ?? [];
             break;

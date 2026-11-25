@@ -134,13 +134,51 @@ function aiTokensUsed(PDO $pdo, int $orgId): int {
     return (int)$st->fetchColumn();
 }
 /** צבירת הטוקנים של תשובה (usage) לחודש ולארגון. */
-function aiAddTokens(PDO $pdo, int $orgId, ?object $usage): void {
+/**
+ * מחירון משוער לחישוב עלות (L9) — דולר למיליון טוקנים: קלט, פלט, כתיבה למטמון, קריאה מהמטמון. מחירי הספק לפי 11.2026;
+ * "משוער" בכוונה — החיוב האמיתי אצל הספק. מודל שלא ברשימה — לפי היקר שבהם (לא להציג עלות נמוכה מדי).
+ */
+const AI_PRICES = [
+    'claude-opus-5-5' => [4.0, 20.0, 5.0, 0.20],
+    'claude-sonnet-5-5' => [2.0, 10.0, 2.5, 0.10],
+    'claude-haiku-5-5' => [0.10, 0.50, 0.125, 0.01],
+    'claude-fable-5-2' => [8.0, 40.0, 10.0, 0.20],
+];
+/** עלות משוערת בדולרים לקריאה אחת, מה-usage של הספק. */
+function aiCostEstimate(string $model, ?object $usage): float {
+    if ($usage === null) return 0.0;
+    $p = AI_PRICES[$model] ?? AI_PRICES['claude-fable-5-2'];
+    return round(((int)($usage->input_tokens ?? 0) * $p[0] + (int)($usage->output_tokens ?? 0) * $p[1]
+        + (int)($usage->cache_creation_input_tokens ?? 0) * $p[2] + (int)($usage->cache_read_input_tokens ?? 0) * $p[3]) / 1e6, 6);
+}
+function aiCallsEnsure(PDO $pdo): void {
+    static $done = [];
+    if (isset($done[spl_object_id($pdo)])) return;
+    // יומן קריאות לספק (L9): לכל קריאה — ארגון, מטרה, מודל, מקור המפתח (org/owner, לא המפתח), טוקנים ועלות משוערת
+    $pdo->exec('CREATE TABLE IF NOT EXISTS ai_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, at TEXT NOT NULL,
+        purpose TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', key_source TEXT NOT NULL DEFAULT \'\',
+        tokens_in INTEGER NOT NULL DEFAULT 0, tokens_out INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_ai_calls_org ON ai_calls(org_id, at)');
+    $done[spl_object_id($pdo)] = true;
+}
+/** עלות משוערת החודש לארגון (דולר). */
+function aiCostMonth(PDO $pdo, int $orgId): float {
+    aiCallsEnsure($pdo);
+    $st = $pdo->prepare('SELECT COALESCE(SUM(cost_usd), 0) FROM ai_calls WHERE org_id = ? AND at >= ?');
+    $st->execute([$orgId, gmdate('Y-m') . '-01']);
+    return round((float)$st->fetchColumn(), 4);
+}
+function aiAddTokens(PDO $pdo, int $orgId, ?object $usage, string $model = '', string $purpose = ''): void {
     if ($usage === null) return;
     $n = (int)($usage->input_tokens ?? 0) + (int)($usage->output_tokens ?? 0)
         + (int)($usage->cache_creation_input_tokens ?? 0) + (int)($usage->cache_read_input_tokens ?? 0);
     $month = gmdate('Y-m');
     $pdo->prepare('INSERT OR IGNORE INTO ai_usage(org_id, month, chats) VALUES (?,?,0)')->execute([$orgId, $month]);
     $pdo->prepare('UPDATE ai_usage SET tokens = tokens + ? WHERE org_id = ? AND month = ?')->execute([$n, $orgId, $month]);
+    aiCallsEnsure($pdo);
+    $pdo->prepare('INSERT INTO ai_calls(org_id, at, purpose, model, key_source, tokens_in, tokens_out, cost_usd) VALUES (?,?,?,?,?,?,?,?)')
+        ->execute([$orgId, gmdate('c'), $purpose, $model, (string)(aiKeySource($orgId) ?? ''),
+            $n - (int)($usage->output_tokens ?? 0), (int)($usage->output_tokens ?? 0), aiCostEstimate($model, $usage)]);
 }
 function aiTokenCapMessage(int $cap): string {
     return 'הארגון הגיע לתקרת השימוש החודשית (' . number_format($cap) . ' טוקנים). מנהל הארגון יכול להגדיל אותה ב-⚙️ הגדרות ← בינה מלאכותית.';
@@ -448,7 +486,7 @@ function aiSuggestKind(PDO $pdo, int $orgId, array $file): ?array {
     } catch (AiError $e) {
         return $fail();
     }
-    if ($j !== null) aiAddTokens($pdo, $orgId, $j->usage ?? null);
+    if ($j !== null) aiAddTokens($pdo, $orgId, $j->usage ?? null, $s['model'], 'kind');
     if ($status !== 200 || $j === null || ($j->stop_reason ?? '') === 'refusal') return $fail();
     $text = '';
     foreach (($j->content ?? []) as $b) if (($b->type ?? '') === 'text') $text .= $b->text;
@@ -757,7 +795,7 @@ function aiChat(PDO $pdo, array $thread, string $text): array {
             aiThreadSave($pdo, $thread);
             throw new AiError(aiProviderError($status, $j, $key), 502);
         }
-        aiAddTokens($pdo, $orgId, $j->usage ?? null);
+        aiAddTokens($pdo, $orgId, $j->usage ?? null, $s['model'], 'chat');
         $thread['messages'][] = (object)['role' => 'assistant', 'content' => $j->content ?? []];
         $stop = (string)($j->stop_reason ?? '');
         $reply = '';   // התשובה — הטקסט של הסבב האחרון בלבד

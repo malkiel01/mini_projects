@@ -159,3 +159,5 @@
   `FDForm.setChecks(me.checks)`, ובחירת תפקיד גמיש במשתמשים. בדיקות: `tests/settings.sh` S1–S11 + `form.test.js`. אין נתיב נתונים חדש
   מחוץ ל-SQLite — אין צורך ב-`--exclude`. **הכרעות טכניות:** ראה ה-PR.
 
+
+- 25.11 — פרוסה 10b (L1, L2א, L3, L5, L9, L10, L11, S5): ענף `claude/funerals-dashboard-10b`, `tests/run.sh` עובר. מסירה ב-`team/handoff/code.md`.
