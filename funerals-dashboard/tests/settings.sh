@@ -168,7 +168,10 @@ code="$(get photo history "&id=$FID")"; test "$code" = 403 || fail "S8: היסט
 before="$(sql "SELECT body FROM funerals WHERE id='$FID'")"
 code="$(post photo save "{\"id\":\"$FID\",\"month\":\"$MON\",\"name\":\"$(sql "SELECT name FROM funerals WHERE id='$FID'")\",\"notes\":\"x\"}")"; test "$code" = 403 || fail "S8: שמירה בתיק שלא הוקצה ($code)"
 test "$(sql "SELECT body FROM funerals WHERE id='$FID'")" = "$before" || fail "S8: משהו נשמר אחרי 403"
-for a in field_today "field_search&q=%D7%9B%D7%94%D7%9F" export; do code="$(get photo "$a" "&month=$MON")"; test "$code" = 403 || fail "S8: $a בלי צפייה כללית ($code)"; done
+code="$(get photo export "&month=$MON")"; test "$code" = 403 || fail "S8: export בלי צפייה כללית ($code)"
+# פרוסה 12: מסך השטח פתוח ל"רק שהוקצו" — אבל ריק עד שיש הקצאה
+code="$(get photo field_today)"; test "$code" = 200 && test "$(jv 'count($v["cases"])')" = 0 && test "$(jv '$v["assigned_only"]')" = true || fail "S8: שטח לפני הקצאה — ריק ($code)"
+code="$(get photo field_case "&id=$FID")"; test "$code" = 404 || fail "S8: שטח — תיק שלא הוקצה ($code)"
 code="$(post photo import '{"records":[]}')"; test "$code" = 403 || fail "S8: ייבוא ($code)"
 code="$(post photo check_save '{"name":"x"}')"; test "$code" = 403 || fail "S8: הגדרות ($code)"
 code="$(post photo role_save '{"name":"x","perms":["case.view"]}')"; test "$code" = 403 || fail "S8: יצירת תפקיד ($code)"
@@ -188,6 +191,12 @@ code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["checks"]["
 code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["checks"]["identity_source"]=["status"=>"reported","value"=>"x"]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$body")")"; test "$code" = 403 || fail "S8: \"עודכן ידנית\" בלי case.approve ($code)"
 test "$(sql "SELECT body FROM funerals WHERE id='$FID'")" = "$body" || fail "S8: משהו נשמר אחרי 403"
 code="$(get photo case_checks "&id=$FID2")"; test "$code" = 403 || fail "S8: תיק אחר עדיין חסום ($code)"
+# פרוסה 12 — מסך השטח ל"רק שהוקצו": רואה רק את התיק שהוקצה, מעדכן אותו, ותיק אחר — 404
+code="$(get photo field_today)"; test "$code" = 200 && test "$(jv 'implode(",", array_column($v["cases"], "id"))')" = "$FID" || fail "U-field: היום — רק שהוקצה ($code)"
+code="$(get photo field_case "&id=$FID")"; test "$code" = 200 && test "$(jv '$v["can_track"]')" = true || fail "U-field: תיק שהוקצה ($code)"
+code="$(get photo field_case "&id=$FID2")"; test "$code" = 404 || fail "U-field: תיק אחר ($code)"
+code="$(post photo field_save "{\"id\":\"$FID\",\"notes\":\"מהשטח\"}")"; test "$code" = 200 || fail "U-field: עדכון מהשטח בתיק שהוקצה ($code)"
+code="$(post photo field_save "{\"id\":\"$FID2\",\"notes\":\"x\"}")"; test "$code" = 404 || fail "U-field: עדכון בתיק אחר ($code)"
 ok "S8 — תפקיד מותאם (רק שהוקצו + מעקב): בלי הקצאה — כלום; עם הקצאה — רק התיק הזה, בלי פרטים ובלי אישור; שטח/ייצוא/הגדרות → 403"
 
 # ===== S9: שינוי הרשאה חל מיד; המנהל האחרון =====

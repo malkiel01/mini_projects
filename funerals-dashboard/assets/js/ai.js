@@ -226,6 +226,7 @@
     if (s.has_key) {
       const tail = node('bdi', '', '…' + s.key_hint); tail.dir = 'ltr';
       kh.append('מוגדר, מסתיים ב-', tail, s.key_check ? ' · בדיקה אחרונה: ' + ({ok: 'תקין', invalid: 'לא תקין', no_credit: 'אין יתרה', error: 'שגיאה'}[s.key_check] || s.key_check) : '');
+      if (s.key_source === 'owner') kh.append(' · משתמשים במפתח ברירת המחדל של הבעלים. מפתח של הארגון שיוגדר כאן — יגבר עליו.');
     } else kh.textContent = 'לא הוגדר מפתח. המפתח נשמר מוצפן, ולא מוצג שוב.';
     g.append(kh);
     const key = node('input'); key.type = 'password'; key.autocomplete = 'off'; key.dir = 'ltr'; key.placeholder = s.has_key ? 'מפתח חדש (ריק = להשאיר)' : 'sk-ant-…';
@@ -235,6 +236,7 @@
     const del = node('button', 'btn ghost sm danger', 'הסרת המפתח'); del.type = 'button'; del.hidden = !s.has_key;
     const testOut = node('span', 'muted');
     const tr = node('div', 'row-btns ai-test'); tr.append(test, del, testOut); g.append(tr);
+    del.hidden = !s.has_key || s.key_source !== 'org';
     del.addEventListener('click', async () => {
       if (!confirm('להסיר את המפתח? העוזר יפסיק לעבוד עד שיוגדר מפתח חדש.')) return;
       try { await api('ai_key_remove', {}); await paintSettings(); } catch (e) { testOut.textContent = e.message; }
@@ -254,7 +256,32 @@
     if (!s.tools_ready) g.append(node('p', 'hint', 'העוזר עוד לא מחובר לתיקים — ממתין לחיבור ה-API החיצוני.'));
     const save = node('button', 'btn primary', 'שמירה'); save.type = 'button';
     const sr = node('div', 'row-btns'); sr.append(save); g.append(sr);
-    sec.replaceChildren(g);
+    // פרוסה 12: מפתח ברירת המחדל של הבעלים (א11) — לכל ארגון שלא הגדיר מפתח משלו. רק למפתח (owner_key_hint מגיע רק אליו).
+    const parts = [g];
+    if (s.owner_key_hint !== undefined) {
+      const o = node('div', 'group'); o.append(node('h3', '', 'מפתח ברירת המחדל (לכל הארגונים)'));
+      const oh = node('p', 'hint');
+      if (s.owner_key_hint) { const t = node('bdi', '', '…' + s.owner_key_hint); t.dir = 'ltr'; oh.append('מוגדר, מסתיים ב-', t, '. ארגון בלי מפתח משלו משתמש בו.'); }
+      else oh.textContent = 'לא הוגדר. ארגון בלי מפתח משלו — העוזר והזיהוי לא יעבדו בו.';
+      const ok = node('input'); ok.type = 'password'; ok.autocomplete = 'off'; ok.dir = 'ltr'; ok.placeholder = 'sk-ant-…'; ok.setAttribute('aria-label', 'מפתח ברירת המחדל');
+      const of = node('div', 'fields'); of.append(lab('מפתח חדש', ok, true));
+      const osave = node('button', 'btn ghost', 'שמירת המפתח'); osave.type = 'button';
+      const odel = node('button', 'btn ghost sm danger', 'הסרה'); odel.type = 'button'; odel.hidden = !s.owner_key_hint;
+      const oout = node('span', 'muted');
+      const orow = node('div', 'row-btns'); orow.append(osave, odel, oout);
+      o.append(oh, of, orow); parts.push(o);
+      osave.addEventListener('click', async () => {
+        if (!ok.value.trim()) { oout.textContent = 'נדרש מפתח'; return; }
+        osave.disabled = true;
+        try { await api('ai_owner_key_save', {key: ok.value.trim()}); ok.value = ''; await paintSettings(); }
+        catch (e) { osave.disabled = false; oout.textContent = e.message; }
+      });
+      odel.addEventListener('click', async () => {
+        if (!confirm('להסיר את מפתח ברירת המחדל? ארגונים בלי מפתח משלהם יפסיקו לקבל בינה.')) return;
+        try { await api('ai_owner_key_remove', {}); await paintSettings(); } catch (e) { oout.textContent = e.message; }
+      });
+    }
+    sec.replaceChildren(...parts);
 
     save.addEventListener('click', async () => {
       save.disabled = true;
