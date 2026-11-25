@@ -671,6 +671,12 @@
       $('userDialog').close(); showSignin('יצאת מהאפליקציה. "כניסה מחדש" תחבר אותך שוב לפי ההרשאה בפלטפורמה.'); }
     catch(e) { toast(e.message, true); }
   });
-  window.FD = {request, toast, csrf: () => csrf, can: p => can(p), openSettings};   // לשימוש dropbox.js
+  // פרוסה 12: פתיחת תיק מתוך "המשימות שלי" / שאלות (manage.js) — בחודש הנוכחי, או מעבר לחודש של התיק
+  async function openCase(id, month) {
+    let x = items.find(i => i.id === id);
+    if (!x && month && $('month').value !== month) { $('month').value = month; await load(); x = items.find(i => i.id === id); }
+    if (x) edit(x); else toast('התיק לא נמצא ברשימה של החודש', true);
+  }
+  window.FD = {request, toast, csrf: () => csrf, can: p => can(p), openSettings, openCase, me: () => me};   // לשימוש dropbox.js
   begin();
 })();

@@ -285,6 +285,9 @@ code="$(post admin ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')";
 code="$(post dev ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')"; test "$code" = 200 || fail "א11: שמירת מפתח בעלים ($code)"
 get admin ai_status >/dev/null; test "$(j has_key)" = true && test "$(j key_source)" = owner || fail "א11: ארגון בלי מפתח — לא עובר למפתח הבעלים"
 ! grep -q 'sk-test-owner-key' "$tmp/out" || fail "א11: המפתח בתשובה"
+# פרוסה 12: מסך המפתח — ai_settings מחזיר למפתח רק את 4 התווים האחרונים, ולמנהל ארגון — כלום
+get dev ai_settings >/dev/null; test "$(j owner_key_hint)" = 6789 && ! grep -q 'sk-test-owner-key' "$tmp/out" || fail "12: owner_key_hint למפתח"
+get admin ai_settings >/dev/null; ! grep -q 'owner_key_hint' "$tmp/out" || fail "12: owner_key_hint למנהל ארגון"
 code="$(get field link_questions)"; test "$code" = 200 && test "$(j can_answer)" = false || fail "10: link_questions לשטח ($code)"
 code="$(post field link_run '{}')"; test "$code" = 403 || fail "10: link_run לשטח ($code)"
 code="$(post admin link_rule_save '{"kind":"month","pattern":"חשון","value":"2026-11","layer":"shared"}')"; test "$code" = 403 || fail "10: מנהל ארגון כותב כלל משותף ($code)"

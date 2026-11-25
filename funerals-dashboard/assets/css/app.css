@@ -296,3 +296,13 @@ select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; paddi
 .similar { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
 .similar:first-child { border-top: 0; }
 .similar .l2 { color: var(--muted); font-size: .85rem; }
+
+/* ===== פרוסה 12 — הגדרות בדיקות/תפקידים, שאלות מהבינה, משימות (manage.js) ===== */
+.seg-tabs.wrap4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kinds { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); margin: var(--s3) 0; display: grid; gap: var(--s1); }
+.kinds legend { padding: 0 var(--s1); color: var(--muted); font-size: .85rem; }
+#mgAsk, #mgMine { margin-bottom: var(--s3); }
+.card.ask { align-items: stretch; }
+.card.ask .q { font-weight: 600; margin-bottom: var(--s2); }
+.card.ask .tiles { margin-bottom: var(--s1); }
+#mgErr { padding: 0 var(--s4) var(--s3); }
