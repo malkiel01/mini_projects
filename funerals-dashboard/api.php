@@ -73,7 +73,7 @@ if ($action === 'me') {
         'user' => ['name' => $ctx['user']['name'], 'email' => $ctx['user']['email']],
         'dev' => $ctx['dev'], 'role' => $ctx['role'], 'role_label' => $roleDef['name'] ?? ($ctx['role'] ? ROLES[$ctx['role']] : ($ctx['dev'] ? 'מפתח' : '')),
         'role_id' => $roleDef['id'] ?? null,
-        'checks' => array_map(fn($d) => ['key' => $d['key'], 'name' => $d['name']], checkDefs($pdo, (int)$ctx['org']['id'])),
+        'checks' => array_map(fn($d) => ['key' => $d['key'], 'name' => $d['name'], 'type' => $d['type'], 'cond' => $d['cond']], checkDefs($pdo, (int)$ctx['org']['id'])),
         'org' => ['id' => $ctx['org']['id'], 'name' => $ctx['org']['name']],
         'orgs' => array_map(fn($o) => ['id' => $o['id'], 'name' => $o['name']], $ctx['orgs']),
         'perms' => $perms,

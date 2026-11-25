@@ -247,6 +247,8 @@ function linkDecide(array $p, array $cases, ?string $month): array {
         if (!empty($strong[0]['month']) && !linkStrong($strong[0]) && count($sameName) > 1) {
             return ['decision' => 'question', 'candidates' => $top, 'why' => 'כמה תיקים באותו שם'];
         }
+        // L2א: קישור אוטומטי רק בת"ז, או בשם מלא ובאותו תאריך. שם בלי תאריך (רק החודש) — שאלה
+        if (!linkStrong($strong[0])) return ['decision' => 'question', 'candidates' => $top, 'why' => 'שם זהה בלי תאריך'];
         return ['decision' => 'link', 'case_id' => $strong[0]['id'], 'candidates' => $top,
             'why' => $strong[0]['tz'] ? 'ת"ז זהה' : ($strong[0]['date_match'] === 'same' ? 'שם ותאריך זהים' : 'שם זהה בחודש')];
     }

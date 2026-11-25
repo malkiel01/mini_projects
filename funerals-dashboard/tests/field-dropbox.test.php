@@ -77,6 +77,33 @@ $c = existing($pdo, $case['id'], 1)['checks']['license_document'] ?? [];
 ok($st === 200 && ($c['status'] ?? '') === 'document_present' && ($c['via'] ?? '') === 'field', 'W4: רישיון → לאימות, via field');
 ok($pdo->query("SELECT kind FROM files WHERE name = 'רישיון.jpg'")->fetchColumn() === 'license', 'W4: kind=license ב-files');
 
+// U6 (פרוסה 12b): צילום בלי תיק → לתיקייה הראשית, בלי תיק; הזיהוי (10) שואל לאיזה תיק; אותו מזהה פעמיים → העלאה אחת
+require_once "$app/link/actions.php";
+$luid = 'up_' . str_repeat('d', 32);
+[$st, $b] = fieldInboxUpload($pdo, 1, $luid, $img, 'IMG_9.jpg', $actor, 'fieldDropboxInbox', $now);
+ok($st === 200 && ($b['inbox'] ?? false) === true, "U6: העלאה בלי תיק ($st " . json_encode($b, JSON_UNESCAPED_UNICODE) . ')');
+$want = '/Funerals/צילום מהשטח 2026-11-24 1030.jpg';
+ok(in_array($want, array_column($mstate()['entries'], 'path_display'), true), 'U6: בתיקייה הראשית בשם הצפוי');
+$f = $pdo->query("SELECT * FROM files WHERE upload_id = " . $pdo->quote($luid))->fetch();
+ok($f && $f['case_id'] === null && $f['added_via'] === 'field', 'U6: ב-files בלי תיק, added_via=field');
+$q = $pdo->query("SELECT text FROM ai_questions WHERE org_id = 1 AND kind = 'file' AND subject = " . $pdo->quote((string)($f['id'] ?? '')))->fetchColumn();
+ok(is_string($q) && str_contains($q, 'צילום מהשטח'), 'U6: הזיהוי שואל לאיזה תיק הקובץ שייך');
+$n = count($mstate()['entries']);
+[$st2, $b2] = fieldInboxUpload($pdo, 1, $luid, $img, 'IMG_9.jpg', $actor, 'fieldDropboxInbox', $now);
+ok($st2 === 200 && ($b2['duplicate'] ?? false) === true && count($mstate()['entries']) === $n, 'U6: אותו מזהה → אותו קובץ, בלי העלאה נוספת');
+[$st3] = fieldUpload($pdo, 1, $case['id'], $luid, 'other', $img, 'x.jpg', $actor, 'fieldDropboxUploader', $now);
+ok($st3 === 409, "U6: מזהה של צילום בלי תיק לא נכנס לתיק ($st3)");
+
+// L3 (12b): תבנית התיקייה — בדיקת התבנית, ותיקייה חדשה לפי תבנית הארגון
+ok(dbxTemplateError('{date} {name}') === null && dbxTemplateError('') === null, 'L3: תבנית תקינה / ריקה');
+ok(dbxTemplateError('{month}') !== null && dbxTemplateError('{name}/{x}') !== null && dbxTemplateError('../{name}') !== null && dbxTemplateError('a/b/c/{name}') !== null && dbxTemplateError('a\\b {name}') !== null, 'L3: תבנית פגומה נדחית');
+orgSettingsPut($pdo, 1, ['dropbox_folder_template' => '{year}/{dm} {name}']);
+ok(dbxTemplateInfo($pdo, 1)['folder_template_example'] === '2026/14.10 ישראל ישראלי', 'L3: דוגמה לפי התבנית');
+$case2 = normalize(['month' => '2026-11', 'name' => 'לוי שרה', 'date' => '2026-11-20'], 1);
+store($pdo, $case2, null, 1, ['id' => null, 'actor' => 'test'], 'ui', 'save');
+[$st] = fieldUpload($pdo, 1, $case2['id'], 'up_' . str_repeat('e', 32), 'other', $img, 'מסמך.jpg', $actor, 'fieldDropboxUploader', $now);
+ok($st === 200 && in_array('/Funerals/2026/20.11 לוי שרה/מסמך.jpg', array_column($mstate()['entries'], 'path_display'), true), 'L3: תיקייה חדשה לפי תבנית הארגון');
+
 // W7: מנותק → 409 בהודעה ברורה
 dbxOrgSet($pdo, 1, ['status' => 'disconnected']);
 [$st, $b] = fieldUpload($pdo, 1, $case['id'], 'up_' . str_repeat('c', 32), 'grave_photo', $img, 'x.jpg', $actor, 'fieldDropboxUploader', $now);
@@ -86,4 +113,4 @@ ok($st === 409 && $b['error'] === FIELD_DBX_DOWN, "W7: מנותק → 409 ($st)"
 $warn = array_filter(file("$tmpDir/mock.log") ?: [], static fn($l) => preg_match('/PHP (Fatal|Warning|Parse)/', $l) && !str_contains($l, 'in Unknown on line 0'));
 ok($warn === [], 'אזהרות PHP במדומה: ' . implode('', $warn));
 if ($fails) { fwrite(STDERR, "field-dropbox.test.php: $fails כשלים\n"); exit(1); }
-echo "  ✓ פרוסה 04 — W2–W4, W7 מול Dropbox מדומה\n";
+echo "  ✓ פרוסה 04 — W2–W4, W7 מול Dropbox מדומה; פרוסה 12b — U6 (צילום בלי תיק), L3 (תבנית תיקייה)\n";

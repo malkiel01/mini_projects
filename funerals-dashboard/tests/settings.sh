@@ -199,6 +199,20 @@ code="$(post photo field_save "{\"id\":\"$FID\",\"notes\":\"מהשטח\"}")"; te
 code="$(post photo field_save "{\"id\":\"$FID2\",\"notes\":\"x\"}")"; test "$code" = 404 || fail "U-field: עדכון בתיק אחר ($code)"
 ok "S8 — תפקיד מותאם (רק שהוקצו + מעקב): בלי הקצאה — כלום; עם הקצאה — רק התיק הזה, בלי פרטים ובלי אישור; שטח/ייצוא/הגדרות → 403"
 
+# ===== 12b (ביקורת 12b 🟡3, 🟡4): הרשאות בשרת לצילום בלי תיק, לביטול קישור ולתבנית התיקייה =====
+# U6 — החלטה: עובד שמוגבל ל"שהוקצו לי" (case.track) רשאי לצלם בלי תיק; הצילום לא חושף תיק, והזיהוי שואל. כאן — עובר את ההרשאה
+# ונעצר רק כי אחסון הקבצים לא מחובר בבדיקה הזו
+printf '\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9' > "$tmp/p.jpg"
+as "${ID[photo]}"; code="$(st -b "$tmp/c-photo" -c "$tmp/c-photo" -H "X-CSRF-Token: ${CSRF[photo]}" -F case_id= -F upload_id=up_uuuuuuuuuuuuuuuuuuuuuuuu -F kind=other -F "file=@$tmp/p.jpg;filename=a.jpg" "$base?action=field_upload")"
+test "$code" = 409 && test "$(jv '$v["code"]')" = dropbox_not_connected || fail "12b U6: עובד מוגבל — צילום בלי תיק עובר את ההרשאה ($code)"
+code="$(post photo dropbox_template_set '{"template":"{date} {name}"}')"; test "$code" = 403 || fail "12b: תבנית תיקייה בלי הרשאה ($code)"
+code="$(post photo link_undo "{\"case_id\":\"$FID\"}")"; test "$code" = 403 || fail "12b: ביטול קישור בלי case.edit ($code)"
+code="$(post boss link_undo '{"case_id":"fd_nosuchcase_000000"}')"; test "$code" = 404 || fail "12b: ביטול קישור לתיק שלא בארגון ($code)"
+code="$(post boss dropbox_template_set '{"template":"a\\\\b {name}"}')"; test "$code" = 400 || fail "12b ⚪7: תבנית עם \\ ($code)"
+code="$(post boss dropbox_template_set '{"template":"{year}/{dm} {name}"}')"; test "$code" = 200 && test "$(jv '$v["folder_template"]')" = '{year}/{dm} {name}' || fail "12b: תבנית תקינה ($code)"
+test "$(sql "SELECT COUNT(*) FROM events WHERE action='dropbox_template_set'")" = 1 || fail "12b: התבנית ביומן"
+ok "12b — צילום בלי תיק לעובד מוגבל (עובר הרשאה); תבנית וביטול קישור בלי הרשאה → 403; תיק שלא בארגון → 404; \\ בתבנית → 400"
+
 # ===== S9: שינוי הרשאה חל מיד; המנהל האחרון =====
 code="$(post boss role_save "{\"id\":$RID,\"perms\":[\"case.view_assigned\",\"case.track\",\"case.approve\"]}")"; test "$code" = 200 || fail "S9: הוספת אישור ($code)"
 code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["checks"]["license_document"]=["status"=>"verified"]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$body")")"; test "$code" = 200 || fail "S9: אישור אחרי הוספת ההרשאה ($code)"

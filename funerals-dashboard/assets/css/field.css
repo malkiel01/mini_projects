@@ -40,3 +40,6 @@ body.field-mode #main, body.field-mode #importBtn, body.field-mode #exportBtn, b
 .fw-view iframe { width: 100%; height: calc(var(--vvh, 100dvh) - var(--head) - 16px); border: 0; }
 #fwSave { position: sticky; bottom: calc(var(--s2) + env(safe-area-inset-bottom)); box-shadow: 0 0 0 var(--s2) var(--surface); }
 body.field-mode #topSub { display: none; }
+/* U6: צילום בלי תיק — בראש המסך */
+.fw-loose { inline-size: 100%; min-height: 64px; grid-auto-flow: column; gap: var(--s2); margin-bottom: var(--s3);
+    background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }

@@ -274,7 +274,13 @@
     return out;
   }
 
-  const api = {MAX_SIDE, QUALITY, STATE_LABELS, fitSize, readExifGps, buildExifApp1, insertApp1, prepareImage, uploadId, createQueue, memoryStore, idbStore, sendItem, backgroundSync, needsText};
+  /** U7: נקודת GPS כטקסט בשדה "מיקום הקבר": "31.771234, 35.217812 (±8 מ')". אפשר לתקן ידנית. */
+  function gpsText(c) {
+    const f = n => (Math.round(Number(n) * 1e6) / 1e6).toFixed(6);
+    return f(c.latitude) + ', ' + f(c.longitude) + (c.accuracy ? " (±" + Math.round(c.accuracy) + " מ')" : '');
+  }
+
+  const api = {gpsText, MAX_SIDE, QUALITY, STATE_LABELS, fitSize, readExifGps, buildExifApp1, insertApp1, prepareImage, uploadId, createQueue, memoryStore, idbStore, sendItem, backgroundSync, needsText};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FDField = api;
 })(typeof self !== 'undefined' ? self : this);

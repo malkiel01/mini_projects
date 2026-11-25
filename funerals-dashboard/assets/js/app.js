@@ -7,7 +7,7 @@
   const F = window.FDForm, labels = F.labels, statusLabels = F.statusLabels, groupOf = F.groupOf;
   const groups = {bad:{icon:'⛔', chip:'bad'}, open:{icon:'❔', chip:''}, verify:{icon:'🔎', chip:'warn'}, done:{icon:'✅', chip:'ok'}};
   const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-  let openedSnap = '';
+  let openedSnap = '', caseFiles = [];   // caseFiles — קבצי התיק הפתוח (מ-dropbox.js, האירוע fd:files)
   let items = [], current = null, csrf = '', embedKey = '', filter = 'todo', me = null, rows = {};
   // trace — הבקשות והשגיאות האחרונות של הדפדפן, להקשר של 🐞 (DevLoop)
   const trace = {requests: [], errors: []};
@@ -130,24 +130,23 @@
     const target = $('records'); target.replaceChildren();
     const q = $('search').value.trim();
     const all = items.map(x => ({x, s: state(x)}));
-    const tot = {bad:0, open:0, verify:0, done:0}; let noLinks = 0;
-    all.forEach(({s}) => { for (const g in tot) tot[g] += s.n[g]; noLinks += s.noLinks; });
+    const tot = {bad:0, open:0, verify:0, done:0}; let noLinks = 0, applicable = 0;
+    all.forEach(({s}) => { for (const g in tot) tot[g] += s.n[g]; noLinks += s.noLinks; applicable += s.total; });
     const doneCases = all.filter(a => a.s.complete).length;
-    const pct = items.length ? Math.round(tot.done * 100 / (items.length * F.TOTAL)) : 0;
+    const pct = applicable ? Math.round(tot.done * 100 / applicable) : 0;
     $('sumDone').textContent = doneCases;
     $('sumOf').textContent = 'מתוך ' + items.length + ' תיקים הושלמו';
     $('sumPct').textContent = items.length ? pct + '% מהבדיקות' : '';
     $('trackBar').style.inlineSize = pct + '%'; $('track').setAttribute('aria-valuenow', pct);
     const sc = $('sumChips'); sc.replaceChildren();
-    if (items.length) {
-      if (tot.bad) sc.append(node('span', 'chip bad', tot.bad + ' חסר / לא קריא'));
-      if (tot.verify) sc.append(node('span', 'chip warn', tot.verify + ' לאימות'));
-      if (tot.open) sc.append(node('span', 'chip', tot.open + ' טרם נבדקו'));
-      if (noLinks) sc.append(node('span', 'chip warn', '🔗 ' + noLinks + ' בלי קישור'));
-    }
+    if (items.length && noLinks) sc.append(node('span', 'chip warn', '🔗 ' + noLinks + ' בלי תיקיית קבצים'));
     const count = f => all.filter(a => F.matches(f, a.s)).length;
-    $('nTodo').textContent = count('todo'); $('nBad').textContent = count('bad') || ''; $('nVerify').textContent = count('verify') || '';
-    $('nUnchecked').textContent = count('unchecked') || ''; $('nDone').textContent = doneCases; $('nAll').textContent = items.length;
+    // U2: ארבעת המונים (אפיון 06) — כל מונה = מספר התיקים שבסינון שלו, ולחיצה מסננת
+    document.querySelectorAll('[data-tile]').forEach(t => {
+      t.querySelector('b').textContent = count(t.dataset.tile);
+      t.setAttribute('aria-pressed', String(t.dataset.tile === filter));
+    });
+    $('nUnchecked').textContent = count('unchecked') || ''; $('nAll').textContent = items.length;
     document.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.filter === filter)));
     const shown = all.filter(({x, s}) => F.matches(filter, s)
       && [x.name, x.date, x.team, x.origin].join(' ').includes(q));
@@ -160,8 +159,8 @@
       const li = node('li', 'card case'); li.tabIndex = 0; li.setAttribute('role', 'button');
       li.dataset.g = s.n.bad ? 'bad' : s.complete ? 'done' : 'open';
       li.dataset.state = s.state;
-      const ring = node('span', 'ring', s.n.done + '/' + F.TOTAL); ring.style.setProperty('--p', Math.round(s.n.done * 100 / F.TOTAL));
-      ring.setAttribute('aria-label', s.n.done + ' מתוך ' + F.TOTAL + ' בדיקות הושלמו');
+      const ring = node('span', 'ring', s.n.done + '/' + s.total); ring.style.setProperty('--p', s.total ? Math.round(s.n.done * 100 / s.total) : 0);
+      ring.setAttribute('aria-label', s.n.done + ' מתוך ' + s.total + ' בדיקות הושלמו');
       const body = node('div', 'body');
       const l1 = node('div', 'l1'); l1.append(node('span', '', x.name), node('span', 't', [x.date ? x.date.slice(8) + '/' + x.date.slice(5, 7) : '', x.time].filter(Boolean).join(' ')));
       const l3 = node('div', 'chips'); chipsFor(s).forEach(c => l3.append(c));
@@ -196,9 +195,11 @@
   function renderSummary() {
     current.folder_url = $('fFolder').value;
     const s = state(current), box = $('caseSummary'); box.replaceChildren();
-    const line = node('div', 'line'); line.append(node('b', '', s.n.done + ' מתוך ' + F.TOTAL), node('span', 'muted', 'בדיקות הושלמו'));
+    // U5: הפס סופר רק בדיקות שחלות על התיק — מותנית שלא חלה לא נספרת
+    const line = node('div', 'line'); line.append(node('b', '', s.n.done + ' מתוך ' + s.total), node('span', 'muted', 'בדיקות הושלמו' + (s.na ? ' · ' + s.na + ' לא חלות' : '')));
     if (current.date) line.append(node('span', 'pct', [current.date.slice(8) + '/' + current.date.slice(5, 7), current.time].filter(Boolean).join(' ')));
-    const track = node('span', 'track'); const bar = node('span'); bar.style.inlineSize = Math.round(s.n.done * 100 / F.TOTAL) + '%'; track.append(bar);
+    const track = node('span', 'track'); const bar = node('span'); bar.style.inlineSize = (s.total ? Math.round(s.n.done * 100 / s.total) : 0) + '%'; track.append(bar);
+    track.setAttribute('role', 'progressbar'); track.setAttribute('aria-label', 'התקדמות התיק'); track.setAttribute('aria-valuenow', s.total ? Math.round(s.n.done * 100 / s.total) : 0);
     const chips = node('div', 'chips'); chipsFor(s).forEach(c => chips.append(c));
     if (s.noLinks) chips.append(node('span', 'chip warn', '🔗 ' + s.noLinks + ' בלי קישור'));
     // "הבא בתור" ראשון — לפני המונה, כדי שייראה בטלפון בלי גלילה
@@ -266,7 +267,8 @@
     const keys = F.KEYS;
     keys.forEach(k => { current.checks[k] = current.checks[k] || {status:'unknown', value:'', source:'', note:''}; });
     const order = ['bad', 'verify', 'open', 'done'];
-    keys.slice().sort((a, b) => order.indexOf(groupOf(current.checks[a].status)) - order.indexOf(groupOf(current.checks[b].status)))
+    const rank = k => F.applies(current, k) ? order.indexOf(groupOf(current.checks[k].status)) : order.length;
+    keys.slice().sort((a, b) => rank(a) - rank(b))
       .forEach(key => box.append(checkRow(key)));
   }
   function checkRow(key) {
@@ -277,12 +279,20 @@
     const info = node('div', 'ck-info');
     const editBox = node('div', 'ck-edit'); editBox.hidden = true;
     const paint = () => {
-      const g = groupOf(check.status); wrap.dataset.g = g; ic.textContent = groups[g].icon;
-      st.className = 'chip ' + groups[g].chip; st.textContent = statusLabels[check.status] || check.status;
-      sub.textContent = check.value || (g === 'open' ? 'לא נבדק עדיין' : ''); sub.hidden = !sub.textContent;
+      const na = !F.applies(current, key);
+      const g = na ? 'done' : groupOf(check.status); wrap.dataset.g = g; ic.textContent = na ? '➖' : groups[g].icon;
+      wrap.classList.toggle('na', na);
+      st.className = 'chip ' + (na ? '' : groups[g].chip); st.textContent = na ? 'לא חלה' : statusLabels[check.status] || check.status;
+      sub.textContent = na ? 'לא חלה על התיק — לא נספרת' : check.value || (g === 'open' ? 'לא נבדק עדיין' : ''); sub.hidden = !sub.textContent;
       info.replaceChildren();
       if (check.note) info.append(node('p', 'ck-note', check.note));
-      if (check.source && check.source !== 'עדכון ידני') { const src = node('small', 'src', 'מסמך: '), b = node('bdi', '', check.source); b.dir = 'ltr'; src.append(b); info.append(src); }
+      // U5: המקור — שם הקובץ (בלי שם המערכת שמאחוריו), ולחיצה פותחת את המסמך בתוך האפליקציה
+      if (check.source && check.source !== 'עדכון ידני') {
+        const name = String(check.source).replace(/^Dropbox:\s*/i, ''), src = node('small', 'src', 'מקור: '), b = node('bdi', '', name); b.dir = 'auto'; src.append(b);
+        const file = caseFiles.find(f => f.name === name);
+        if (file && window.FDDropbox) { const o = node('button', 'btn ghost sm', '📄 פתיחה'); o.type = 'button'; o.addEventListener('click', () => window.FDDropbox.preview(file)); src.append(' ', o); }
+        info.append(src);
+      }
       // מי אמר שזה בסדר — מהשרת בלבד (by/via/at). שינוי שעוד לא נשמר — "לא נשמר עדיין"
       const pv = F.provenance(check), dirty = JSON.stringify([check.status, check.value, check.note]) !== saved;
       if (dirty) info.append(node('small', 'src prov', '✎ לא נשמר עדיין'));
@@ -297,7 +307,7 @@
     const seg = node('fieldset', 'seg grid'); seg.style.setProperty('--cols', 4); seg.setAttribute('aria-label', 'סטטוס ' + labels[key]);
     for (const [value, t] of Object.entries(statusLabels)) {
       const l = node('label'), r = node('input'); r.type = 'radio'; r.name = 'st_' + key; r.value = value; r.checked = check.status === value;
-      r.addEventListener('change', () => { check.status = value; paint(); renderSummary(); });
+      r.addEventListener('change', () => { check.status = value; paint(); renderSummary(); Object.values(rows).forEach(x => x.paint && x.paint()); });
       l.append(r, node('span', '', t)); seg.append(l);
     }
     const f = node('div', 'fields two');
@@ -309,7 +319,7 @@
       if (!editBox.hidden) editBox.querySelectorAll('textarea.grow').forEach(grow);
     };
     head.addEventListener('click', () => toggle());
-    rows[key] = {open: () => { toggle(true); wrap.scrollIntoView({block:'start', behavior:'smooth'}); const r = seg.querySelector('input:checked') || seg.querySelector('input'); if (r) r.focus({preventScroll:true}); }};
+    rows[key] = {paint: () => paint(), open: () => { toggle(true); wrap.scrollIntoView({block:'start', behavior:'smooth'}); const r = seg.querySelector('input:checked') || seg.querySelector('input'); if (r) r.focus({preventScroll:true}); }};
     paint(); wrap.append(head, info, editBox); return wrap;
   }
   function renderPayments() {
@@ -332,13 +342,13 @@
     const folder = $('fFolder').value, linked = current.documents.filter(d => d.url).length, missing = current.documents.length - linked;
     const st = $('docsState'); st.replaceChildren();
     if (!folder || missing) {
-      st.append(node('p', 'warn-box', '🔗 ' + [!folder ? 'אין קישור לתיקייה ב-Dropbox' : '',
+      st.append(node('p', 'warn-box', '🔗 ' + [!folder ? 'אין קישור לתיקיית הקבצים' : '',
         missing ? missing + ' מתוך ' + current.documents.length + ' מסמכים בלי קישור, ולכן אי אפשר לפתוח אותם מכאן' : ''].filter(Boolean).join(' · ')
         + '. קישור שיתוף מוסיפים ב-✏️ של המסמך, או ב"פרטי הלוויה" לתיקייה.'));
     }
     if (folder) {
       const a = node('a', 'use-row'); a.href = folder; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      const tx = node('span', 'use-tx'); tx.append(node('b', '', 'התיקייה ב-Dropbox'), node('small', '', 'כל המסמכים של התיק'));
+      const tx = node('span', 'use-tx'); tx.append(node('b', '', 'תיקיית הקבצים'), node('small', '', 'כל המסמכים של התיק'));
       a.append(node('span', 'use-ic', '📁'), tx, node('span', 'use-go', '↗'));
       box.append(a);
     }
@@ -350,12 +360,12 @@
       row.append(node('span', 'use-ic', /\.pdf$/i.test(d.label || '') ? '📄' : '🖼️'), tx);
       if (d.url) {
         row.append(iconBtn('👁️', 'תצוגה', () => previewFile(d.url)));
-        const a = node('a', 'icon-btn', '↗'); a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.setAttribute('aria-label', 'פתיחה ב-Dropbox'); row.append(a);
+        const a = node('a', 'icon-btn', '↗'); a.href = d.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.setAttribute('aria-label', 'פתיחה במקור'); row.append(a);
       }
       const ed = node('div', 'ck-edit'); ed.hidden = true;
       const f = node('div', 'fields two');
       f.append(field('תיאור', d.label || '', v => d.label = v, {wide:true}), field('סוג', d.kind || '', v => d.kind = v, {ltr:true}),
-        field('קישור Dropbox (HTTPS)', d.url || '', v => d.url = v, {ltr:true, inputmode:'url'}));
+        field('קישור לקובץ', d.url || '', v => d.url = v, {ltr:true, inputmode:'url'}));
       const del = node('button', 'btn danger sm', '🗑️ הסרת המסמך'); del.type = 'button';
       del.addEventListener('click', () => { current.documents.splice(i, 1); renderDocuments(); });
       ed.append(f, del);
@@ -365,30 +375,31 @@
     if (!current.documents.length && !folder) box.append(node('p', 'empty', 'אין מסמכים בתיק.'));
   }
   async function previewFile(url) {
-    if (!embedKey) { toast('תצוגה מוטמעת דורשת App Key של Dropbox. בינתיים — ↗ פתיחה ב-Dropbox.'); return; }
+    if (!embedKey) { toast('התצוגה בתוך האפליקציה עוד לא הוגדרה למסמך הזה. בינתיים — ↗ פתיחה במקור.'); return; }
     const p = new URL(url);
-    if (p.protocol !== 'https:' || !['www.dropbox.com','dropbox.com'].includes(p.hostname)) { toast('מותר להציג רק קישורי Dropbox מאומתים.', true); return; }
+    if (p.protocol !== 'https:' || !['www.dropbox.com','dropbox.com'].includes(p.hostname)) { toast('מותר להציג רק קישורים מאומתים מאחסון הקבצים.', true); return; }
     const box = $('preview'); box.replaceChildren(); $('previewDialog').showModal();
     try {
       if (!window.Dropbox) {
         await new Promise((resolve, reject) => {
           const s = document.createElement('script');
           s.src = 'https://www.dropbox.com/static/api/2/dropins.js'; s.id = 'dropboxjs'; s.dataset.appKey = embedKey;
-          s.onload = resolve; s.onerror = () => reject(new Error('לא ניתן לטעון את רכיב Dropbox')); document.head.append(s);
+          s.onload = resolve; s.onerror = () => reject(new Error('לא ניתן לטעון את רכיב התצוגה')); document.head.append(s);
         });
       }
       if (!window.Dropbox || !window.Dropbox.isBrowserSupported()) throw new Error('התצוגה המוטמעת אינה נתמכת בדפדפן זה');
       window.Dropbox.embed({link:url, file:{zoom:'best'}, folder:{view:'list'}}, box);
     } catch(e) {
       box.append(node('p', 'error', e.message));
-      const a = node('a', 'btn ghost', '↗ פתיחה ב-Dropbox'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; box.append(a);
+      const a = node('a', 'btn ghost', '↗ פתיחה במקור'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; box.append(a);
     }
   }
 
   document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
-  document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
-    filter = b.dataset.filter; try { sessionStorage.setItem('fd_filter', filter); } catch (e) {} renderList(); }));
-  $('editDialog').addEventListener('close', () => { current = null; rows = {}; });
+  document.querySelectorAll('[data-filter], [data-tile]').forEach(b => b.addEventListener('click', () => {
+    filter = b.dataset.filter || b.dataset.tile; try { sessionStorage.setItem('fd_filter', filter); } catch (e) {} renderList(); }));
+  $('editDialog').addEventListener('close', () => { current = null; rows = {}; caseFiles = []; });
+  document.addEventListener('fd:files', e => { if (current && e.detail && e.detail.id === current.id) { caseFiles = e.detail.files || []; renderChecks(); } });
   // שינוי שנשמר מחוץ לטופס (✓ על הצעה של העוזר, ai.js): הרשימה נטענת מחדש, ותיק פתוח מתעדכן — כדי ש"שמירה" לא תדרוס את השינוי
   // טופס עם שינויים שלא נשמרו לא מתאפס: הודעה בלבד (ביקורת 06 🟡6)
   document.addEventListener('fd:changed', async e => {
@@ -403,7 +414,7 @@
   document.querySelectorAll('[data-pane]').forEach(b => b.addEventListener('click', () => showPane(b.dataset.pane)));
   $('retryBtn').addEventListener('click', () => begin());
   $('tokenBtn').addEventListener('click', async () => {
-    if (!confirm('ליצור אסימון API חדש? האסימון הקיים יבוטל, ומערכות שמשתמשות בו יפסיקו לעבוד.')) return;
+    if (!confirm('ליצור אסימון חיבור חדש? האסימון הקיים יבוטל, ומערכות שמשתמשות בו יפסיקו לעבוד.')) return;
     try { const res = await request('api_token', 'POST', {}); $('tokenValue').value = res.token; $('tokenDialog').showModal(); $('tokenValue').select(); }
     catch(e) { toast(e.message, true); }
   });
@@ -416,6 +427,7 @@
   $('addDocument').addEventListener('click', () => { current.documents.push({label:'', kind:'', url:''}); renderDocuments();
     const eds = $('documents').querySelectorAll('.ck-edit'); if (eds.length) eds[eds.length - 1].hidden = false; });
   $('fFolder').addEventListener('change', () => { renderDocuments(); renderSummary(); });
+  $('fGps').addEventListener('click', () => { if (window.FDLocation) window.FDLocation($('fGrave'), $('fGps')); });
   /** התיק כפי שהוא בטופס עכשיו (מה ש"שמירה" תשלח). */
   function formRecord() {
     const record = JSON.parse(JSON.stringify(current));

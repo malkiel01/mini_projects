@@ -121,7 +121,7 @@ ok(fieldTakenAt((time() - 30 * 86400) * 1000) === null && fieldTakenAt('x') === 
 // ---- W7: Dropbox מנותק → 409 בהודעה ברורה, ואותו מזהה מצליח כשחוזר
 $down = fn() => throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
 [$st, $b] = fieldUpload($pdo, 1, $t0['id'], $uid('d'), 'grave_photo', $tmp, 'x.jpg', $actor, $down, $now);
-ok($st === 409 && $b['error'] === 'Dropbox של הארגון לא מחובר — פנה למנהל' && $b['code'] === 'dropbox_not_connected', 'W7: הודעה ברורה');
+ok($st === 409 && $b['error'] === 'אחסון הקבצים של הארגון לא מחובר — פנה למנהל' && $b['code'] === 'dropbox_not_connected', 'W7: הודעה ברורה');
 ok($pdo->query("SELECT status FROM field_uploads WHERE upload_id='" . $uid('d') . "'")->fetchColumn() === 'failed', 'W7: נרשם כנכשל (לא שקט)');
 [$st] = fieldUpload($pdo, 1, $t0['id'], $uid('d'), 'grave_photo', $tmp, 'x.jpg', $actor, $fake, $now);
 ok($st === 200, 'W7: ניסיון חוזר עם אותו מזהה — מצליח');

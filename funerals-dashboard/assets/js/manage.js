@@ -164,11 +164,14 @@
       const have = new Set(d ? d.doc_kinds : []);
       Object.entries(opts).forEach(([k, t]) => { const c = node('input'); c.type = 'checkbox'; c.value = k; c.checked = have.has(k);
         const l = node('label', 'ai-check'); l.append(c, node('span', '', t)); kinds.append(l); });
-      const sync = () => { vkL.hidden = type.value !== 'value'; kinds.hidden = type.value !== 'document' || !Object.keys(opts).length; };
+      // ביקורת 12 ⚪6: בלי סוגי מסמכים (הבינה לא נטענה בשרת) — הודעה במקום בורר ריק
+      const noKinds = node('p', 'hint', 'רשימת סוגי המסמכים לא זמינה כרגע, ולכן אי אפשר לבחור מסמכים שעונים על הבדיקה. אפשר לשמור, ולבחור אחר כך.');
+      const sync = () => { vkL.hidden = type.value !== 'value'; kinds.hidden = type.value !== 'document' || !Object.keys(opts).length;
+        noKinds.hidden = type.value !== 'document' || !!Object.keys(opts).length; };
       type.addEventListener('change', sync); sync();
       const f = node('div', 'fields two');
       f.append(lab('שם הבדיקה', name, true), lab('סוג', type), vkL, lab('תפקיד אחראי', role), lab('מתי נדרשת', cond));
-      const parts = [f, kinds, cl];
+      const parts = [f, kinds, noKinds, cl];
       if (d && editable) {
         const rr = node('div', 'row-btns');
         const rm = btn('btn ghost danger', '🗑️ הסרה');

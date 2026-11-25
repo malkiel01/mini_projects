@@ -112,7 +112,7 @@
     paintCount();
     if (!status.has_key) { paintNoKey(); return; }
     $('aiText').disabled = $('aiSend').disabled = false;
-    if (!status.tools_ready) note('העוזר עונה, אבל עוד לא מחובר לתיקים (ממתין לחיבור ה-API).', 'muted');
+    if (!status.tools_ready) note('העוזר עונה, אבל עוד לא מחובר לתיקים (ממתין לחיבור).', 'muted');
     try {
       const r = await api('ai_thread', null, ctxCase ? {case: ctxCase} : {});
       if (r.thread) { thread = r.thread.id; r.thread.messages.forEach(m => bubble(m.role, m.text)); (r.thread.proposals || []).forEach(card); }
@@ -146,11 +146,11 @@
 
   /* ===== 💬 במסך הראשי ובתיק ===== */
   const mainBtn = node('button', 'icon-btn', '💬'); mainBtn.type = 'button'; mainBtn.id = 'aiBtn';
-  mainBtn.setAttribute('aria-label', 'עוזר AI — החודש'); mainBtn.title = 'עוזר AI';
+  mainBtn.setAttribute('aria-label', 'עוזר הבינה — החודש'); mainBtn.title = 'עוזר הבינה';
   const top = document.querySelector('header.top'); if (top) top.insertBefore(mainBtn, $('settingsBtn'));
   mainBtn.addEventListener('click', () => open(''));
   const caseBtn = node('button', 'icon-btn', '💬'); caseBtn.type = 'button'; caseBtn.id = 'aiCaseBtn'; caseBtn.hidden = true;
-  caseBtn.setAttribute('aria-label', 'עוזר AI — התיק הזה'); caseBtn.title = 'עוזר AI לתיק';
+  caseBtn.setAttribute('aria-label', 'עוזר הבינה — התיק הזה'); caseBtn.title = 'עוזר הבינה לתיק';
   const head = document.querySelector('#editDialog .sheet-head'); if (head) head.insertBefore(caseBtn, head.querySelector('[type="submit"]'));
   caseBtn.addEventListener('click', () => { if (caseId) open(caseId); });
   document.addEventListener('fd:case', e => { caseId = (e.detail && e.detail.id) || ''; caseBtn.hidden = !caseId; });
@@ -219,9 +219,11 @@
     fillModels(); prov.addEventListener('change', fillModels);
     const lab = (t, el, wide) => { const l = node('label', 'f' + (wide ? ' wide' : '')); l.append(node('span', '', t), el); return l; };
     f.append(lab('ספק', prov), lab('מודל', model));
-    g.append(f, node('p', 'hint', 'מומלץ: Claude Opus 5.5. מודל זול יותר — תשובות מהירות, פחות מדויקות.'));
+    // U9: שמות הספק והמודל הם שמות מוצרים — מוצגים כשם (כמו שם קובץ), dir=auto
+    prov.dir = 'auto'; model.dir = 'auto';
+    g.append(f, node('p', 'hint', 'מומלץ: המודל הראשון ברשימה. מודל זול יותר — תשובות מהירות, פחות מדויקות.'));
 
-    g.append(node('h3', '', 'מפתח API'));
+    g.append(node('h3', '', 'מפתח גישה לבינה'));
     const kh = node('p', 'hint');
     if (s.has_key) {
       const tail = node('bdi', '', '…' + s.key_hint); tail.dir = 'ltr';
@@ -229,8 +231,8 @@
       if (s.key_source === 'owner') kh.append(' · משתמשים במפתח ברירת המחדל של הבעלים. מפתח של הארגון שיוגדר כאן — יגבר עליו.');
     } else kh.textContent = 'לא הוגדר מפתח. המפתח נשמר מוצפן, ולא מוצג שוב.';
     g.append(kh);
-    const key = node('input'); key.type = 'password'; key.autocomplete = 'off'; key.dir = 'ltr'; key.placeholder = s.has_key ? 'מפתח חדש (ריק = להשאיר)' : 'sk-ant-…';
-    key.setAttribute('aria-label', 'מפתח API');
+    const key = node('input'); key.type = 'password'; key.autocomplete = 'off'; key.dir = 'ltr'; key.placeholder = s.has_key ? 'מפתח חדש (ריק = להשאיר)' : 'מפתח הגישה';
+    key.setAttribute('aria-label', 'מפתח הגישה לבינה');
     const kf = node('div', 'fields'); kf.append(lab('מפתח', key, true)); g.append(kf);
     const test = node('button', 'btn ghost sm', 'בדיקת מפתח'); test.type = 'button'; test.disabled = !s.has_key;
     const del = node('button', 'btn ghost sm danger', 'הסרת המפתח'); del.type = 'button'; del.hidden = !s.has_key;
@@ -253,7 +255,7 @@
     const auto = node('input'); auto.type = 'checkbox'; auto.checked = s.auto_approve;
     const al = node('label', 'ai-check'); al.append(auto, node('span', '', 'אישור אוטומטי — לשמור הצעות בלי ✓ (עדיין "לאימות", לא "אומת"). הצעה שמבוססת על קובץ — תמיד בכרטיס.'));
     g.append(al);
-    if (!s.tools_ready) g.append(node('p', 'hint', 'העוזר עוד לא מחובר לתיקים — ממתין לחיבור ה-API החיצוני.'));
+    if (!s.tools_ready) g.append(node('p', 'hint', 'העוזר עוד לא מחובר לתיקים — ממתין לחיבור החיצוני.'));
     const save = node('button', 'btn primary', 'שמירה'); save.type = 'button';
     const sr = node('div', 'row-btns'); sr.append(save); g.append(sr);
     // פרוסה 12: מפתח ברירת המחדל של הבעלים (א11) — לכל ארגון שלא הגדיר מפתח משלו. רק למפתח (owner_key_hint מגיע רק אליו).
@@ -263,7 +265,7 @@
       const oh = node('p', 'hint');
       if (s.owner_key_hint) { const t = node('bdi', '', '…' + s.owner_key_hint); t.dir = 'ltr'; oh.append('מוגדר, מסתיים ב-', t, '. ארגון בלי מפתח משלו משתמש בו.'); }
       else oh.textContent = 'לא הוגדר. ארגון בלי מפתח משלו — העוזר והזיהוי לא יעבדו בו.';
-      const ok = node('input'); ok.type = 'password'; ok.autocomplete = 'off'; ok.dir = 'ltr'; ok.placeholder = 'sk-ant-…'; ok.setAttribute('aria-label', 'מפתח ברירת המחדל');
+      const ok = node('input'); ok.type = 'password'; ok.autocomplete = 'off'; ok.dir = 'ltr'; ok.placeholder = 'מפתח הגישה'; ok.setAttribute('aria-label', 'מפתח ברירת המחדל');
       const of = node('div', 'fields'); of.append(lab('מפתח חדש', ok, true));
       const osave = node('button', 'btn ghost', 'שמירת המפתח'); osave.type = 'button';
       const odel = node('button', 'btn ghost sm danger', 'הסרה'); odel.type = 'button'; odel.hidden = !s.owner_key_hint;
@@ -273,7 +275,7 @@
       osave.addEventListener('click', async () => {
         if (!ok.value.trim()) { oout.textContent = 'נדרש מפתח'; return; }
         osave.disabled = true;
-        try { await api('ai_owner_key_save', {key: ok.value.trim()}); ok.value = ''; await paintSettings(); }
+        try { const r = await api('ai_owner_key_save', {key: ok.value.trim()}); ok.value = ''; await paintSettings(); window.FD.toast(r.message || 'המפתח נשמר', r.check === 'no_credit'); }
         catch (e) { osave.disabled = false; oout.textContent = e.message; }
       });
       odel.addEventListener('click', async () => {
