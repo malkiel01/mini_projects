@@ -19,7 +19,7 @@
     }
   ],
   "control": {
-    "session": "session_018g4NYEMXfmbD3B4CjhKViH",
+    "session": "session_018g4NYFDHbeZpw9fbz68i9m",
     "branch": "claude/funerals-dashboard-control",
     "clock": "trig_013Vvw9Rw16vnti3CnuP12vf"
   },
@@ -100,6 +100,11 @@
     {
       "session": "session_018g4NYEmc1swmXwJd11ZcQW",
       "role": "בקרה 5",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEMXfmbD3B4CjhKViH",
+      "role": "בקרה 6",
       "state": "רדום"
     }
   ]
