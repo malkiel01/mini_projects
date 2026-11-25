@@ -34,13 +34,14 @@
   <header class="top">
     <div class="titles"><h1>🕯️ ניהול לוויות חברה קדישא</h1>
       <div class="sub"><span id="orgName"></span><select id="orgPick" class="org-pick" aria-label="בחירת ארגון" hidden></select> · <span id="topSub"></span></div></div>
-    <button class="icon-btn" id="importBtn" aria-label="ייבוא ממצאים (JSON)" title="ייבוא ממצאים" hidden>📥</button>
-    <button class="icon-btn" id="exportBtn" aria-label="ייצוא החודש (JSON)" title="ייצוא החודש" hidden>📤</button>
-    <button class="icon-btn" id="settingsBtn" aria-label="הגדרות" title="הגדרות" hidden>⚙️</button>
-    <button class="icon-btn" id="devBtn" aria-label="מסך מפתח" title="מסך מפתח" hidden>🛠️</button>
-    <a class="icon-btn" href="connect.html" id="gptBtn" aria-label="חיבור ל-ChatGPT" title="חיבור ל-ChatGPT">🤖</a>
+    <button class="icon-btn" id="importBtn" data-more aria-label="ייבוא ממצאים (JSON)" title="ייבוא ממצאים" hidden>📥</button>
+    <button class="icon-btn" id="exportBtn" data-more aria-label="ייצוא החודש (JSON)" title="ייצוא החודש" hidden>📤</button>
+    <button class="icon-btn" id="settingsBtn" data-more aria-label="הגדרות" title="הגדרות" hidden>⚙️</button>
+    <button class="icon-btn" id="devBtn" data-more aria-label="מסך מפתח" title="מסך מפתח" hidden>🛠️</button>
+    <a class="icon-btn" href="connect.html" id="gptBtn" data-more aria-label="חיבור ל-ChatGPT" title="חיבור ל-ChatGPT">🤖</a>
+    <button class="icon-btn" id="moreBtn" aria-label="עוד פעולות" title="עוד פעולות" aria-haspopup="dialog">⋯</button>
     <button class="icon-btn" id="userBtn" aria-label="תפריט משתמש" title="תפריט משתמש">👤</button>
-    <input id="importFile" type="file" accept=".json,application/json" hidden>
+    <input id="importFile" type="file" accept=".json,application/json,text/plain" hidden>
   </header>
 
   <main id="main" tabindex="-1">
@@ -128,6 +129,36 @@
         </div>
       </section>
       </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="moreDialog" aria-labelledby="moreTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="moreTitle">עוד פעולות</h2>
+    </header>
+    <div class="sheet-body"><div class="list" id="moreList"></div></div>
+  </form>
+</dialog>
+
+<dialog id="importDialog" aria-labelledby="importTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="importTitle">📥 ייבוא ממצאים</h2>
+      <button type="button" class="btn primary" id="importRun">ייבוא</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">להדביק את ה-JSON שה-GPT החזיר (גם עם הטקסט שמסביב), או לבחור קובץ. תיק קיים מתעדכן רק בשדות שבתשובה.</p>
+      <textarea id="importText" rows="8" dir="ltr" spellcheck="false" autocomplete="off" aria-label="ה-JSON לייבוא" placeholder='{"schema_version":1,"month":"…","records":[…]}'></textarea>
+      <button type="button" class="btn" id="importPick">📂 בחירת קובץ</button>
+      <section id="similarBox" aria-labelledby="similarTitle" hidden>
+        <h3 class="sec-title" id="similarTitle">תיקים דומים</h3>
+        <p class="hint">לרשומות האלה אין מזהה, ויש תיק קיים דומה להן. לבחור לכל אחת, ואז שוב "ייבוא".</p>
+        <div class="list" id="similarList"></div>
+      </section>
     </div>
   </form>
 </dialog>

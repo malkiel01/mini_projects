@@ -96,5 +96,47 @@ ok('תוכנית נקראת מהריפו דרך השרת', $cs === 'ok' && count
 ok('תוכנית: בלי סוד → no_token', lp_fetch_curriculum(null)[0] === 'no_token');
 ok('תוכנית: 404 → unavailable', lp_fetch_curriculum('x', fn($u, $t) => [404, false])[0] === 'unavailable');
 
+
+// ---------- מדדים, קצב ותחזית (lib/metrics.php) ----------
+require_once __DIR__ . '/../lib/metrics.php';
+$t0 = new DateTimeImmutable('2026-11-24');
+$mi = [
+    ['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'note' => '', 'moduleId' => '03.02'],
+    ['date' => '2026-11-22', 'topic' => 'b', 'status' => 'verified', 'note' => '', 'moduleId' => '01.01'],
+    ['date' => '2026-11-15', 'topic' => 'c', 'status' => 'done', 'note' => ''],
+    ['date' => '2026-10-20', 'topic' => 'd', 'status' => 'done', 'note' => ''],
+];
+$pc = lp_pace($mi, $t0);
+ok('קצב: ימים פעילים = 3 (תאריכים שונים)', $pc['activeDays'] === 3);
+ok('קצב: 7 ימים אחרונים = 2 תרגולים', $pc['windows']['d7']['items'] === 2);
+ok('קצב: 30 ימים אחרונים = 3 תרגולים', $pc['windows']['d30']['items'] === 3);
+ok('קצב: ימים מאז התרגול האחרון = 2', $pc['daysSinceLast'] === 2);
+ok('קצב: בלי רשומות → null ו-0', lp_pace([], $t0)['lastDate'] === null && lp_pace([], $t0)['activeDays'] === 0);
+$wk = lp_weekly($mi, $t0, 8);
+ok('שבועות: 8 נקודות, השבוע האחרון = 2', count($wk) === 8 && $wk[7]['items'] === 2);
+ok('רמת ביטחון נמוכה בלי נתונים מספיקים', lp_confidence($pc, 2) === 'נמוכה');
+ok('רמת ביטחון בינונית רק עם 4 שבועות ו-10 מודולים', lp_confidence(['spanWeeks' => 5], 10) === 'בינונית');
+$sum = lp_summary(lp_read_curriculum(['tracks' => [['id' => '01', 'title' => 'x']], 'modules' => [['id' => '01.01', 'trackId' => '01', 'title' => 'a'], ['id' => '01.02', 'trackId' => '01', 'title' => 'b']]]), $mi, $t0);
+$met = lp_metrics($sum, $mi, $t0);
+ok('מדדים: נותרו מודולים = סה"כ פחות נלמדו', $met['measured']['modulesRemaining'] === 1);
+ok('מדדים: אחוז נלמד נכון', $met['measured']['percentPracticed'] === 50.0);
+ok('מדדים: נתוני זמן מסומנים כחסרים', str_contains($met['missing']['studyTime'], 'אין נתוני זמן'));
+ok('תחזית: שלושה תרחישים בהנחות המנהל', count($met['forecastBasis']['scenarios']) === 3 && $met['forecastBasis']['scenarios']['likely']['totalHours'] === 480);
+
+
+// רגרסיה: מסלולים 10 ו-11 (מפתחות מספריים ב-PHP) חייבים להופיע בסיכום
+$curTen = lp_read_curriculum(['tracks' => [['id' => '09', 'title' => 'a'], ['id' => '10', 'title' => 'b'], ['id' => '11', 'title' => 'c']],
+    'modules' => [['id' => '09.01', 'trackId' => '09', 'title' => 'x'], ['id' => '10.01', 'trackId' => '10', 'title' => 'y'], ['id' => '11.01', 'trackId' => '11', 'title' => 'z']]]);
+$sumTen = lp_summary($curTen, [], $t0);
+ok('מסלולים 10 ו-11 מופיעים בסיכום', count($sumTen['tracks']) === 3 && $sumTen['tracks'][1]['id'] === '10' && $sumTen['tracks'][2]['id'] === '11');
+ok('סה"כ מודולים כולל מסלולים 10 ו-11', $sumTen['overall']['total'] === 3);
+
+
+// רגרסיה: אזור זמן ישראלי — תאריכי רשומות חייבים להתפרש באותו אזור כמו "היום" (לא סטייה של יום)
+$tIL = new DateTimeImmutable('2026-11-24', new DateTimeZone('Asia/Jerusalem'));
+$ilItems = [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'note' => ''], ['date' => '2026-11-22', 'topic' => 'b', 'status' => 'done', 'note' => '']];
+ok('אזור ישראל: התרגול האחרון לפני 2 ימים (לא 1)', lp_pace($ilItems, $tIL)['daysSinceLast'] === 2);
+ok('אזור ישראל: ימים פעילים = 1', lp_pace($ilItems, $tIL)['activeDays'] === 1);
+
 echo ($fails === 0 ? "✓ " : "✗ ") . ($n - $fails) . " עברו, $fails נכשלו (מתוך $n)\n";
 exit($fails === 0 ? 0 : 1);

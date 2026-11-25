@@ -12,7 +12,7 @@ fail(){ echo "FAIL (05): $*"; [ -f "$tmp/out" ] && head -c 600 "$tmp/out" && ech
 for f in ext.php ext-lib.php tokens.php tools/build-ext.php tests/ext-fixture.php tests/openapi-check.php tests/ext-ai.php tests/ext-ai2.php tests/ext-dbx.php; do php -l "$D/$f" >/dev/null || fail "php -l $f"; done
 php -r '$h=file_get_contents($argv[1]); if (!preg_match("~<script src=\"assets/js/connect.js\"~", $h)) exit(1);' $D/connect.html || fail "connect.html בלי connect.js"
 node --check $D/assets/js/connect.js
-php $D/tools/build-ext.php --check || fail "openapi.json / gpt-prompt.md לא נוצרו מהקוד"   # E8 (מקור אחד)
+php $D/tools/build-ext.php --check || fail "openapi.json / gpt-prompt.md / gpt-project-prompt.md לא נוצרו מהקוד"   # E8 (מקור אחד)
 php $D/tests/openapi-check.php || fail "E8 openapi.json"
 php -r '$a=json_decode(file_get_contents($argv[1]),true); foreach(["ingest.php","ext.php","openapi.json"] as $p) if(!in_array($p,$a["public"]??[],true)) exit(1); if (in_array("tokens.php",$a["public"],true)||in_array("connect.html",$a["public"],true)) exit(1);' $D/app.json || fail "E10 public"
 php platform/check-apps.php >/dev/null || fail "E10 check-apps"

@@ -69,6 +69,8 @@ function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): 
     $tracks = [];
     $totalAll = 0; $doneAll = 0; $verAll = 0;
     foreach ($curriculum['tracks'] as $tid => $title) {
+        // מפתחות כמו "10" הופכים למספרים שלמים ב-PHP. ההשוואה למזהה מודול דורשת מחרוזת.
+        $tid = (string) $tid;
         $mods = array_filter($curriculum['modules'], fn($m) => $m['trackId'] === $tid);
         $total = count($mods);
         if ($total === 0) continue;
@@ -94,7 +96,7 @@ function lp_summary(array $curriculum, array $items, DateTimeImmutable $today): 
 
     $pace = null;
     if ($first !== null && $first !== '') {
-        $start = DateTimeImmutable::createFromFormat('Y-m-d', $first);
+        $start = DateTimeImmutable::createFromFormat('!Y-m-d', $first, $today->getTimezone());
         if ($start !== false) {
             $days = max(0, (int) $start->diff($today)->format('%a'));
             $weeks = max(1, (int) ceil(($days + 1) / 7));
