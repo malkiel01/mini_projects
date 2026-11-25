@@ -83,9 +83,18 @@ function aiSettingsSave(PDO $pdo, int $orgId, array $s): void {
         ->execute([$orgId, $s['provider'], $s['model'], $s['monthly_cap'], $s['auto_approve'] ? 1 : 0, $s['key_hint'], $s['key_set_at'],
             $s['key_check'], $s['key_check_at'], gmdate('c'), $s['token_cap']]);
 }
+/** המפתח האפקטיבי (א11): של הארגון אם הגדיר, אחרת ברירת המחדל של הבעלים (org 0). */
 function aiKey(int $orgId): ?string {
     $k = secretGet('ai_key', $orgId);
+    if ($k !== null && $k !== '') return $k;
+    $k = $orgId === 0 ? null : secretGet('ai_key', 0);
     return $k === null || $k === '' ? null : $k;
+}
+/** מאיפה המפתח: org (של הארגון) / owner (ברירת המחדל של הבעלים) / null. */
+function aiKeySource(int $orgId): ?string {
+    $k = secretGet('ai_key', $orgId);
+    if ($k !== null && $k !== '') return 'org';
+    return $orgId !== 0 && aiKey($orgId) !== null ? 'owner' : null;
 }
 /** "מוגדר, מסתיים ב-…" — 4 התווים האחרונים בלבד. */
 function aiKeyHint(string $key): string { return mb_substr($key, -4); }
@@ -98,7 +107,7 @@ function aiPublicSettings(PDO $pdo, int $orgId): array {
         'models' => array_map(fn($m, $n) => ['id' => $m, 'name' => $n], array_keys($p['models']), $p['models'])];
     return ['provider' => $s['provider'], 'model' => $s['model'], 'monthly_cap' => $s['monthly_cap'], 'auto_approve' => $s['auto_approve'],
         'token_cap' => $s['token_cap'], 'tokens' => aiTokensUsed($pdo, $orgId),
-        'has_key' => aiKey($orgId) !== null, 'key_hint' => $s['key_hint'], 'key_set_at' => $s['key_set_at'],
+        'has_key' => aiKey($orgId) !== null, 'key_source' => aiKeySource($orgId), 'key_hint' => $s['key_hint'], 'key_set_at' => $s['key_set_at'],
         'key_check' => $s['key_check'], 'key_check_at' => $s['key_check_at'],
         'used' => aiUsed($pdo, $orgId), 'month' => gmdate('Y-m'), 'providers' => $providers, 'tools_ready' => aiToolsReady()];
 }

@@ -50,7 +50,10 @@ echo $out;
 if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
 elseif (function_exists('litespeed_finish_request')) litespeed_finish_request();
 else flush();
-set_time_limit(20 + 10 * count($orgs));
+set_time_limit(20 + 15 * count($orgs));
+require_once __DIR__ . '/link/lib.php';
 foreach ($orgs as $o) {
     try { dbxSync($pdo, $o, 8.0); } catch (Throwable $e) { dbxOrgError($pdo, $o, 'webhook_sync'); }
+    // פרוסה 10: זיהוי לפי מבנה, שם וכללים — בלי קריאת תוכן בספק (זו במשימה המתוזמנת), כדי לסיים מהר
+    try { linkRun($pdo, $o, ['read' => false, 'budget' => 5.0]); } catch (Throwable $e) { error_log('funerals-dashboard link (webhook): ' . $e->getMessage()); }
 }

@@ -73,4 +73,19 @@ const rec = checks => ({id: 'fd_x_00000000', name: 'x', checks, documents: [], f
     assert.ok(legacy > 0, 'B7: יש בדיקות "מייבוא ישן"');
   }
 }
-console.log('PASS form.test.js: B4 (הבא בתור, התיק הושלם), B5 (טרם נבדק ≠ הושלם, סינונים), מקור/מייבוא ישן, B7 (22 תיקים ישנים)');
+// פרוסה 11: הבדיקות של הארגון מההגדרות (me.checks) — בדיקה חדשה נספרת, שם של בדיקה שהוסרה נשאר להיסטוריה
+{
+  const before = F.KEYS.slice();
+  F.setChecks([{key: 'license_document', name: 'רישיון קבורה'}, {key: 'c_newcheck', name: 'בדיקה חדשה'}]);
+  assert.deepStrictEqual(F.KEYS, ['license_document', 'c_newcheck'], '11: KEYS מההגדרות');
+  assert.strictEqual(F.TOTAL, 2, '11: TOTAL מתעדכן');
+  assert.strictEqual(F.labels.c_newcheck, 'בדיקה חדשה', '11: שם הבדיקה החדשה');
+  assert.strictEqual(F.labels.hall_service, 'שירות בית ההספדים', '11: שם של בדיקה שהוסרה נשאר');
+  const s = F.caseState(rec({license_document: {status: 'verified'}}));
+  assert.strictEqual(s.complete, false, '11: בדיקה חדשה בלי ערך — התיק לא הושלם');
+  assert.strictEqual(F.nextUp(rec({license_document: {status: 'verified'}})), 'c_newcheck', '11: הבא בתור — החדשה');
+  F.setChecks([]);   // רשימה ריקה לא מוחקת
+  assert.strictEqual(F.TOTAL, 2);
+  F.setChecks(before.map(key => ({key, name: F.labels[key]})));
+}
+console.log('PASS form.test.js: B4 (הבא בתור, התיק הושלם), B5 (טרם נבדק ≠ הושלם, סינונים), מקור/מייבוא ישן, B7 (22 תיקים ישנים), 11 (setChecks)');
