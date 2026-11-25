@@ -32,7 +32,7 @@
 /* DevLoop 1: 🐞 בכותרת, אימות, צעדי בדיקה, ראיות, צילומים בשיח, הקשר טכני */
 .dev-bug { position: relative; font-size: 1.15rem; }
 .dev-bug-n { position: absolute; top: 2px; inset-inline-end: 0; min-inline-size: 18px; block-size: 18px; padding: 0 4px; border-radius: 9px;
-    background: var(--danger); color: var(--danger-ink); font-size: .68rem; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+    background: var(--danger); color: #fff; font-size: .68rem; font-weight: 700; display: grid; place-items: center; line-height: 1; }
 .dt-item.you { border-color: var(--danger); }
 .dt-verify { padding: var(--s2) var(--s3); border-radius: var(--r); background: color-mix(in srgb, var(--star) 14%, var(--surface)); display: grid; gap: 6px; }
 .dt-verify textarea { inline-size: 100%; }
