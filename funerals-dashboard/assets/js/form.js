@@ -12,8 +12,14 @@
     grave:'מיקום הקבר', notes:'הערות', folder_url:'תיקיית Dropbox', documents:'מסמכים', payments:'תשלומים', checks:'בדיקות',
     status:'סטטוס', value:'ערך', note:'הערה', source:'מקור', manual_fields:'שדות ידניים', org_id:'ארגון'};
   const actionLabels = {save:'שמירה', import:'ייבוא', api_token:'אסימון API', user_linked:'קישור משתמש', user_created:'משתמש חדש'};
+  // פרוסה 11: הבדיקות מגיעות מההגדרות של הארגון (me.checks) — setChecks() מחליף את KEYS במקום (אותו מערך).
+  // labels רק מצטבר (שם של בדיקה שהוסרה נשאר להיסטוריה).
   const KEYS = Object.keys(labels);
-  const TOTAL = KEYS.length;
+  function setChecks(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    KEYS.length = 0;
+    for (const c of list) { if (c && c.key) { KEYS.push(c.key); labels[c.key] = c.name || c.key; } }
+  }
   // סדר הקבוצות במסלול — כמו שהיה: חסר/לא קריא ← לאימות ← טרם נבדק ← הושלם
   const ORDER = ['bad', 'verify', 'open', 'done'];
   const groupOf = s => (s === 'missing' || s === 'unreadable') ? 'bad'
@@ -38,10 +44,10 @@
     const n = {bad:0, open:0, verify:0, done:0};
     let verified = 0;
     for (const k of KEYS) { const s = statusOf(x, k); n[groupOf(s)]++; if (s === 'verified') verified++; }
-    const complete = n.done === TOTAL && verified > 0;
+    const complete = n.done === KEYS.length && verified > 0;
     const state = complete ? 'done' : n.bad ? 'bad' : n.verify ? 'verify' : verified === 0 ? 'unchecked' : 'open';
     const noLinks = ((x && x.documents) || []).filter(d => !d.url).length + (x && x.folder_url ? 0 : 1);
-    return {n, verified, complete, state, pending: TOTAL - n.done, noLinks};
+    return {n, verified, complete, state, pending: KEYS.length - n.done, noLinks};
   }
 
   /** האם תיק מופיע בסינון. todo = כל מה שלא הושלם. */
@@ -90,7 +96,7 @@
     return records;
   }
 
-  const api = {labels, statusLabels, viaLabels, actionLabels, KEYS, TOTAL, ORDER, groupOf, nextUp, caseState, matches, provenance, fieldLabel, valueText, parseImport};
+  const api = {labels, statusLabels, viaLabels, actionLabels, KEYS, get TOTAL() { return KEYS.length; }, setChecks, ORDER, groupOf, nextUp, caseState, matches, provenance, fieldLabel, valueText, parseImport};
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FDForm = api;
 })(typeof self !== 'undefined' ? self : this);

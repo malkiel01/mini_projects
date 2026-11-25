@@ -261,17 +261,25 @@ function extGroupOf(string $s): string {
     return match ($s) { 'missing', 'unreadable' => 'missing', 'document_present', 'reported' => 'verify',
         'verified', 'not_applicable' => 'done', default => 'unchecked' };
 }
+/**
+ * פרוסה 11: הבדיקות הפעילות של הארגון (מפתח → שם) — מטבלת ההגדרות (checkNames של lib/checks.php), לא מהרשימה הקבועה.
+ * EXT_CHECKS נשאר לקבצים שנבנים מראש (openapi.json, ההנחיות ל-GPT) — שם הרשימה של ברירת המחדל.
+ */
+function extChecks(): array {
+    $n = function_exists('checkNames') ? checkNames(db(), scope()) : [];
+    return $n ?: EXT_CHECKS;
+}
 /** מונים ו"הבא בתור": הראשונה בקבוצת "חסר", אחריה "לאימות", אחריה "טרם נבדק" (02 §2.2). */
 function extSummary(array $c): array {
     $n = ['missing' => 0, 'verify' => 0, 'unchecked' => 0, 'done' => 0];
     $first = [];
-    foreach (EXT_CHECKS as $k => $label) {
+    foreach (extChecks() as $k => $label) {
         $g = extGroupOf((string)($c['checks'][$k]['status'] ?? 'unknown'));
         $n[$g]++;
         $first[$g] ??= ['check' => $k, 'label' => $label];
     }
     $next = $first['missing'] ?? $first['verify'] ?? $first['unchecked'] ?? null;
-    $status = $n['done'] === count(EXT_CHECKS) ? 'done' : ($n['missing'] ? 'missing' : ($n['verify'] ? 'verify' : 'unchecked'));
+    $status = $n['done'] === count(extChecks()) ? 'done' : ($n['missing'] ? 'missing' : ($n['verify'] ? 'verify' : 'unchecked'));
     return ['id' => $c['id'], 'name' => $c['name'], 'date' => $c['date'] ?? '', 'time' => $c['time'] ?? '', 'month' => $c['month'],
         'origin' => $c['origin'] ?? '', 'status' => $status, 'next' => $next, 'counts' => $n];
 }
@@ -448,7 +456,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
     if (!isset($actions[$action])) extFail(404, 'פעולה לא מוכרת. הפעולות: ' . implode(', ', array_keys($actions)));
     $c0 = ctx();
     $orgId = scope();
-    $roleName = $c0['role'] !== null ? ROLES[$c0['role']] : ($c0['dev'] ? 'מפתח' : '');
+    $roleName = ctxRole()['name'] ?? ($c0['role'] !== null ? ROLES[$c0['role']] : ($c0['dev'] ? 'מפתח' : ''));   // 11: שם התפקיד הגמיש
     if (!extCan($actions[$action]['perm'])) extFail(403, 'אין לך הרשאה לפעולה הזו (התפקיד שלך: ' . $roleName . ')');
     $u = $c0['user'];
     $actor = ['id' => (int)$u['id'], 'actor' => ((string)$u['name'] !== '' ? $u['name'] : ((string)$u['email'] !== '' ? $u['email'] : 'משתמש ' . $u['id']))
@@ -462,12 +470,12 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
                 'can_update_checks' => extCan('update'), 'can_delete' => false];
 
         case 'schema':
-            return ['checks' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v], array_keys(EXT_CHECKS), EXT_CHECKS),
+            return ['checks' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v], array_keys(extChecks()), extChecks()),
                 'statuses' => array_map(static fn($k, $v) => ['key' => $k, 'name' => $v, 'human_only' => !finalAllowed($via) && in_array($k, FORM_FINAL_STATUSES, true)],
                     array_keys(EXT_STATUSES), EXT_STATUSES),
                 'fields' => array_keys(EXT_FIELDS),
                 'rule' => 'סטטוס "מאומת" / "עודכן ידנית" / "לא רלוונטי" שנכתב דרך מקור אוטומטי (צ\'אט, AI) נשמר כ"מסמך קיים — לאימות". רק אדם במשרד מאשר סופית.',
-                'document_kinds' => array_values(EXT_CHECKS)];
+                'document_kinds' => array_values(extChecks())];
 
         case 'prompt':
             return ['prompt' => extPrompt()];
@@ -505,7 +513,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
             $st->execute([$orgId, $c['id']]);
             $events = array_map(static fn($e) => ['diff' => json_decode((string)$e['diff'], true)] + $e, $st->fetchAll());
             $checks = [];
-            foreach (EXT_CHECKS as $k => $label) {
+            foreach (extChecks() as $k => $label) {
                 $ch = $c['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => ''];
                 $checks[] = ['key' => $k, 'name' => $label, 'status_name' => EXT_STATUSES[$ch['status'] ?? 'unknown'] ?? ''] + $ch;
             }
@@ -552,7 +560,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
             $closed = [];
             foreach ($fields as $k => $v) $raw[$k] = $v;
             foreach ($checksIn as $k => $v) {
-                if (!is_string($k) || !isset(EXT_CHECKS[$k])) extFail(400, 'בדיקה לא מוכרת: ' . $k . '. הרשימה ב-schema.');
+                if (!is_string($k) || !isset(extChecks()[$k])) extFail(400, 'בדיקה לא מוכרת: ' . $k . '. הרשימה ב-schema.');
                 if (!is_array($v)) extFail(400, 'בדיקה ' . $k . ': נדרש אובייקט {status, value, note}');
                 foreach (['status', 'value', 'note'] as $f) {
                     if (array_key_exists($f, $v) && !is_string($v[$f]) && !is_int($v[$f]) && !is_float($v[$f])) extFail(400, 'בדיקה ' . $k . ': ' . $f . ' — נדרש טקסט. שום דבר לא נשמר.');
@@ -564,7 +572,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
                 if (!finalAllowed($via) && in_array($prev['status'] ?? '', FORM_FINAL_STATUSES, true)) {
                     $val = array_key_exists('value', $v) ? cleanText($v['value'], 500) : (string)($prev['value'] ?? '');
                     if ($status !== $prev['status'] || $val !== (string)($prev['value'] ?? '')) {
-                        $closed[$k] = 'הצעה ל"' . EXT_CHECKS[$k] . '": ' . EXT_STATUSES[$status] . ($val !== '' ? ' — ' . $val : '');
+                        $closed[$k] = 'הצעה ל"' . extChecks()[$k] . '": ' . EXT_STATUSES[$status] . ($val !== '' ? ' — ' . $val : '');
                     }
                     continue;
                 }
@@ -593,14 +601,14 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
             $converted = [];
             foreach (array_keys($checksIn) as $k) {
                 $c = $saved['checks'][$k] ?? ['status' => 'unknown', 'value' => '', 'note' => ''];
-                $out['checks'][$k] = ['name' => EXT_CHECKS[$k], 'status' => $c['status'], 'status_name' => EXT_STATUSES[$c['status']] ?? '',
+                $out['checks'][$k] = ['name' => extChecks()[$k], 'status' => $c['status'], 'status_name' => EXT_STATUSES[$c['status']] ?? '',
                     'value' => $c['value'] ?? '', 'note' => $c['note'] ?? '', 'by' => $c['by'] ?? null, 'via' => $c['via'] ?? null];
                 $asked = (string)($checksIn[$k]['status'] ?? $c['status']);
                 if (isset($closed[$k])) {
-                    $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $asked, 'saved' => $c['status'],
+                    $converted[] = ['check' => $k, 'name' => extChecks()[$k], 'requested' => $asked, 'saved' => $c['status'],
                         'reason' => 'אדם כבר סגר את הבדיקה הזו — הצ\'אט לא משנה אותה. ההצעה נכתבה בהערות התיק.'];
                 } elseif (in_array($asked, FORM_FINAL_STATUSES, true) && !finalAllowed($via)) {
-                    $converted[] = ['check' => $k, 'name' => EXT_CHECKS[$k], 'requested' => $asked, 'saved' => $c['status'],
+                    $converted[] = ['check' => $k, 'name' => extChecks()[$k], 'requested' => $asked, 'saved' => $c['status'],
                         'reason' => 'רק אדם במשרד מאשר סופית. נשמר "לאימות".'];
                 }
             }

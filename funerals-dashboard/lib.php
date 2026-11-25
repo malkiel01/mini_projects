@@ -24,6 +24,8 @@ require_once __DIR__ . '/lib/schema.php';
 require_once __DIR__ . '/lib/events.php';
 require_once __DIR__ . '/lib/secrets.php';
 require_once __DIR__ . '/lib/access.php';
+require_once __DIR__ . '/lib/checks.php';  // פרוסה 11 — הבדיקות מטבלה (check_defs), דחוף
+require_once __DIR__ . '/lib/roles.php';   // פרוסה 11 — תפקידים גמישים ומשימות
 require_once __DIR__ . '/lib/form.php';   // פרוסה 02 — הטופס החכם (מקור לבדיקה, finalAllowed, יומן התיק)
 
 function dataDir(): string { return __DIR__ . '/data'; }
@@ -220,12 +222,14 @@ function bearerOk(array $cfg): bool {
     return $hash !== '' && str_starts_with($bearer, 'Bearer ') && strlen($bearer) > 7
         && hash_equals($hash, hash('sha256', substr($bearer, 7)));
 }
-function listMonth(PDO $pdo, string $action, string $method, int $orgId): never {
+/** $only — מזהי התיקים שמותר להחזיר (פרוסה 11, "רק שהוקצו לי"); null — כל התיקים של החודש. */
+function listMonth(PDO $pdo, string $action, string $method, int $orgId, ?array $only = null): never {
     if ($method !== 'GET') reply(405, ['error'=>'שיטה לא מורשית']);
     $month = validMonth((string)($_GET['month'] ?? ''));
     $st = $pdo->prepare('SELECT body FROM funerals WHERE org_id=? AND month=? ORDER BY name COLLATE NOCASE');
     $st->execute([$orgId, $month]);
     $items = array_map(static fn($row) => json_decode($row['body'], true), $st->fetchAll());
+    if ($only !== null) $items = array_values(array_filter($items, static fn($x) => in_array($x['id'] ?? '', $only, true)));
     if ($action === 'export') {
         header('Content-Disposition: attachment; filename="funerals-' . $month . '.json"');
         reply(200, ['schema_version'=>1, 'month'=>$month, 'records'=>$items]);

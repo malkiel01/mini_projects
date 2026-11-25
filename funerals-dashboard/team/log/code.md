@@ -143,3 +143,11 @@
   NAT64 / DNS מעורב ב-CIMD, אסימון שפג, רענון אחרי השבתה. ⚪5 `BEGIN IMMEDIATE` בהחלפת קוד/רענון; ⚪6 `revokeOauthGrantsOf()`
   (lib/access.php) ב-member_active / user_active של api.php, וגם grant של חבר לא פעיל מתבטל בגילוי (MCP / רענון); ⚪7 CSP עם [::1];
   ⚪8 עד 20 בקשות ב-batch.
+- 2026-11-25 — **פרוסה 11 (הגדרות בדיקות ותפקידים גמישים), ענף `claude/funerals-dashboard-11-settings`.** מיגרציה v5 (`check_defs`, `roles`,
+  `tasks`, `members.role_id`, `invites.role_id`) — מוסיפה בלבד, 22 התיקים זהים. `lib/checks.php` (בדיקות מטבלה, כללית + דריסה, הסרה רכה,
+  סדר, מותנית, דחוף), `lib/roles.php` (תפקידים, `ctxPerms`, משימות, "המשימות שלי"), `lib/settings-actions.php` (14 פעולות API).
+  `can()` קורא הרשאות מהטבלה; `case.view_assigned` חוסם כל הרשאת תיק בלי תיק מסוים. `formSaveCase`: "מאומת" בידי אדם דורש `case.approve`.
+  `ext-lib.php`: `extChecks()` — הבדיקות של הארגון במקום הרשימה הקבועה (openapi/הנחיות GPT — עדיין 9 ברירות המחדל). UI מינימלי:
+  `FDForm.setChecks(me.checks)`, ובחירת תפקיד גמיש במשתמשים. בדיקות: `tests/settings.sh` S1–S11 + `form.test.js`. אין נתיב נתונים חדש
+  מחוץ ל-SQLite — אין צורך ב-`--exclude`. **הכרעות טכניות:** ראה ה-PR.
+

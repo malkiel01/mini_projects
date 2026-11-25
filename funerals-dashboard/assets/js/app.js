@@ -7,7 +7,6 @@
   const F = window.FDForm, labels = F.labels, statusLabels = F.statusLabels, groupOf = F.groupOf;
   const groups = {bad:{icon:'⛔', chip:'bad'}, open:{icon:'❔', chip:''}, verify:{icon:'🔎', chip:'warn'}, done:{icon:'✅', chip:'ok'}};
   const monthNames = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-  const TOTAL = F.TOTAL;
   let openedSnap = '';
   let items = [], current = null, csrf = '', embedKey = '', filter = 'todo', me = null, rows = {};
   // trace — הבקשות והשגיאות האחרונות של הדפדפן, להקשר של 🐞 (DevLoop)
@@ -72,6 +71,7 @@
       showSignin(e.message); return;
     }
     me = auth; csrf = auth.csrf; embedKey = auth.embed_key || '';
+    F.setChecks(auth.checks);   // פרוסה 11: הבדיקות של הארגון מההגדרות
     $('signin').hidden = true; $('noorg').hidden = true; $('application').hidden = false;
     paintHeader();
     window.dispatchEvent(new CustomEvent('fd:me', {detail: auth}));   // מסך עובד השטח (field.js, פרוסה 04)
@@ -133,7 +133,7 @@
     const tot = {bad:0, open:0, verify:0, done:0}; let noLinks = 0;
     all.forEach(({s}) => { for (const g in tot) tot[g] += s.n[g]; noLinks += s.noLinks; });
     const doneCases = all.filter(a => a.s.complete).length;
-    const pct = items.length ? Math.round(tot.done * 100 / (items.length * TOTAL)) : 0;
+    const pct = items.length ? Math.round(tot.done * 100 / (items.length * F.TOTAL)) : 0;
     $('sumDone').textContent = doneCases;
     $('sumOf').textContent = 'מתוך ' + items.length + ' תיקים הושלמו';
     $('sumPct').textContent = items.length ? pct + '% מהבדיקות' : '';
@@ -160,8 +160,8 @@
       const li = node('li', 'card case'); li.tabIndex = 0; li.setAttribute('role', 'button');
       li.dataset.g = s.n.bad ? 'bad' : s.complete ? 'done' : 'open';
       li.dataset.state = s.state;
-      const ring = node('span', 'ring', s.n.done + '/' + TOTAL); ring.style.setProperty('--p', Math.round(s.n.done * 100 / TOTAL));
-      ring.setAttribute('aria-label', s.n.done + ' מתוך ' + TOTAL + ' בדיקות הושלמו');
+      const ring = node('span', 'ring', s.n.done + '/' + F.TOTAL); ring.style.setProperty('--p', Math.round(s.n.done * 100 / F.TOTAL));
+      ring.setAttribute('aria-label', s.n.done + ' מתוך ' + F.TOTAL + ' בדיקות הושלמו');
       const body = node('div', 'body');
       const l1 = node('div', 'l1'); l1.append(node('span', '', x.name), node('span', 't', [x.date ? x.date.slice(8) + '/' + x.date.slice(5, 7) : '', x.time].filter(Boolean).join(' ')));
       const l3 = node('div', 'chips'); chipsFor(s).forEach(c => l3.append(c));
@@ -196,9 +196,9 @@
   function renderSummary() {
     current.folder_url = $('fFolder').value;
     const s = state(current), box = $('caseSummary'); box.replaceChildren();
-    const line = node('div', 'line'); line.append(node('b', '', s.n.done + ' מתוך ' + TOTAL), node('span', 'muted', 'בדיקות הושלמו'));
+    const line = node('div', 'line'); line.append(node('b', '', s.n.done + ' מתוך ' + F.TOTAL), node('span', 'muted', 'בדיקות הושלמו'));
     if (current.date) line.append(node('span', 'pct', [current.date.slice(8) + '/' + current.date.slice(5, 7), current.time].filter(Boolean).join(' ')));
-    const track = node('span', 'track'); const bar = node('span'); bar.style.inlineSize = Math.round(s.n.done * 100 / TOTAL) + '%'; track.append(bar);
+    const track = node('span', 'track'); const bar = node('span'); bar.style.inlineSize = Math.round(s.n.done * 100 / F.TOTAL) + '%'; track.append(bar);
     const chips = node('div', 'chips'); chipsFor(s).forEach(c => chips.append(c));
     if (s.noLinks) chips.append(node('span', 'chip warn', '🔗 ' + s.noLinks + ' בלי קישור'));
     // "הבא בתור" ראשון — לפני המונה, כדי שייראה בטלפון בלי גלילה
@@ -526,7 +526,9 @@
   async function loadMembers(data) {
     try { data = data || await request('members'); } catch (e) { toast(e.message, true); return; }
     const sel = $('invRole');
-    if (!sel.options.length) for (const [k, v] of Object.entries(data.roles)) { const o = node('option', '', v); o.value = k; o.selected = k === 'field'; sel.append(o); }
+    // פרוסה 11: התפקידים הגמישים של הארגון (role_defs), לפי מזהה
+    const defs = data.role_defs || [];
+    if (!sel.options.length) for (const r of defs) { const o = node('option', '', r.name); o.value = r.id; o.selected = r.name === 'שטח'; sel.append(o); }
     const list = $('membersList'); list.replaceChildren();
     data.members.forEach(m => {
       const li = node('li', 'card member'); li.style.cursor = 'default';
@@ -536,9 +538,9 @@
       const l2 = node('div', 'l2'); const em = node('bdi', '', m.email || ''); em.dir = 'ltr'; l2.append(em);
       body.append(l1, l2);
       const role = node('select', 'mini'); role.setAttribute('aria-label', 'תפקיד ' + (m.name || m.email));
-      for (const [k, v] of Object.entries(data.roles)) { const o = node('option', '', v); o.value = k; o.selected = k === m.role; role.append(o); }
+      for (const r of defs) { const o = node('option', '', r.name); o.value = r.id; o.selected = r.id === m.role_id; role.append(o); }
       role.addEventListener('change', async () => {
-        try { loadMembers(await request('member_role', 'POST', {user_id: m.id, role: role.value})); toast('התפקיד עודכן'); }
+        try { loadMembers(await request('member_role', 'POST', {user_id: m.id, role_id: +role.value})); toast('התפקיד עודכן'); }
         catch (e) { toast(e.message, true); loadMembers(); }
       });
       const act = node('button', 'btn sm ' + (m.active ? 'danger' : ''), m.active ? 'השבתה' : 'הפעלה'); act.type = 'button'; act.hidden = m.me;
@@ -553,7 +555,7 @@
     data.invites.forEach(i => {
       const li = node('li', 'card'); li.style.cursor = 'default';
       const body = node('div', 'body'); const e = node('bdi', '', i.email); e.dir = 'ltr';
-      const l1 = node('div', 'l1'); l1.append(e); body.append(l1, node('div', 'l2', (data.roles[i.role] || i.role) + ' · ממתין לכניסה'));
+      const l1 = node('div', 'l1'); l1.append(e); body.append(l1, node('div', 'l2', (i.role_name || data.roles[i.role] || i.role) + ' · ממתין לכניסה'));
       const x = node('button', 'btn sm danger', 'ביטול'); x.type = 'button';
       x.addEventListener('click', async () => { try { loadMembers(await request('invite_cancel', 'POST', {id: i.id})); } catch (err) { toast(err.message, true); } });
       li.append(body, x); inv.append(li);
@@ -563,7 +565,7 @@
   $('invSend').addEventListener('click', async () => {
     const email = $('invEmail').value.trim();
     if (!email) { toast('נדרש מייל', true); $('invEmail').focus(); return; }
-    try { loadMembers(await request('invite', 'POST', {email, role: $('invRole').value})); $('invEmail').value = ''; toast('ההזמנה נשמרה'); }
+    try { loadMembers(await request('invite', 'POST', {email, role_id: +$('invRole').value})); $('invEmail').value = ''; toast('ההזמנה נשמרה'); }
     catch (e) { toast(e.message, true); }
   });
   async function loadOrgs(data) {

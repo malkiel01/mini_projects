@@ -15,7 +15,7 @@ fail(){ echo "FAIL: $*"; [ -f "$tmp/out" ] && { echo "--- תשובה אחרונ�
 ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
-for f in api.php lib.php ingest.php tokens.php ext-lib.php tests/fixes08.test.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php lib/field.php tests/field.test.php tests/field-dropbox.test.php \
+for f in api.php lib.php ingest.php tokens.php ext-lib.php tests/fixes08.test.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php lib/checks.php lib/roles.php lib/settings-actions.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php lib/field.php tests/field.test.php tests/field-dropbox.test.php \
     dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
@@ -100,14 +100,14 @@ ok "A2 — גיבוי נכשל → 503, גרסה 0"
 
 # ===== A1, A2, A8: בקשה ראשונה של המפתח =====
 login dev; test "$code" = 200 || fail "A1: me של המפתח ($code)"
-test "$(sql 'PRAGMA user_version')" = 4 || fail "A1: user_version (01 → 1, 03 → 2, 04 → 3, 06 → 4)"
+test "$(sql 'PRAGMA user_version')" = 5 || fail "A1: user_version (01 → 1, 03 → 2, 04 → 3, 06 → 4, 11 → 5)"
 test "$(sql "SELECT COUNT(*) FROM sqlite_master WHERE name='field_uploads'")" = 1 || fail "A1: field_uploads (v3)"
 sql "SELECT id, body FROM funerals ORDER BY id" > "$tmp/cases1"
 cmp -s "$tmp/cases0" "$tmp/cases1" || fail "A1: התיקים השתנו (id/body)"
 test "$(sql 'SELECT COUNT(*) FROM funerals WHERE org_id = 1')" = 22 || fail "A1: org_id=1 לכל 22"
 sql "SELECT * FROM audit ORDER BY id" > "$tmp/audit1"
 cmp -s "$tmp/audit0" "$tmp/audit1" || fail "A1: audit השתנה"
-ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=4 (סכמה עדכנית)"
+ok "A1 — 22 תיקים, אותם id ו-body, org_id=1, audit זהה, user_version=5 (סכמה עדכנית)"
 bk=( "$D"/backup/funerals-*-v0.sqlite )
 test "${#bk[@]}" = 1 && test -f "${bk[0]}" || fail "A2: אין גיבוי"
 test "$(stat -c %a "${bk[0]}")" = 600 || fail "A2: הגיבוי לא 0600"
@@ -488,3 +488,6 @@ php "$APP/tests/field-dropbox.test.php" || fail "פרוסה 04 — מול Dropbo
 
 # ===== פרוסה 06 — AI מובנה (שרת וספק מדומה נפרדים, מסד נקי; השרת של 01 כבר נעצר למעלה) =====
 bash "$APP/tests/ai.sh"
+
+# ===== פרוסה 11 — הגדרות בדיקות ותפקידים גמישים (שרת ומסד משלה, ממסד v0 עם 22 תיקים) =====
+bash "$APP/tests/settings.sh"

@@ -8,7 +8,7 @@ declare(strict_types=1);
  */
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 function backupDir(): string { return dataDir() . '/backup'; }
 
@@ -27,6 +27,7 @@ function migrate(PDO $pdo): void {
             if ($from < 2) migrateV2($pdo);
             if ($from < 3) migrateV3($pdo);
             if ($from < 4) migrateV4($pdo);
+            if ($from < 5) migrateV5($pdo);
             $pdo->exec('PRAGMA user_version=' . SCHEMA_VERSION);
             $pdo->exec('COMMIT');
         } catch (Throwable $e) {
@@ -159,4 +160,29 @@ function migrateV4(PDO $pdo): void {
         ['ai_threads', 'system', 'TEXT'], ['ai_proposals', 'base', 'TEXT']] as [$t, $c, $type]) {
         if (!hasColumn($pdo, $t, $c)) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
     }
+}
+
+/**
+ * v5 (פרוסה 11 — הגדרות בדיקות ותפקידים גמישים): check_defs (org_id 0 = הכללית של הבעלים, N = דריסה של ארגון), roles,
+ * tasks, ו-role_id ב-members וב-invites. מוסיפה בלבד: funerals, audit ו-members.role לא משתנים (role נשאר לתאימות).
+ * ממלאת את 9 בדיקות ברירת המחדל ואת שלושת התפקידים המובנים לכל ארגון — אותן הרשאות כמו PERMS שלפני הפרוסה.
+ */
+function migrateV5(PDO $pdo): void {
+    $pdo->exec('CREATE TABLE IF NOT EXISTS check_defs (org_id INTEGER NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL,
+        value_kind TEXT NOT NULL DEFAULT \'\', doc_kinds TEXT NOT NULL DEFAULT \'[]\', role TEXT, cond TEXT, critical INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0, removed INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, updated_by TEXT, PRIMARY KEY (org_id, key))');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS roles (id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, name TEXT NOT NULL, perms TEXT NOT NULL,
+        task_types TEXT NOT NULL DEFAULT \'[]\', base TEXT, builtin INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_roles_org ON roles(org_id)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, org_id INTEGER NOT NULL, case_id TEXT NOT NULL, check_key TEXT,
+        type TEXT NOT NULL DEFAULT \'\', title TEXT NOT NULL, assignee_user_id INTEGER, assignee_role_id INTEGER, status TEXT NOT NULL DEFAULT \'open\',
+        due TEXT, note TEXT NOT NULL DEFAULT \'\', created_at TEXT NOT NULL, created_by INTEGER, done_at TEXT, done_by INTEGER)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_case ON tasks(org_id, case_id)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(org_id, assignee_user_id, status)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_role ON tasks(org_id, assignee_role_id, status)');
+    if (!hasColumn($pdo, 'members', 'role_id')) $pdo->exec('ALTER TABLE members ADD COLUMN role_id INTEGER');
+    if (!hasColumn($pdo, 'invites', 'role_id')) $pdo->exec('ALTER TABLE invites ADD COLUMN role_id INTEGER');
+    checksSeed($pdo);
+    foreach ($pdo->query('SELECT id FROM orgs')->fetchAll(PDO::FETCH_COLUMN) as $orgId) rolesSeed($pdo, (int)$orgId);
 }

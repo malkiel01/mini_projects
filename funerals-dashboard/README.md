@@ -201,6 +201,38 @@ ChatGPT בדפדפן (chatgpt.com/plugins ← Add custom MCP server) או Claude
   לשייך?"), עד 2 קבצים בכל פתיחת תיק, פעם אחת לקובץ (`ai_file_kinds`), מהתקרה. ✓ → `files.kind`, והבדיקה המתאימה "לאימות" (אם עוד
   לא נבדקה), via: ai. החיבור ל-`dropbox.js`: `data-file-id` על השורה ואירוע `fd:files`.
 
+## הגדרות בדיקות ותפקידים (פרוסה 11)
+
+**הבדיקות מטבלה, לא מקוד** (`lib/checks.php`, טבלת `check_defs` — מיגרציה v5). `org_id = 0` — ההגדרה הכללית של הבעלים
+(9 ברירות המחדל, אותם מפתחות וסדר כמו בתיקים); `org_id = N` — דריסה או בדיקה של הארגון, גוברת לפי `key`. לכל בדיקה: שם, סוג
+(`document` / `value` + `value_kind` / `yesno`), סוגי מסמכים שעונים (`doc_kinds`), תפקיד אחראי (`role`), תנאי (`cond: {check}` — נדרשת
+רק כשהבדיקה שבתנאי "נמצא"/"הושלם"), `critical` (ל"דחוף"). **הסרה רכה** (`removed = 1`) — הערכים נשארים בתיק; **בדיקה חדשה** —
+אין לה ערך בתיקים הקיימים, ולכן היא "חסר". שום פעולה לא נוגעת ב-`funerals`.
+
+**קריאה צרה (לבינה — פרוסה 10, ולממשק — 12):** `checkDefs($pdo, $orgId)` — הבדיקות הפעילות בסדר שלהן;
+`checkNames($pdo, $orgId)` — מפתח → שם; `caseChecks($pdo, $orgId, $case)` — מצב כל בדיקה בתיק (`missing` · `found` · `doubt` · `done` ·
+`na`, לפי אפיון 02), `complete` (א13), ו-`extra` (ערכים של בדיקות שהוסרו); `caseUrgent(...)` — דחוף (ק3). לא לקרוא את `check_defs` ישירות.
+
+**תפקידים** (`lib/roles.php`, טבלת `roles`): שם + הרשאות מתוך `ROLE_PERMS` (רשימה סגורה) + סוגי משימות, לכל ארגון. שלושה מובנים
+(מנהל, משרד, שטח) עם ההרשאות שהיו לפני הפרוסה. `members.role_id` — התפקיד; `members.role` נשאר לתאימות ומחושב מההרשאות.
+ההרשאה — רק `can()`, שקורא את התפקיד מהטבלה בכל בקשה (`ctxPerms()`), כך ששינוי חל מיד. **"רק תיקים שהוקצו לי"**
+(`case.view_assigned`): בלי תיק מסוים — שום הרשאת תיק (רשימות, שטח, API, MCP, בינה → 403); עם תיק — רק אם יש בו משימה שלו או של
+התפקיד שלו. **משימות** (`tasks`): לאדם או לתפקיד; "המשימות שלי" = המפורשות + הבדיקות שהתפקיד אחראי עליהן ועוד לא הושלמו (מחושב).
+
+| פעולה (`api.php?action=`) | שיטה | הרשאה | מה |
+| --- | --- | --- | --- |
+| `checks` | GET | צפייה בתיקים / `settings.manage` | ההגדרות של הארגון (`scope`, `overrides`, `removed`), `global` (למפתח), סוגים, מצבים, `urgent_days` |
+| `check_save` | POST | `settings.manage`; `scope: global` — מפתח | `{key?, name, type, value_kind, doc_kinds, role, cond, critical, position}`; בלי `key` — חדשה |
+| `check_remove` · `check_reset` · `check_order` | POST | כנ"ל | `{key}` · `{key}` (חזרה לכללית) · `{keys: [...]}` |
+| `urgent_save` | POST | `settings.manage` | `{days}` |
+| `case_checks` | GET `&id=` | צפייה בתיק | מצב הבדיקות, `urgent`, `tasks` |
+| `roles` · `role_save` · `role_archive` | GET · POST · POST | `members.manage` | `{id?, name, perms[], task_types[]}` — לא משאירים ארגון בלי מנהל משתמשים |
+| `member_role` · `invite` | POST | `members.manage` | `role_id` (או `role` הישן — המובנה) |
+| `tasks` (`&case_id=`) · `task_save` · `task_status` | GET · POST · POST | צפייה בתיק · `tasks.manage` · המוקצה או `tasks.manage` | `{case_id, title, type, check_key, assignee_user_id \| assignee_role_id, due, note}` · `{id, status}` |
+| `my_tasks` | GET | כל חבר | `items[]`: `kind: task` (משימה) או `kind: check` (בדיקה של התפקיד) |
+
+`me` מחזיר גם `checks` (הבדיקות הפעילות — `FDForm.setChecks`), `role_id`, ו-`role_label` = שם התפקיד הגמיש. בדיקות: `tests/settings.sh` (S1–S11).
+
 ## מה עדיין לא חובר
 
 - **F8 (06) — פתוח, ידני אחרי פריסה ומפתח אמיתי:** "מה חסר ב<שם>?" → תשובה נכונה; "תמלא מהקבצים" → הצעות עם מקור.

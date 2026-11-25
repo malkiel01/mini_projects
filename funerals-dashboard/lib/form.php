@@ -103,6 +103,15 @@ function formSaveCase(PDO $pdo, array $raw, string $via, array $actor, int $orgI
     $item = normalize($raw, $orgId);
     $old = existing($pdo, $item['id'], $orgId);
     if ($authorize !== null) $authorize($old, $item);
+    // פרוסה 11: "מאומת" בידי אדם — רק למי שיש לו הרשאת אישור בדיקה (תפקיד גמיש). מקור אוטומטי ממילא לא מאשר (finalAllowed).
+    if (($via === 'ui' || $via === 'field') && isset($GLOBALS['fd_ctx'])) {
+        foreach ($item['checks'] as $k => $c) {
+            if ($c['status'] === 'verified' && ($old['checks'][$k]['status'] ?? '') !== 'verified') {
+                need('case.approve', ['org_id' => $orgId, 'id' => $item['id']]);
+                break;
+            }
+        }
+    }
     if ($old !== null) {
         foreach (FORM_MANUAL_FIELDS as $field) {
             if (($item[$field] ?? null) !== ($old[$field] ?? null)) $item['manual_fields'][] = $field;
