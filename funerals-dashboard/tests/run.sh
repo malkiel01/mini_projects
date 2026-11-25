@@ -455,7 +455,7 @@ printf '\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF
 up(){ as "${ID[$1]}"; st -b "$tmp/c-$1" -H "X-CSRF-Token: ${CSRF[$1]:-}" -F "case_id=$2" -F "upload_id=$3" -F "kind=$4" -F "file=@$5" "$base?action=field_upload"; }
 # (ארגון 1 לא מחובר ל-Dropbox בבדיקות האלה — גם אחרי פרוסה 03)
 code="$(up field "$FID" up_w7_00000000000000 grave_photo "$tmp/p.jpg")"
-  test "$code" = 409 && test "$(jv '$v["error"]')" = "'Dropbox של הארגון לא מחובר — פנה למנהל'" && test "$(jv '$v["code"]')" = "'dropbox_not_connected'" || fail "W7: Dropbox לא מחובר ($code)"
+  test "$code" = 409 && test "$(jv '$v["error"]')" = "'אחסון הקבצים של הארגון לא מחובר — פנה למנהל'" && test "$(jv '$v["code"]')" = "'dropbox_not_connected'" || fail "W7: Dropbox לא מחובר ($code)"
   test "$(sql "SELECT status FROM field_uploads WHERE upload_id='up_w7_00000000000000'")" = failed || fail "W7: לא נרשם כנכשל"
 printf '<svg xmlns="http://www.w3.org/2000/svg"/>' > "$tmp/x.svg"
 code="$(up field "$FID" up_svg_0000000000000 other "$tmp/x.svg")"; test "$code" = 415 || fail "04: SVG → 415 ($code)"
@@ -498,3 +498,7 @@ bash "$APP/tests/ai.sh"
 
 # ===== פרוסה 11 — הגדרות בדיקות ותפקידים גמישים (שרת ומסד משלה, ממסד v0 עם 22 תיקים) =====
 bash "$APP/tests/settings.sh"
+
+# ===== פרוסה 12b — הממשק בדפדפן: U1, U2, U5–U7, U9, 320px, ביטול קישור, תבנית תיקייה (Playwright; בלעדיו — מדלג) =====
+node --check "$APP/assets/js/field.js" || fail "node --check field.js"
+bash "$APP/tests/ui.sh"

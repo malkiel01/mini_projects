@@ -65,6 +65,8 @@
     sec.innerHTML = `
       <div class="summary fw-sum"><div class="line"><b id="fwDay">היום</b><span class="muted" id="fwCount"></span></div>
         <div class="chips" id="fwQueueSum"></div></div>
+      <button type="button" class="fw-big fw-loose" id="fwLoose"><span aria-hidden="true">📷</span>צילום בלי תיק</button>
+      <input type="file" id="fwLooseIn" accept="image/*" capture="environment" hidden>
       <div class="search"><input type="search" id="fwSearch" placeholder="חיפוש תיק בשם" aria-label="חיפוש תיק בשם" autocomplete="off"></div>
       <div id="fwResults"></div>
       <h2 class="sec-title" id="fwTodayT">היום</h2><ul class="list" id="fwToday" aria-labelledby="fwTodayT"></ul>
@@ -93,7 +95,8 @@
         <h3 class="sec-title" id="fwCaseQT" hidden>בתור מהתיק הזה</h3><ul class="list" id="fwCaseQueue" hidden></ul>
         <div id="fwEditBox" hidden>
           <h3 class="sec-title">בדיקות</h3><div class="list" id="fwChecks"></div>
-          <label class="f wide"><span>מיקום הקבר</span><input id="fwGrave" maxlength="180" autocomplete="off"></label>
+          <div class="gps-row"><label class="f wide"><span>מיקום הקבר</span><input id="fwGrave" maxlength="180" autocomplete="off"></label>
+            <button type="button" class="btn ghost" id="fwGps">📍 המיקום שלי</button></div>
           <label class="f wide"><span>הערה</span><textarea id="fwNotes" class="grow" rows="2" maxlength="1500"></textarea></label>
           <button type="button" class="btn primary" id="fwSave">שמירה</button>
         </div>
@@ -119,6 +122,11 @@
     $('fwKindGo').addEventListener('click', () => { const f = pendingFile; pendingFile = null; $('fwKindBox').hidden = true; if (f) enqueue(f, $('fwKind').value); });
     $('fwKindNo').addEventListener('click', () => { pendingFile = null; $('fwKindBox').hidden = true; });
     $('fwSave').addEventListener('click', save);
+    // U6: צילום מהמסך הראשי, לא מתוך תיק — עולה לתיקייה הראשית, והזיהוי (10) משייך לתיק או שואל
+    $('fwLoose').addEventListener('click', () => $('fwLooseIn').click());
+    $('fwLooseIn').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) enqueueTo({id: '', name: 'בלי תיק', kinds: []}, f, 'other'); });
+    // U7: "המיקום שלי" — נקודת GPS בשדה, שאפשר לתקן ידנית
+    $('fwGps').addEventListener('click', () => myLocation($('fwGrave'), $('fwGps')));
   }
   function leave() {
     document.body.classList.remove('field-mode');
@@ -227,7 +235,9 @@
   async function enqueue(file, kind) {
     if (!current) return;
     // התיק נקבע עכשיו — לא אחרי ההקטנה: בינתיים העובד יכול לסגור את התיק או לפתוח אחר
-    const target = {id: current.id, name: current.name, kinds: current.kinds || []};
+    return enqueueTo({id: current.id, name: current.name, kinds: current.kinds || []}, file, kind);
+  }
+  async function enqueueTo(target, file, kind) {
     const takenAt = Date.now();
     try {
       let blob = file, name = file.name || 'קובץ';
@@ -237,7 +247,7 @@
         if (r.changed) name = name.replace(/\.[^.]+$/, '') + '.jpg';
       } catch (e) { /* לא הוקטן — נשלח המקור */ }
       if (kind === 'grave_photo' && !/\.jpe?g$/i.test(name) && blob.type === 'image/jpeg') name += '.jpg';
-      const k = target.kinds.find(x => x.kind === kind) || {label: kind};
+      const k = target.kinds.find(x => x.kind === kind) || {label: target.id ? kind : 'צילום'};
       await queue.add({case_id: target.id, case_name: target.name, kind, kind_label: kind === 'grave_photo' ? 'צילום קבר' : k.label, name, blob, taken_at: takenAt});
     } catch (e) { toast('לא נשמר במכשיר: ' + e.message, true); return; }
     toast(navigator.onLine ? 'שולח…' : 'נשמר במכשיר — יישלח כשתחזור קליטה');
@@ -258,10 +268,27 @@
   function view(name, link) {
     const b = $('fwvBody'); b.replaceChildren();
     $('fwvName').textContent = name;
+    $('fieldViewer').showModal();
+    // U1: אותו צופה כמו במשרד (dropbox.js) — PDF ו-Word כעמודים, גם בטלפון
+    if (window.FDDropbox && window.FDDropbox.renderFile) { window.FDDropbox.renderFile(b, name, link); return; }
     if (/\.(jpe?g|png|gif|webp|heic|heif)$/i.test(name)) { const i = node('img'); i.alt = name; i.src = link; b.append(i); }
     else { const f = node('iframe'); f.title = name; f.src = link; b.append(f); }
-    $('fieldViewer').showModal();
   }
+
+  /* ---------- U7: המיקום שלי ---------- */
+
+  function myLocation(input, b) {
+    if (!navigator.geolocation) { toast('המכשיר לא נותן מיקום', true); return; }
+    b.disabled = true; toast('מאתר מיקום…');
+    navigator.geolocation.getCurrentPosition(p => {
+      b.disabled = false;
+      input.value = W.gpsText(p.coords);
+      input.dispatchEvent(new Event('input', {bubbles: true})); input.dispatchEvent(new Event('change', {bubbles: true}));
+      toast('המיקום נכנס לשדה — אפשר לתקן ידנית'); input.focus();
+    }, e => { b.disabled = false; toast(e.code === 1 ? 'אין הרשאה למיקום — לאשר בהגדרות הדפדפן' : 'המיקום לא נמצא — לנסות שוב בחוץ', true); },
+    {enableHighAccuracy: true, timeout: 15000, maximumAge: 30000});
+  }
+  window.FDLocation = myLocation;   // גם לשדה "מיקום הקבר" בטופס התיק (app.js)
 
   /* ---------- התור על המסך ---------- */
 

@@ -464,7 +464,7 @@ function linkUndo(PDO $pdo, array $org, string $caseId, array $actor): array {
     $lf = $pdo->prepare('SELECT why FROM link_folders WHERE org_id = ? AND dbx_id = ?');
     $lf->execute([$orgId, $link['dbx_folder_id']]);
     $why = (string)($lf->fetchColumn() ?: '');
-    if (!in_array($why, ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true)) return ['ok' => false, 'error' => 'זה לא קישור אוטומטי — לנתק ב-⚙️ Dropbox', 'status' => 409];
+    if (!in_array($why, ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true)) return ['ok' => false, 'error' => 'זה לא קישור אוטומטי — לנתק ב-⚙️ קבצים', 'status' => 409];
     linkUndoWrites($pdo, $orgId, $caseId, mb_strtolower((string)$link['dbx_path']));
     $pdo->prepare('DELETE FROM case_folders WHERE org_id = ? AND case_id = ?')->execute([$orgId, $caseId]);
     $pdo->prepare('UPDATE files SET case_id = NULL WHERE org_id = ? AND case_id = ? AND path_lower LIKE ? ESCAPE \'\\\'')
@@ -724,7 +724,7 @@ function linkAnswer(PDO $pdo, array $org, int $qid, string $answer, array $actor
         $f = $pdo->prepare('SELECT dbx_id, path, path_lower FROM dbx_folders WHERE org_id = ? AND dbx_id = ?');
         $f->execute([$orgId, $subject]);
         $folder = dbxRow($f);
-        if (!$folder) return ['ok' => false, 'error' => 'התיקייה כבר לא קיימת ב-Dropbox', 'status' => 409];
+        if (!$folder) return ['ok' => false, 'error' => 'התיקייה כבר לא קיימת באחסון', 'status' => 409];
         $name = basename((string)$folder['path']);
         $meta = ['id' => $folder['dbx_id'], 'path_display' => $folder['path'], 'path_lower' => $folder['path_lower']];
         if ($answer === 'not_case') {
@@ -740,7 +740,7 @@ function linkAnswer(PDO $pdo, array $org, int $qid, string $answer, array $actor
             if ($case === null) return ['ok' => false, 'error' => 'התיק לא נמצא', 'status' => 404];
             $c = $pdo->prepare('SELECT 1 FROM case_folders WHERE org_id = ? AND case_id = ?');
             $c->execute([$orgId, $caseId]);
-            if (dbxRow($c)) return ['ok' => false, 'error' => 'התיק כבר מקושר לתיקייה אחרת — יש לנתק אותה קודם (⚙️ Dropbox)', 'status' => 409];
+            if (dbxRow($c)) return ['ok' => false, 'error' => 'התיק כבר מקושר לתיקייה אחרת — יש לנתק אותה קודם (⚙️ קבצים)', 'status' => 409];
             dbxLinkFolder($pdo, $org, $caseId, $meta, (string)$actor['actor']);
             dbxEvent($orgId, $caseId, 'ui', 'dropbox_folder_linked', ['dropbox_folder' => [null, $meta['path_display']]], $actor);
             $month = linkParentInfo($pdo, $org, dirname((string)$folder['path_lower']))['month'];

@@ -11,7 +11,7 @@ require_once __DIR__ . '/lib.php';
 
 const DBX_ACTIONS = ['dropbox_status', 'dropbox_connect', 'dropbox_disconnect', 'dropbox_browse',
     'dropbox_set_root', 'dropbox_sync', 'dropbox_scan', 'dropbox_link', 'dropbox_unlink', 'dropbox_folder_create',
-    'dropbox_upload', 'case_files', 'file_view', 'dropbox_health', 'dropbox_app_set'];
+    'dropbox_upload', 'case_files', 'file_view', 'dropbox_health', 'dropbox_app_set', 'dropbox_template_set'];
 
 function dbxHandles(string $action): bool { return in_array($action, DBX_ACTIONS, true); }
 
@@ -96,6 +96,7 @@ function dbxAction(string $action, string $method, array $pu): never {
             'file_view' => dbxActFileView($pdo, $who, $method),
             'dropbox_health' => dbxActHealth($pdo, $who, $method),
             'dropbox_app_set' => dbxActAppSet($pdo, $who, $method, $user),
+            'dropbox_template_set' => dbxActTemplateSet($pdo, $who, $method),
         };
     } catch (DbxError $e) {
         if (!in_array($e->tag, ['outside_root', 'no_root', 'not_connected', 'reauth'], true)) dbxOrgError($pdo, $orgId, $e->tag);
@@ -109,7 +110,40 @@ function dbxActStatus(PDO $pdo, array $who): never {
     dbxSyncIfStale($pdo, $who['org_id']);
     reply(200, ['ok' => true, 'dropbox' => dbxPublicStatus(dbxOrg($pdo, $who['org_id'])),
         'app_configured' => DbxClient::appKey() !== null && DbxClient::appSecret() !== null,
-        'can_admin' => dbxCan($who, 'dropbox_admin'), 'can_upload' => dbxCan($who, 'files_upload')]);
+        'can_admin' => dbxCan($who, 'dropbox_admin'), 'can_upload' => dbxCan($who, 'files_upload')] + dbxTemplateInfo($pdo, $who['org_id']));
+}
+
+/* ---------- L3 (פרוסה 12b): תבנית התיקייה לתיק חדש ---------- */
+
+/** התבנית של הארגון ודוגמה — לתצוגה במסך ההגדרות. */
+function dbxTemplateInfo(PDO $pdo, int $orgId): array {
+    $tpl = function_exists('orgSettings') ? (string)(orgSettings($pdo, $orgId)['dropbox_folder_template'] ?? '') : '';
+    $tpl = trim($tpl) === '' ? DBX_FOLDER_TEMPLATE : $tpl;
+    return ['folder_template' => $tpl, 'folder_template_default' => DBX_FOLDER_TEMPLATE,
+        'folder_template_example' => dbxCaseFolderRel($tpl, ['name' => 'ישראל ישראלי', 'date' => '2026-10-14', 'month' => '2026-10'])];
+}
+/** תבנית תקינה: {name} חובה, רק המשתנים המוכרים, עד 3 רמות, בלי '..'. ריקה = ברירת המחדל. מחזיר הודעה או null. */
+function dbxTemplateError(string $tpl): ?string {
+    if ($tpl === '') return null;
+    if (mb_strlen($tpl) > 120) return 'התבנית ארוכה מדי';
+    if (!str_contains($tpl, '{name}')) return 'התבנית חייבת לכלול את שם הנפטר — {שם}';
+    if (preg_match_all('/\{[^}]*\}/u', $tpl, $m)) foreach ($m[0] as $v) if (!in_array($v, ['{year}', '{month}', '{date}', '{dm}', '{name}'], true)) return 'משתנה לא מוכר: ' . $v;
+    if (preg_match('/[\x00-\x1f\x7f\\:*?"<>|]/u', $tpl)) return 'תו אסור בתבנית';
+    $parts = explode('/', trim($tpl, '/'));
+    if (count($parts) > 3) return 'עד שלוש רמות תיקיות';
+    foreach ($parts as $p) if (trim($p) === '' || trim($p) === '.' || trim($p) === '..') return 'קטע ריק או לא תקין בתבנית';
+    return null;
+}
+function dbxActTemplateSet(PDO $pdo, array $who, string $method): never {
+    dbxNeed($who, 'dropbox_admin'); dbxMethod($method, 'POST');
+    $tpl = trim((string)(body()['template'] ?? ''));
+    $err = dbxTemplateError($tpl);
+    if ($err !== null) reply(400, ['error' => $err]);
+    $was = dbxTemplateInfo($pdo, $who['org_id'])['folder_template'];
+    orgSettingsPut($pdo, $who['org_id'], ['dropbox_folder_template' => $tpl === DBX_FOLDER_TEMPLATE ? '' : $tpl]);
+    $now = dbxTemplateInfo($pdo, $who['org_id']);
+    dbxEvent($who['org_id'], null, 'ui', 'dropbox_template_set', ['folder_template' => [$was, $now['folder_template']]], $who['actor']);
+    reply(200, ['ok' => true] + $now);
 }
 
 /* ---------- OAuth 2 + PKCE ---------- */
@@ -327,7 +361,19 @@ function dbxActCaseFiles(PDO $pdo, array $who, string $method): never {
         'has_root' => (string)$org['root_id'] !== '',
         'folder' => $folder ? ['path' => $folder['dbx_path'], 'dropbox_url' => dbxWebUrl((string)$folder['dbx_path'], true)] : null,
         'files' => array_map('dbxFileRow', $st->fetchAll()),
+        'link' => $folder ? dbxLinkInfo($pdo, $who['org_id'], (string)$folder['dbx_folder_id']) : null,
         'can_upload' => dbxCan($who, 'files_upload')]);
+}
+/** איך התיקייה קושרה לתיק (link_folders.why, מ-10): auto — קישור אוטומטי שמותר לבטל בלחיצה (link_undo). */
+function dbxLinkInfo(PDO $pdo, int $orgId, string $dbxId): array {
+    $why = '';
+    try {
+        $st = $pdo->prepare('SELECT why FROM link_folders WHERE org_id = ? AND dbx_id = ?');
+        $st->execute([$orgId, $dbxId]);
+        $why = (string)($st->fetchColumn() ?: '');
+    } catch (PDOException $e) { /* הטבלה של 10 עוד לא נוצרה */ }
+    $auto = in_array($why, ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true);
+    return ['auto' => $auto, 'why' => $auto ? $why : ''];
 }
 
 /**
@@ -411,7 +457,7 @@ function dbxActFileView(PDO $pdo, array $who, string $method): never {
         exit;
     }
     if ($row['preview'] === 'pdf') {
-        if ((int)$f['size'] > DBX_MAX_FILE) reply(413, ['error' => 'הקובץ גדול מדי לתצוגה — לפתוח ב-Dropbox', 'dropbox_url' => $row['dropbox_url']]);
+        if ((int)$f['size'] > DBX_MAX_FILE) reply(413, ['error' => 'הקובץ גדול מדי לתצוגה בתוך האפליקציה', 'dropbox_url' => $row['dropbox_url']]);
         $ext = strtolower(pathinfo((string)$f['name'], PATHINFO_EXTENSION));
         $sink = fopen('php://temp/maxmemory:8388608', 'w+b');
         $ep = $ext === 'pdf' ? 'files/download' : 'files/get_preview';
@@ -423,7 +469,7 @@ function dbxActFileView(PDO $pdo, array $who, string $method): never {
         fpassthru($sink);
         exit;
     }
-    reply(415, ['error' => 'אין תצוגה מקדימה לסוג הזה — לפתוח ב-Dropbox', 'dropbox_url' => $row['dropbox_url']]);
+    reply(415, ['error' => 'אין תצוגה לסוג הקובץ הזה', 'dropbox_url' => $row['dropbox_url']]);
 }
 
 /* ---------- מסך המפתח ---------- */

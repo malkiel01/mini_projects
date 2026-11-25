@@ -83,9 +83,14 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 need('dev');
                 $key = trim((string)(body()['key'] ?? ''));
                 if (strlen($key) < 20 || strlen($key) > 300 || preg_match('/\s/', $key)) reply(400, ['error' => 'המפתח לא נראה תקין (בלי רווחים, 20–300 תווים)']);
+                // ביקורת 12 ⚪4: בודקים מול הספק לפני השמירה — מפתח שגוי לא נשמר בשקט (תקין בלי יתרה — נשמר, עם הודעה)
+                $s = aiSettings($pdo, $org);
+                $t = aiKeyTest($s['provider'], $s['model'], $key);
+                if ($t['result'] === 'invalid') reply(400, ['error' => 'המפתח לא תקין — לא נשמר', 'code' => 'key_invalid']);
+                if ($t['result'] === 'error') reply(502, ['error' => 'לא הצלחנו לבדוק את המפתח, ולכן הוא לא נשמר: ' . $t['message'], 'code' => 'key_unchecked']);
                 secretPut('ai_key', 0, $key);
                 recordEvent(null, null, $c['actor'], 'ui', 'ai_owner_key', ['key' => ['—', 'הוחלף']]);
-                reply(200, ['ok' => true, 'hint' => aiKeyHint($key)]);
+                reply(200, ['ok' => true, 'hint' => aiKeyHint($key), 'check' => $t['result'], 'message' => $t['message']]);
 
             case 'ai_owner_key_remove':
                 $want('POST');
