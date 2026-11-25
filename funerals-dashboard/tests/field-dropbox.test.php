@@ -96,7 +96,7 @@ ok($st3 === 409, "U6: מזהה של צילום בלי תיק לא נכנס לת�
 
 // L3 (12b): תבנית התיקייה — בדיקת התבנית, ותיקייה חדשה לפי תבנית הארגון
 ok(dbxTemplateError('{date} {name}') === null && dbxTemplateError('') === null, 'L3: תבנית תקינה / ריקה');
-ok(dbxTemplateError('{month}') !== null && dbxTemplateError('{name}/{x}') !== null && dbxTemplateError('../{name}') !== null && dbxTemplateError('a/b/c/{name}') !== null, 'L3: תבנית פגומה נדחית');
+ok(dbxTemplateError('{month}') !== null && dbxTemplateError('{name}/{x}') !== null && dbxTemplateError('../{name}') !== null && dbxTemplateError('a/b/c/{name}') !== null && dbxTemplateError('a\\b {name}') !== null, 'L3: תבנית פגומה נדחית');
 orgSettingsPut($pdo, 1, ['dropbox_folder_template' => '{year}/{dm} {name}']);
 ok(dbxTemplateInfo($pdo, 1)['folder_template_example'] === '2026/14.10 ישראל ישראלי', 'L3: דוגמה לפי התבנית');
 $case2 = normalize(['month' => '2026-11', 'name' => 'לוי שרה', 'date' => '2026-11-20'], 1);

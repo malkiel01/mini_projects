@@ -86,6 +86,8 @@ async function closeDialog(page) { await page.keyboard.press('Escape'); await pa
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
+  const outside = [];   // ביקורת 12b: pdf.js מקומי — שום בקשה ל-CDN
+  page.on('request', r => { if (!r.url().startsWith(BASE)) outside.push(r.url()); });
 
   // U1: קבצי תיק מדומים (תמונה, PDF, Word) — file_view מחזיר PDF/תמונה; התיקייה קושרה לבד (ביטול קישור)
   let undo = null;
@@ -212,6 +214,7 @@ async function closeDialog(page) { await page.keyboard.press('Escape'); await pa
   ok(await page.inputValue('#fwGrave') === 'גוש 5 שורה 3', 'U7: תיקון ידני');
   await screen(page, 'field-case');
 
+  ok(!outside.length, 'pdf.js ושאר הקבצים — מקומיים, בלי בקשה החוצה' + (outside.length ? ' — ' + outside.join(', ') : ''));
   ok(!errors.length, 'בלי שגיאות JavaScript בדף' + (errors.length ? ' — ' + errors.join(' | ') : ''));
   await browser.close();
   console.log('  מסכים שנבדקו: ' + seen.join(', '));

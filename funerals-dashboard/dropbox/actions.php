@@ -128,7 +128,7 @@ function dbxTemplateError(string $tpl): ?string {
     if (mb_strlen($tpl) > 120) return 'התבנית ארוכה מדי';
     if (!str_contains($tpl, '{name}')) return 'התבנית חייבת לכלול את שם הנפטר — {שם}';
     if (preg_match_all('/\{[^}]*\}/u', $tpl, $m)) foreach ($m[0] as $v) if (!in_array($v, ['{year}', '{month}', '{date}', '{dm}', '{name}'], true)) return 'משתנה לא מוכר: ' . $v;
-    if (preg_match('/[\x00-\x1f\x7f\\:*?"<>|]/u', $tpl)) return 'תו אסור בתבנית';
+    if (preg_match('/[\x00-\x1f\x7f\\\\:*?"<>|]/u', $tpl)) return 'תו אסור בתבנית';   // כולל \ (ביקורת 12b ⚪7)
     $parts = explode('/', trim($tpl, '/'));
     if (count($parts) > 3) return 'עד שלוש רמות תיקיות';
     foreach ($parts as $p) if (trim($p) === '' || trim($p) === '.' || trim($p) === '..') return 'קטע ריק או לא תקין בתבנית';
@@ -372,7 +372,7 @@ function dbxLinkInfo(PDO $pdo, int $orgId, string $dbxId): array {
         $st->execute([$orgId, $dbxId]);
         $why = (string)($st->fetchColumn() ?: '');
     } catch (PDOException $e) { /* הטבלה של 10 עוד לא נוצרה */ }
-    $auto = in_array($why, ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true);
+    $auto = in_array($why, defined('LINK_AUTO_WHY') ? LINK_AUTO_WHY : ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true);
     return ['auto' => $auto, 'why' => $auto ? $why : ''];
 }
 

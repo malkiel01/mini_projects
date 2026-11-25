@@ -112,17 +112,14 @@
    * U1: הצופה בתוך האפליקציה — תמונה, PDF ו-Word (השרת ממיר Word ל-PDF, file_view). PDF מצויר כעמודים (pdf.js),
    * כי מציג ה-PDF של הדפדפן לא עובד בתוך מסגרת בטלפון. בלי קישור החוצה. אם pdf.js לא נטען — מסגרת, כגיבוי.
    */
-  const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  // pdf.js 4.10.38, עותק מקומי (assets/vendor/pdfjs, ביקורת 12b 🔴1): בלי CDN, ומעל התיקון של CVE-2024-4367
+  const PDFJS = 'assets/vendor/pdfjs/';
   let pdfjs = null;
   function loadPdfJs() {
-    if (pdfjs) return pdfjs;
-    pdfjs = new Promise((ok, no) => {
-      if (window.pdfjsLib) { ok(window.pdfjsLib); return; }
-      const s = document.createElement('script'); s.src = PDFJS + 'pdf.min.js'; s.crossOrigin = 'anonymous';
-      s.onload = () => { if (!window.pdfjsLib) { no(new Error('pdf')); return; } window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; ok(window.pdfjsLib); };
-      s.onerror = () => { pdfjs = null; no(new Error('pdf')); };
-      document.head.append(s);
-    });
+    if (!pdfjs) pdfjs = import(new URL(PDFJS + 'pdf.min.js', document.baseURI).href).then(lib => {
+      lib.GlobalWorkerOptions.workerSrc = new URL(PDFJS + 'pdf.worker.min.js', document.baseURI).href;
+      return lib;
+    }).catch(e => { pdfjs = null; throw e; });
     return pdfjs;
   }
   async function renderPdf(box, src, name) {
@@ -133,7 +130,8 @@
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw Object.assign(new Error(j.error || 'המסמך לא נטען'), {server: true}); }
       const data = new Uint8Array(await res.arrayBuffer());
       const lib = await loadPdfJs();
-      doc = await lib.getDocument({data}).promise;
+      // isEvalSupported: false — גופן בתוך PDF לא יכול להריץ קוד (CVE-2024-4367), גם אם הגרסה תשתנה
+      doc = await lib.getDocument({data, isEvalSupported: false}).promise;
     } catch (e) {
       wait.remove();
       if (e.server) { box.append(el('p', 'error', e.message)); return; }

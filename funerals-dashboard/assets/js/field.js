@@ -97,6 +97,7 @@
           <h3 class="sec-title">בדיקות</h3><div class="list" id="fwChecks"></div>
           <div class="gps-row"><label class="f wide"><span>מיקום הקבר</span><input id="fwGrave" maxlength="180" autocomplete="off"></label>
             <button type="button" class="btn ghost" id="fwGps">📍 המיקום שלי</button></div>
+          <p class="hint">📍 לוקח את המיקום של הטלפון רק כשלוחצים — כדי לרשום איפה הקבר. אפשר גם לכתוב ידנית.</p>
           <label class="f wide"><span>הערה</span><textarea id="fwNotes" class="grow" rows="2" maxlength="1500"></textarea></label>
           <button type="button" class="btn primary" id="fwSave">שמירה</button>
         </div>

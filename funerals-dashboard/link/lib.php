@@ -413,6 +413,8 @@ function linkAskFolder(PDO $pdo, int $orgId, string $id, string $name, array $d,
 }
 
 const LINK_UNDONE = 'קישור בוטל';
+/** הסיבות של קישור אוטומטי — מה שמותר לבטל בלחיצה (link_undo; גם dbxLinkInfo ב-dropbox/actions.php). */
+const LINK_AUTO_WHY = ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'];
 /** האם ההחלטה נשענת על ת"ז זהה (ולא רק על שם ותאריך). */
 function linkTzHit(array $p, array $cases, string $caseId): bool {
     foreach ($cases as $c) if ($c['id'] === $caseId) return (bool)array_intersect($p['tz'], $c['tz']);
@@ -464,7 +466,7 @@ function linkUndo(PDO $pdo, array $org, string $caseId, array $actor): array {
     $lf = $pdo->prepare('SELECT why FROM link_folders WHERE org_id = ? AND dbx_id = ?');
     $lf->execute([$orgId, $link['dbx_folder_id']]);
     $why = (string)($lf->fetchColumn() ?: '');
-    if (!in_array($why, ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true)) return ['ok' => false, 'error' => 'זה לא קישור אוטומטי — לנתק ב-⚙️ קבצים', 'status' => 409];
+    if (!in_array($why, LINK_AUTO_WHY, true)) return ['ok' => false, 'error' => 'זה לא קישור אוטומטי — לנתק ב-⚙️ קבצים', 'status' => 409];
     linkUndoWrites($pdo, $orgId, $caseId, mb_strtolower((string)$link['dbx_path']));
     $pdo->prepare('DELETE FROM case_folders WHERE org_id = ? AND case_id = ?')->execute([$orgId, $caseId]);
     $pdo->prepare('UPDATE files SET case_id = NULL WHERE org_id = ? AND case_id = ? AND path_lower LIKE ? ESCAPE \'\\\'')

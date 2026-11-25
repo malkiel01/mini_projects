@@ -34,6 +34,11 @@ node "$APP/tests/form.test.js" || fail "form.test.js"
 # פרוסה 04 — עובד שטח: הליבה בדפדפן (הקטנה, GPS, תור) — בלי שרת
 node --check "$APP/assets/js/field-core.js" || fail "node --check field-core.js"
 node --check "$APP/assets/js/field.js" || fail "node --check field.js"
+# ביקורת 12b 🔴1: pdf.js מקומי בגרסה שתוקנה (CVE-2024-4367), עם isEvalSupported: false, ובלי CDN
+grep -q 'isEvalSupported: false' "$APP/assets/js/dropbox.js" || fail "12b: isEvalSupported: false"
+grep -q '"4.10.38"' "$APP/assets/vendor/pdfjs/pdf.min.js" || fail "12b: גרסת pdf.js"
+(cd "$APP/assets/vendor/pdfjs" && sha256sum -c --quiet SHA256SUMS) || fail "12b: הגיבוב של pdf.js"
+! grep -q 'cdnjs' "$APP/assets/js/dropbox.js" || fail "12b: pdf.js מ-CDN"
 node --check "$APP/sw.js" || fail "node --check sw.js"
 # sw.js: רק Background Sync — בלי fetch handler ובלי מטמון (ביקורת 04 #2)
 grep -q "addEventListener('sync'" "$APP/sw.js" && ! grep -qE "addEventListener\('fetch'|caches\." "$APP/sw.js" || fail "sw.js: רק sync, בלי fetch/מטמון"
@@ -501,4 +506,9 @@ bash "$APP/tests/settings.sh"
 
 # ===== פרוסה 12b — הממשק בדפדפן: U1, U2, U5–U7, U9, 320px, ביטול קישור, תבנית תיקייה (Playwright; בלעדיו — מדלג) =====
 node --check "$APP/assets/js/field.js" || fail "node --check field.js"
+# ביקורת 12b 🔴1: pdf.js מקומי בגרסה שתוקנה (CVE-2024-4367), עם isEvalSupported: false, ובלי CDN
+grep -q 'isEvalSupported: false' "$APP/assets/js/dropbox.js" || fail "12b: isEvalSupported: false"
+grep -q '"4.10.38"' "$APP/assets/vendor/pdfjs/pdf.min.js" || fail "12b: גרסת pdf.js"
+(cd "$APP/assets/vendor/pdfjs" && sha256sum -c --quiet SHA256SUMS) || fail "12b: הגיבוב של pdf.js"
+! grep -q 'cdnjs' "$APP/assets/js/dropbox.js" || fail "12b: pdf.js מ-CDN"
 bash "$APP/tests/ui.sh"

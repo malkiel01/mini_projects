@@ -432,6 +432,13 @@ function fieldAction(PDO $pdo, string $action, string $method, int $orgId, array
         case 'field_upload':
             if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
             if ($mine !== null && (string)($_POST['case_id'] ?? '') !== '') { $sid = (string)($_POST['case_id'] ?? ''); if (!in_array($sid, $mine, true)) reply(404, ['error' => 'התיק לא נמצא']); need('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId]); }
+            elseif ($mine !== null) {
+                // U6 (ביקורת 12b 🟡3, הוחלט): עובד "רק שהוקצו לי" מצלם גם בלי תיק — אם יש לו הרשאת מעקב על תיק שהוקצה לו.
+                // הצילום לא חושף שום תיק: הוא עולה לתיקייה הראשית, והזיהוי שואל את המשרד לאיזה תיק הוא שייך.
+                $track = false;
+                foreach ($mine as $sid) if (can('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId])) { $track = true; break; }
+                if (!$track) reply(403, ['error' => 'אין לך הרשאה לפעולה הזו']);
+            }
             else need('case.track');   // גם צילום בלי תיק (U6)
             $f = $_FILES['file'] ?? null;
             $tmp = is_array($f) && is_string($f['tmp_name'] ?? null) ? $f['tmp_name'] : '';
