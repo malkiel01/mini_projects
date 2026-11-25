@@ -24,7 +24,7 @@
 
 ## ההפעלה
 
-1. `create_session`: `title` "מנהל הצוותים", `source_url` הריפו, `tags: ["teams-manager"]`, ופרומפט הפתיחה (למטה).
+1. `create_session`: `model: "opus"`, `effort: "low"` (PROTOCOL §13), `title` "מנהל הצוותים", `source_url` הריפו, `tags: ["teams-manager"]`, ופרומפט הפתיחה (למטה).
 2. `create_trigger`: `cron_expression` "13 */2 * * *", `persistent_session_id` = הצ'אט החדש, `initiation` "human_request",
    והפרומפט של הסבב (למטה).
 3. המזהה ל-`.claude/teams/STATE.md`, PR, מיזוג.
