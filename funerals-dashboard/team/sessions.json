@@ -4,11 +4,24 @@
     "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
     "branch": "claude/funerals-dashboard-spec"
   },
-  "code": [],
+  "code": [
+    {
+      "session": "session_018g4NYFG5mjiidbMUvjvA8E",
+      "slice": "10",
+      "branch": "claude/funerals-dashboard-10-ai-link",
+      "state": "פעיל"
+    },
+    {
+      "session": "session_018g4NYH1GqpeXaWBXCCakDy",
+      "slice": "11",
+      "branch": "claude/funerals-dashboard-11-settings",
+      "state": "פעיל"
+    }
+  ],
   "control": {
-    "session": "session_018g4NYEmc1swmXwJd11ZcQW",
+    "session": "session_018g4NYEMXfmbD3B4CjhKViH",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_018AZvr3yfhJafuYGjJa36fM"
+    "clock": "trig_013Vvw9Rw16vnti3CnuP12vf"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -82,6 +95,11 @@
     {
       "session": "session_018g4NYEtyGfJPB3ADzV5Upg",
       "role": "בקרה 4",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEmc1swmXwJd11ZcQW",
+      "role": "בקרה 5",
       "state": "רדום"
     }
   ]

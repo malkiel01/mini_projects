@@ -165,6 +165,12 @@
 הבעלים), אפיון וקוד (רק עם הצוות), ומעל כולם סוכן מנהל אחד (`.claude/teams/STATE.md`). החוק של כל צוות —
 `<app>/team/PROTOCOL.md`. הסקיל מחליף את `app-build-trio` ואת `chat-dev-team`.
 
+## כלל יסוד: מודל ומאמץ לכל צ'אט חדש
+
+הנחיה גורפת של הבעלים (25.11), בכל `create_session` — פתיחה או החלפה, בכל פרויקט:
+**בקרה — `model: "sonnet"`, `effort: "low"`. כל צ'אט אחר — `model: "opus"`, `effort: "low"`.** אחר רק לפי
+בקשה מפורשת של הבעלים. הפירוט: `.claude/skills/app-team/references/protocol.md` §13.
+
 ## כלל יסוד: DevLoop — מודול משותף, עורכים רק במקור
 
 המטלות, האימות והראיות של האפליקציות (`devloop/`) מועתקים לכל אפליקציה שב-`devloop/apps.json`. **לא עורכים
