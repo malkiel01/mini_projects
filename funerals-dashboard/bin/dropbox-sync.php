@@ -10,6 +10,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require dirname(__DIR__) . '/lib.php';
 require_once dirname(__DIR__) . '/dropbox/lib.php';
+require_once dirname(__DIR__) . '/link/lib.php';
 
 $pdo = db();
 $started = microtime(true);
@@ -22,4 +23,12 @@ foreach (dbxConnectedOrgs($pdo) as $orgId) {
         $r = ['ok' => false, 'error' => 'exception'];
     }
     echo gmdate('c') . ' org=' . $orgId . ' ' . json_encode($r, JSON_UNESCAPED_SLASHES) . "\n";
+    // פרוסה 10: זיהוי תיקיות ומיון קבצים (עם קריאת תוכן בבינה) — מה שה-webhook השאיר
+    try {
+        $l = linkRun($pdo, $orgId, ['read' => true, 'budget' => 40.0]);
+        echo gmdate('c') . ' org=' . $orgId . ' link ' . json_encode($l, JSON_UNESCAPED_SLASHES) . "\n";
+    } catch (Throwable $e) {
+        error_log('funerals-dashboard link: ' . $e->getMessage());
+        echo gmdate('c') . ' org=' . $orgId . " link error\n";
+    }
 }

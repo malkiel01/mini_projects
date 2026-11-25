@@ -143,3 +143,11 @@
   NAT64 / DNS מעורב ב-CIMD, אסימון שפג, רענון אחרי השבתה. ⚪5 `BEGIN IMMEDIATE` בהחלפת קוד/רענון; ⚪6 `revokeOauthGrantsOf()`
   (lib/access.php) ב-member_active / user_active של api.php, וגם grant של חבר לא פעיל מתבטל בגילוי (MCP / רענון); ⚪7 CSP עם [::1];
   ⚪8 עד 20 בקשות ב-batch.
+
+## 2026-11-25 — פרוסה 10 (זיהוי וקישור), ענף `claude/funerals-dashboard-10-ai-link`
+- נבנה `link/` (parse.php טהור, lib.php, actions.php): זיהוי תיקיות בלי תבנית (מבנה/שם/תוכן/כללים), קישור לפי מזהה תיקייה,
+  תיק מתיקייה חדשה עם בדיקת כפילות, מיון קבצים (סוג, בדיקה, מספר רישיון), קובץ יתום → שאלה, כללים בשתי שכבות, "מאשר לבד".
+- מפתח הבעלים כברירת מחדל (`aiKey` → org 0), `ai_owner_key_save/remove` (dev).
+- טבלאות: `linkEnsureSchema()` אידמפוטנטית ולפי שם, בלי `SCHEMA_VERSION` — כדי לא להתנגש ב-11. הכול תחת `data/` — אין `--exclude` חדש.
+- בדיקות: `tests/link.test.php` (נקרא מ-run.sh) + קטע "10" ב-`tests/ai.sh`. run.sh ירוק.
+- לא נבנה: מסך לשאלות/כללים (פרוסה 12 — ה-API מוכן); העברת קובץ יתום לתיק (move_v2) לא נבדקה אוטומטית.
