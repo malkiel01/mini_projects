@@ -301,36 +301,62 @@ function fieldTakenAt(mixed $ms): ?DateTimeImmutable {
 
 /* ---------- נקודות הקצה ---------- */
 
+/**
+ * פרוסה 12 — "רק תיקים שהוקצו לי" (case.view_assigned) במסך השטח: היום/חיפוש מחזירים רק את התיקים שהוקצו, ותיק בודד — רק אם
+ * הוקצה (אחרת 404, כמו ב-ext). null = רואה הכול; [] = רואה רק שהוקצו, ואין.
+ */
+function fieldAssignedIds(PDO $pdo, int $orgId): ?array {
+    if (can('case.view') || !can('case.view_assigned')) return null;
+    return assignedCaseIds($pdo, $orgId, (int)ctx()['user']['id'], ctxRole()['id'] ?? null);
+}
+/** כרטיסי השטח של התיקים שהוקצו — כל התאריכים, הקרוב קודם. */
+function fieldAssignedCards(PDO $pdo, int $orgId, array $ids): array {
+    $cases = [];
+    foreach ($ids as $id) { $c = existing($pdo, (string)$id, $orgId); if ($c !== null) $cases[] = $c; }
+    usort($cases, fn($a, $b) => [$a['date'] ?? '', $a['time'] ?? ''] <=> [$b['date'] ?? '', $b['time'] ?? '']);
+    $stats = fieldFileStats($pdo, $orgId, array_column($cases, 'id'));
+    return array_map(fn($c) => fieldCard($c, $stats[$c['id']]), $cases);
+}
+
 function fieldAction(PDO $pdo, string $action, string $method, int $orgId, array $actor): never {
     $id = (string)($_GET['id'] ?? '');
+    $mine = in_array($action, ['field_today', 'field_search', 'field_case', 'field_save', 'field_upload'], true) ? fieldAssignedIds($pdo, $orgId) : null;
     switch ($action) {
         case 'field_today':
             if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
+            if ($mine !== null) { [$t, $tm] = fieldDays(); reply(200, ['ok' => true, 'assigned_only' => true, 'today' => $t, 'tomorrow' => $tm, 'cases' => fieldAssignedCards($pdo, $orgId, $mine)]); }
             need('case.view');
             reply(200, ['ok' => true] + fieldToday($pdo, $orgId));
         case 'field_search':
             if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
+            if ($mine !== null) {
+                $q = cleanText($_GET['q'] ?? '', 80);
+                reply(200, ['ok' => true, 'cases' => array_values(array_filter(fieldAssignedCards($pdo, $orgId, $mine),
+                    fn($c) => mb_strlen($q) >= 2 && mb_stripos((string)($c['name'] ?? ''), $q) !== false))]);
+            }
             need('case.view');
             reply(200, ['ok' => true, 'cases' => fieldSearch($pdo, $orgId, cleanText($_GET['q'] ?? '', 80))]);
         case 'field_case':
             if ($method !== 'GET') reply(405, ['error' => 'שיטה לא מורשית']);
-            need('case.view');
+            if ($mine === null) need('case.view');
             if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(400, ['error' => 'מזהה תיק אינו תקין']);
             $case = existing($pdo, $id, $orgId);
-            if ($case === null) reply(404, ['error' => 'התיק לא נמצא']);
+            if ($case === null || ($mine !== null && !in_array($id, $mine, true))) reply(404, ['error' => 'התיק לא נמצא']);
             $stats = fieldFileStats($pdo, $orgId, [$id])[$id];
             unset($case['payments']);
             reply(200, ['ok' => true, 'case' => $case, 'needs' => fieldNeeds($case, $stats), 'kinds' => fieldKinds($case),
-                'files' => fieldCaseFiles($pdo, $orgId, $id), 'can_track' => can('case.track')]);
+                'files' => fieldCaseFiles($pdo, $orgId, $id), 'can_track' => can('case.track', $case + ['org_id' => $orgId])]);
         case 'field_save':
             if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
-            need('case.track');
+            if ($mine !== null) { $sid = (string)(body()['id'] ?? ''); if (!in_array($sid, $mine, true)) reply(404, ['error' => 'התיק לא נמצא']); need('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId]); }
+            else need('case.track');
             $item = fieldSave($pdo, body(), $actor, $orgId);
             unset($item['payments']);
             reply(200, ['ok' => true, 'record' => $item]);
         case 'field_upload':
             if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
-            need('case.track');
+            if ($mine !== null) { $sid = (string)($_POST['case_id'] ?? ''); if (!in_array($sid, $mine, true)) reply(404, ['error' => 'התיק לא נמצא']); need('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId]); }
+            else need('case.track');
             $f = $_FILES['file'] ?? null;
             $tmp = is_array($f) && is_string($f['tmp_name'] ?? null) ? $f['tmp_name'] : '';
             if ($tmp !== '') register_shutdown_function(static function () use ($tmp) { if (is_file($tmp)) @unlink($tmp); });

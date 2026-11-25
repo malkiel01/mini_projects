@@ -109,7 +109,9 @@ function aiPublicSettings(PDO $pdo, int $orgId): array {
         'token_cap' => $s['token_cap'], 'tokens' => aiTokensUsed($pdo, $orgId),
         'has_key' => aiKey($orgId) !== null, 'key_source' => aiKeySource($orgId), 'key_hint' => $s['key_hint'], 'key_set_at' => $s['key_set_at'],
         'key_check' => $s['key_check'], 'key_check_at' => $s['key_check_at'],
-        'used' => aiUsed($pdo, $orgId), 'month' => gmdate('Y-m'), 'providers' => $providers, 'tools_ready' => aiToolsReady()];
+        'used' => aiUsed($pdo, $orgId), 'month' => gmdate('Y-m'), 'providers' => $providers, 'tools_ready' => aiToolsReady()]
+        // פרוסה 12: מפתח ברירת המחדל של הבעלים (א11) — רק למפתח: '' = לא הוגדר, אחרת 4 התווים האחרונים
+        + (ctx()['dev'] ? ['owner_key_hint' => (($ok = secretGet('ai_key', 0)) !== null && $ok !== '') ? aiKeyHint($ok) : ''] : []);
 }
 
 // ───────────────────────── תקרה ─────────────────────────
