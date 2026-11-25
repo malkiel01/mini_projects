@@ -4,6 +4,7 @@
 #   S1 מיגרציה לא מוחקת · S2 בדיקה חדשה = "חסר" בתיקים קיימים · S3 הסרה לא מוחקת ערכים · S4 כללית + דריסה בארגון
 #   S5 סדר · S6 מותנית · S7 דחוף · S8 תפקיד מוגבל באמת מוגבל (בשרת) · S9 שינוי הרשאה חל מיד, המנהל האחרון
 #   S10 משימות ו"המשימות שלי" · S11 משתמש בשני ארגונים
+#   S12–S15 — לפי docs/spec/10-acceptance.md: ערך לפי סוג, API/MCP לתיקים שהוקצו, הקצאה גוברת וסגירה, ארכיון
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 APP=funerals-dashboard
@@ -236,6 +237,63 @@ test "$(jv 'count($v["checks"])')" = 9 || fail "S11: בארגון ב — הבד�
 code="$(post photo org_switch '{"org_id":1}')"; code="$(get photo me)"; test "$(jv '$v["role_label"]')" = 'צלם מצבה' || fail "S11: חזרה לארגון א — צלם"
 ok "S11 — משתמש בשני ארגונים: תפקיד והרשאות לפי הארגון הפעיל; הגדרות של ארגון אחד לא עוברות לאחר"
 
+# ===== S12 (10-acceptance S1): ערך לפי סוג, כן/לא =====
+code="$(post dev org_switch '{"org_id":1}')"
+post boss check_save '{"key":"license_number","type":"value","value_kind":"number"}' >/dev/null
+post boss check_save '{"name":"נקבר בחלקה משפחתית","key":"family_plot","type":"yesno"}' >/dev/null
+post boss check_save '{"name":"תאריך פטירה","key":"death_date","type":"value","value_kind":"date"}' >/dev/null
+setv(){ php -r '$p=new PDO("sqlite:".$argv[1]); $b=json_decode($p->query("SELECT body FROM funerals WHERE id=\"".$argv[2]."\"")->fetchColumn(),true); $b["checks"][$argv[3]]=["status"=>$argv[5]??"document_present","value"=>$argv[4]]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$DB" "$@"; }
+code="$(post office save "$(setv "$FID3" license_number abc)")"; test "$code" = 400 || fail "S12: מספר — טקסט נדחה ($code)"
+code="$(post office save "$(setv "$FID3" license_number 12345)")"; test "$code" = 200 || fail "S12: מספר ($code)"
+code="$(post office save "$(setv "$FID3" family_plot אולי)")"; test "$code" = 400 || fail "S12: כן/לא — ערך אחר ($code)"
+code="$(post office save "$(setv "$FID3" family_plot כן)")"; test "$code" = 200 || fail "S12: כן ($code)"
+code="$(post office save "$(setv "$FID3" death_date 2026-02-30)")"; test "$code" = 400 || fail "S12: תאריך לא קיים ($code)"
+code="$(post office save "$(setv "$FID3" death_date 2026-10-01)")"; test "$code" = 200 || fail "S12: תאריך ($code)"
+# מותנית על כן/לא: רק כש"כן"
+post boss check_save '{"key":"partner_identity","cond":{"check":"family_plot"}}' >/dev/null
+code="$(get office case_checks "&id=$FID3")"; test "$(jv 'array_values(array_filter($v["checks"], fn($c) => $c["key"]==="partner_identity"))[0]["state"]')" = missing || fail "S12: כן → נדרשת, חסר"
+post office save "$(setv "$FID3" family_plot לא)" >/dev/null
+code="$(get office case_checks "&id=$FID3")"; test "$(jv 'array_values(array_filter($v["checks"], fn($c) => $c["key"]==="partner_identity"))[0]["state"]')" = na || fail "S12: לא → לא נספרת"
+ok "S12 — ערך לפי סוג (מספר/תאריך), כן/לא רק שני ערכים, מותנית על \"כן\""
+
+# ===== S13 (S6): API חיצוני ו-MCP — רק התיקים שהוקצו, תיק אחר → 404 =====
+login photo
+as "${ID[photo]}"; st -b "$tmp/c-photo" -c "$tmp/c-photo" -H "X-CSRF-Token: ${CSRF[photo]}" -H 'Content-Type: application/json' -d '{"name":"בדיקה","days":30}' "http://127.0.0.1:18971/tokens.php?action=create" >/dev/null; TOK="$(jv '$v["token"]')"
+test -n "$TOK" || fail "S13: אסימון לצלם"
+xg(){ st -H "Authorization: Bearer $TOK" "http://127.0.0.1:18971/ext.php/$1"; }
+code="$(xg "cases")"; test "$code" = 200 && test "$(jv 'implode(",", array_column($v["cases"], "id"))')" = "$FID" || fail "S13: cases — רק שלו ($code)"
+code="$(xg "case?id=$FID")"; test "$code" = 200 || fail "S13: case שלו ($code)"
+code="$(xg "case?id=$FID2")"; test "$code" = 404 || fail "S13: case של אחר → 404 ($code)"
+NM="$(sql "SELECT name FROM funerals WHERE id='$FID2'" | cut -c1-6)"
+code="$(st -H "Authorization: Bearer $TOK" -G --data-urlencode "q=$NM" "http://127.0.0.1:18971/ext.php/find")"; test "$code" = 200 && test "$(jv 'implode(",", array_column($v["results"], "id"))')" = "$FID" || fail "S13: find — רק התיק שלו ($code)"
+code="$(st -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "{\"id\":\"$FID2\",\"note\":\"x\"}" "http://127.0.0.1:18971/ext.php/case_update")"; test "$code" = 404 || fail "S13: עדכון תיק של אחר ($code)"
+code="$(st -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "{\"id\":\"$FID\",\"note\":\"מהצ'אט\"}" "http://127.0.0.1:18971/ext.php/case_update")"; test "$code" = 200 || fail "S13: עדכון תיק שלו ($code)"
+ok "S13 — API חיצוני (וכך MCP, אותו extDo): רק התיקים שהוקצו, תיק אחר → 404, גם בעדכון"
+
+# ===== S14 (S8): הקצאה לאדם גוברת; השלמת הבדיקה סוגרת את המשימה =====
+code="$(post boss task_save "{\"case_id\":\"$FID3\",\"check_key\":\"grave_purchase\",\"assignee_user_id\":$BOSS_UID}")"; T3="$(jv '$v["task"]["id"]')"
+code="$(get office my_tasks)"; test "$(jv 'count(array_filter($v["items"], fn($i) => $i["kind"]==="check" && $i["case_id"]==="'"$FID3"'" && $i["check_key"]==="grave_purchase"))')" = 0 || fail "S14: הקצאה לאדם גוברת על התפקיד"
+code="$(get boss my_tasks)"; test "$(jv 'count(array_filter($v["items"], fn($i) => ($i["id"] ?? 0)=='"$T3"'))')" = 1 || fail "S14: אצל המוקצה"
+post office save "$(setv "$FID3" grave_purchase '' verified)" >/dev/null
+test "$(sql "SELECT status FROM tasks WHERE id=$T3")" = done || fail "S14: הבדיקה הושלמה → המשימה נסגרה"
+ok "S14 — הקצאה לאדם גוברת על תפקיד אחראי; השלמת הבדיקה סוגרת את המשימה"
+
+# ===== S15 (S10): ארכיון =====
+MON3="$(sql "SELECT month FROM funerals WHERE id='$FID3'")"
+allv="$(php -r '$p=new PDO("sqlite:".$argv[1]); $b=json_decode($p->query("SELECT body FROM funerals WHERE id=\"".$argv[2]."\"")->fetchColumn(),true);
+  foreach (json_decode($argv[3],true)["checks"] as $c) $b["checks"][$c["key"]]=["status"=>$c["key"]==="partner_identity"?"unknown":"verified","value"=>$b["checks"][$c["key"]]["value"]??""]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$DB" "$FID3" "$(get boss case_checks "&id=$FID3" >/dev/null; cat "$tmp/out")")"
+code="$(post boss save "$allv")"; test "$code" = 200 || fail "S15: הכול הושלם ($code)"
+code="$(get boss case_checks "&id=$FID3")"; test "$(jv '$v["archived"]')" = true || fail "S15: לארכיון (מותנית שלא חלה לא נחשבת)"
+code="$(get boss list "&month=$MON3")"; test "$(jv 'count(array_filter($v["records"], fn($r) => $r["id"]==="'"$FID3"'"))')" = 0 || fail "S15: לא ברשימה הרגילה"
+code="$(get boss list "&month=$MON3&archived=1")"; test "$(jv 'count(array_filter($v["records"], fn($r) => $r["id"]==="'"$FID3"'"))')" = 1 || fail "S15: ברשימת הארכיון"
+code="$(get boss field_search "&q=$(php -r 'echo rawurlencode(mb_substr($argv[1],0,4));' "$(sql "SELECT name FROM funerals WHERE id='$FID3'")")")"; test "$(jv 'count(array_filter($v["cases"] ?? $v["results"] ?? $v, fn($r) => is_array($r) && ($r["id"]??"")==="'"$FID3"'"))')" = 1 || fail "S15: נמצא בחיפוש"
+post boss check_save '{"name":"בדיקה אחרי ארכיון","type":"document"}' >/dev/null
+code="$(get boss case_checks "&id=$FID3")"; test "$(jv '$v["archived"]')" = true || fail "S15: בדיקה חדשה לא מוציאה מהארכיון"
+code="$(post boss case_restore "{\"id\":\"$FID3\"}")"; test "$code" = 200 || fail "S15: החזרה ($code)"
+code="$(get boss list "&month=$MON3")"; test "$(jv 'count(array_filter($v["records"], fn($r) => $r["id"]==="'"$FID3"'"))')" = 1 || fail "S15: אחרי החזרה — ברשימה"
+code="$(post boss case_restore "{\"id\":\"$FID3\"}")"; test "$code" = 409 || fail "S15: החזרה פעמיים ($code)"
+ok "S15 — ארכיון: הכול הושלם → ארכיון (לא ברשימה, בחיפוש), בדיקה חדשה לא מוציאה, החזרה מחזירה"
+
 sql "SELECT id FROM funerals ORDER BY id" > "$tmp/ids"; test "$(wc -l < "$tmp/ids")" = 22 || fail "בסוף: 22 תיקים"
 ! grep -E 'PHP (Fatal|Warning|Parse|Deprecated)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated)' "$tmp/server.log" | grep -v 'in Unknown on line 0'; fail "שגיאות PHP בשרת"; }
-echo "PASS (11): S1–S11 — מיגרציה לא מוחקת, בדיקה חדשה = חסר, הסרה לא מוחקת, כללית + דריסה, סדר, מותנית, דחוף, תפקיד מוגבל באמת מוגבל, שינוי הרשאה מיד, משימות, שני ארגונים"
+echo "PASS (11): S1–S15 — מיגרציה לא מוחקת, בדיקה חדשה = חסר, הסרה לא מוחקת, כללית + דריסה, סדר, מותנית, דחוף, תפקיד מוגבל באמת מוגבל, שינוי הרשאה מיד, משימות, שני ארגונים"

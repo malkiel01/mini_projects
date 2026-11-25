@@ -12,7 +12,7 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 
 const SETTINGS_ACTIONS = ['checks', 'check_save', 'check_remove', 'check_reset', 'check_order', 'urgent_save', 'case_checks',
-    'roles', 'role_save', 'role_archive', 'tasks', 'task_save', 'task_status', 'my_tasks'];
+    'case_restore', 'roles', 'role_save', 'role_archive', 'tasks', 'task_save', 'task_status', 'my_tasks'];
 
 function settingsHandles(string $action): bool { return in_array($action, SETTINGS_ACTIONS, true); }
 
@@ -94,7 +94,16 @@ function settingsAction(PDO $pdo, string $action, string $method, int $org, arra
                 $id = (string)($_GET['id'] ?? '');
                 $case = settingsCase($pdo, $org, $id);
                 $state = caseChecks($pdo, $org, $case);
-                reply(200, ['id' => $id, 'urgent' => caseUrgent($pdo, $org, $case, $state)] + $state + ['tasks' => caseTasks($pdo, $org, $id)]);
+                reply(200, ['id' => $id, 'archived' => caseArchived($pdo, $org, $id), 'urgent' => caseUrgent($pdo, $org, $case, $state)] + $state + ['tasks' => caseTasks($pdo, $org, $id)]);
+
+            case 'case_restore':
+                $in = $post();
+                $id = (string)($in['id'] ?? '');
+                settingsCase($pdo, $org, $id);
+                need('case.track', ['org_id' => $org, 'id' => $id]);
+                if (!caseRestore($pdo, $org, $id)) reply(409, ['error' => 'התיק אינו בארכיון']);
+                recordEvent($org, $id, $actor, 'ui', 'case_restore', ['archived' => [true, false]]);
+                reply(200, ['ok' => true]);
 
             /* ===== תפקידים ===== */
             case 'roles':

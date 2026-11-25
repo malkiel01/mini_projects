@@ -330,6 +330,10 @@ function myTasks(PDO $pdo, int $orgId, int $uid, ?int $roleId, callable $caseVis
     $st->execute([$orgId, $uid, $roleId ?? -1]);
     $items = [];
     $seen = [];
+    // S8: בדיקה שיש לה משימה מפורשת פתוחה (לכל אחד) — ההקצאה גוברת על "התפקיד האחראי"
+    $ex = $pdo->prepare('SELECT case_id, check_key FROM tasks WHERE org_id = ? AND status = \'open\' AND check_key IS NOT NULL');
+    $ex->execute([$orgId]);
+    foreach ($ex->fetchAll(PDO::FETCH_NUM) as [$ci, $ck]) $seen[$ci . '|' . $ck] = true;
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $t) {
         $items[] = ['kind' => 'task'] + taskOut($t);
         if ($t['check_key'] !== null) $seen[$t['case_id'] . '|' . $t['check_key']] = true;
@@ -354,4 +358,16 @@ function myTasks(PDO $pdo, int $orgId, int $uid, ?int $roleId, callable $caseVis
         }
     }
     return $items;
+}
+
+/** S8: אחרי שמירה — משימה פתוחה לבדיקה שהושלמה (או לא רלוונטית) נסגרת. */
+function tasksCloseDone(PDO $pdo, int $orgId, array $case, ?int $by): void {
+    $st = $pdo->prepare('SELECT id, check_key FROM tasks WHERE org_id = ? AND case_id = ? AND status = \'open\' AND check_key IS NOT NULL');
+    $st->execute([$orgId, $case['id']]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!$rows) return;
+    $state = [];
+    foreach (caseChecks($pdo, $orgId, $case)['checks'] as $c) $state[$c['key']] = $c['state'];
+    $up = $pdo->prepare('UPDATE tasks SET status = \'done\', done_at = ?, done_by = ? WHERE id = ?');
+    foreach ($rows as $t) if (in_array($state[$t['check_key']] ?? '', ['done', 'na'], true)) $up->execute([gmdate('c'), $by, $t['id']]);
 }

@@ -230,6 +230,13 @@ function listMonth(PDO $pdo, string $action, string $method, int $orgId, ?array 
     $st->execute([$orgId, $month]);
     $items = array_map(static fn($row) => json_decode($row['body'], true), $st->fetchAll());
     if ($only !== null) $items = array_values(array_filter($items, static fn($x) => in_array($x['id'] ?? '', $only, true)));
+    // פרוסה 11 — ארכיון (א13): הרשימה הרגילה בלי תיקים שבארכיון; &archived=1 — רק הם. הייצוא — הכול.
+    if ($action !== 'export') {
+        caseArchiveBackfill($pdo, $orgId, $items);
+        $arch = array_flip(archivedIds($pdo, $orgId));
+        $want = !empty($_GET['archived']);
+        $items = array_values(array_filter($items, static fn($x) => isset($arch[$x['id'] ?? '']) === $want));
+    }
     if ($action === 'export') {
         header('Content-Disposition: attachment; filename="funerals-' . $month . '.json"');
         reply(200, ['schema_version'=>1, 'month'=>$month, 'records'=>$items]);

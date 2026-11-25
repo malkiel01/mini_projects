@@ -229,9 +229,10 @@ ChatGPT בדפדפן (chatgpt.com/plugins ← Add custom MCP server) או Claude
 | `roles` · `role_save` · `role_archive` | GET · POST · POST | `members.manage` | `{id?, name, perms[], task_types[]}` — לא משאירים ארגון בלי מנהל משתמשים |
 | `member_role` · `invite` | POST | `members.manage` | `role_id` (או `role` הישן — המובנה) |
 | `tasks` (`&case_id=`) · `task_save` · `task_status` | GET · POST · POST | צפייה בתיק · `tasks.manage` · המוקצה או `tasks.manage` | `{case_id, title, type, check_key, assignee_user_id \| assignee_role_id, due, note}` · `{id, status}` |
+| `case_restore` | POST | עדכון התיק | `{id}` — החזרה מהארכיון (א13); `list&archived=1` — התיקים שבארכיון |
 | `my_tasks` | GET | כל חבר | `items[]`: `kind: task` (משימה) או `kind: check` (בדיקה של התפקיד) |
 
-`me` מחזיר גם `checks` (הבדיקות הפעילות — `FDForm.setChecks`), `role_id`, ו-`role_label` = שם התפקיד הגמיש. בדיקות: `tests/settings.sh` (S1–S11).
+`me` מחזיר גם `checks` (הבדיקות הפעילות — `FDForm.setChecks`), `role_id`, ו-`role_label` = שם התפקיד הגמיש. ערך נבדק לפי סוג הבדיקה (מספר / תאריך / כן-לא). ארכיון (`case_archive`): הכול הושלם או לא רלוונטי → יוצא מהרשימה, נשאר בחיפוש; בדיקה חדשה לא מוציאה מהארכיון. בדיקה שהושלמה סוגרת את המשימה שלה. בדיקות: `tests/settings.sh` (S1–S15, לפי `docs/spec/10-acceptance.md`).
 
 ## מה עדיין לא חובר
 

@@ -269,10 +269,7 @@ function caseChecks(PDO $pdo, int $orgId, array $case): array {
         $c = is_array($have[$d['key']] ?? null) ? $have[$d['key']] : [];
         $status = (string)($c['status'] ?? 'unknown');
         $required = true;
-        if ($d['cond'] !== null) {
-            $ref = (string)($have[$d['cond']['check']]['status'] ?? 'unknown');
-            $required = in_array($ref, CHECK_PRESENT, true);
-        }
+        if ($d['cond'] !== null) $required = checkCondMet($defs, $have, $d['cond']['check']);
         $state = $required ? checkState($status) : 'na';
         $n[$state]++;
         $rows[] = ['key' => $d['key'], 'name' => $d['name'], 'type' => $d['type'], 'role' => $d['role'], 'critical' => $d['critical'],
@@ -309,4 +306,64 @@ function caseUrgent(PDO $pdo, int $orgId, array $case, ?array $state = null, ?Da
         if ($days >= urgentDays($pdo, $orgId)) $why[] = ['code' => 'days', 'days' => $days];
     }
     return $why;
+}
+
+/** התנאי של בדיקה מותנית: בדיקת "כן/לא" — רק "כן"; אחרת — יש בה משהו (נמצא / הושלם) או הערך "כן". */
+function checkCondMet(array $defs, array $have, string $ref): bool {
+    $c = is_array($have[$ref] ?? null) ? $have[$ref] : [];
+    $value = trim((string)($c['value'] ?? ''));
+    foreach ($defs as $d) if ($d['key'] === $ref && $d['type'] === 'yesno') return $value === 'כן';
+    return in_array((string)($c['status'] ?? 'unknown'), CHECK_PRESENT, true) || $value === 'כן';
+}
+
+/** ערך לבדיקה לפי הסוג שלה (S1): מספר, תאריך YYYY-MM-DD, כן/לא. null — תקין; אחרת — הודעה. ערך ריק תמיד תקין. */
+function checkValueError(PDO $pdo, int $orgId, string $key, string $value): ?string {
+    if ($value === '') return null;
+    foreach (checkDefs($pdo, $orgId) as $d) {
+        if ($d['key'] !== $key) continue;
+        if ($d['type'] === 'yesno' && !in_array($value, ['כן', 'לא'], true)) return '"' . $d['name'] . '": כן או לא';
+        if ($d['type'] === 'value' && $d['value_kind'] === 'number' && !is_numeric(str_replace(',', '', $value))) return '"' . $d['name'] . '": נדרש מספר';
+        if ($d['type'] === 'value' && $d['value_kind'] === 'date'
+            && (!preg_match('/^(\d{4})-(\d\d)-(\d\d)$/D', $value, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1]))) return '"' . $d['name'] . '": נדרש תאריך (YYYY-MM-DD)';
+        return null;
+    }
+    return null;   // בדיקה שאין לה הגדרה פעילה — כמו קודם
+}
+
+/* ---------- ארכיון (א13) ---------- */
+
+/** האם התיק בארכיון (נכנס ולא הוחזר). */
+function caseArchived(PDO $pdo, int $orgId, string $id): bool {
+    $st = $pdo->prepare('SELECT 1 FROM case_archive WHERE org_id = ? AND case_id = ? AND restored_at IS NULL');
+    $st->execute([$orgId, $id]);
+    $r = $st->fetchColumn();
+    $st->closeCursor();
+    return (bool)$r;
+}
+
+/**
+ * אחרי שמירה: תיק שעבר עכשיו מ"לא הושלם" ל"הושלם" → לארכיון (גם אם הוחזר קודם). $old = null — תיק חדש.
+ * בלי שמירה (רשימה) — caseArchiveBackfill(): תיק שהושלם ואין לו שורה בכלל. בדיקה חדשה בהגדרות לא מוציאה מהארכיון.
+ */
+function caseArchiveAfterSave(PDO $pdo, int $orgId, ?array $old, array $new): void {
+    if (!caseChecks($pdo, $orgId, $new)['complete']) return;
+    if ($old !== null && caseChecks($pdo, $orgId, $old)['complete']) return;
+    $pdo->prepare('INSERT INTO case_archive(org_id, case_id, archived_at, restored_at) VALUES (?,?,?,NULL)
+        ON CONFLICT(org_id, case_id) DO UPDATE SET archived_at = excluded.archived_at, restored_at = NULL')->execute([$orgId, $new['id'], gmdate('c')]);
+}
+function caseArchiveBackfill(PDO $pdo, int $orgId, array $cases): void {
+    $st = $pdo->prepare('INSERT OR IGNORE INTO case_archive(org_id, case_id, archived_at) VALUES (?,?,?)');
+    foreach ($cases as $c) if (is_array($c) && isset($c['id']) && caseChecks($pdo, $orgId, $c)['complete']) $st->execute([$orgId, $c['id'], gmdate('c')]);
+}
+/** "החזרה" מהארכיון. */
+function caseRestore(PDO $pdo, int $orgId, string $id): bool {
+    $st = $pdo->prepare('UPDATE case_archive SET restored_at = ? WHERE org_id = ? AND case_id = ? AND restored_at IS NULL');
+    $st->execute([gmdate('c'), $orgId, $id]);
+    return $st->rowCount() === 1;
+}
+/** מזהי התיקים שבארכיון. */
+function archivedIds(PDO $pdo, int $orgId): array {
+    $st = $pdo->prepare('SELECT case_id FROM case_archive WHERE org_id = ? AND restored_at IS NULL');
+    $st->execute([$orgId]);
+    return $st->fetchAll(PDO::FETCH_COLUMN);
 }

@@ -164,7 +164,7 @@ function migrateV4(PDO $pdo): void {
 
 /**
  * v5 (פרוסה 11 — הגדרות בדיקות ותפקידים גמישים): check_defs (org_id 0 = הכללית של הבעלים, N = דריסה של ארגון), roles,
- * tasks, ו-role_id ב-members וב-invites. מוסיפה בלבד: funerals, audit ו-members.role לא משתנים (role נשאר לתאימות).
+ * tasks, case_archive, ו-role_id ב-members וב-invites. מוסיפה בלבד: funerals, audit ו-members.role לא משתנים (role נשאר לתאימות).
  * ממלאת את 9 בדיקות ברירת המחדל ואת שלושת התפקידים המובנים לכל ארגון — אותן הרשאות כמו PERMS שלפני הפרוסה.
  */
 function migrateV5(PDO $pdo): void {
@@ -183,6 +183,9 @@ function migrateV5(PDO $pdo): void {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tasks_role ON tasks(org_id, assignee_role_id, status)');
     if (!hasColumn($pdo, 'members', 'role_id')) $pdo->exec('ALTER TABLE members ADD COLUMN role_id INTEGER');
     if (!hasColumn($pdo, 'invites', 'role_id')) $pdo->exec('ALTER TABLE invites ADD COLUMN role_id INTEGER');
+    // ארכיון (א13): תיק שכל הבדיקות שלו הושלמו. נשמר — כדי שבדיקה חדשה בהגדרות לא תוציא תיק מהארכיון לבד; restored_at — "החזרה"
+    $pdo->exec('CREATE TABLE IF NOT EXISTS case_archive (org_id INTEGER NOT NULL, case_id TEXT NOT NULL, archived_at TEXT NOT NULL, restored_at TEXT,
+        PRIMARY KEY (org_id, case_id))');
     checksSeed($pdo);
     foreach ($pdo->query('SELECT id FROM orgs')->fetchAll(PDO::FETCH_COLUMN) as $orgId) rolesSeed($pdo, (int)$orgId);
 }

@@ -169,7 +169,16 @@ function extActor(array $m): string {
     return $who . " (צ'אט)";
 }
 /** הרשאה של 05 — דרך can() של 01, על ההקשר הנוכחי. */
-function extCan(string $perm): bool { return can(EXT_PERM_MAP[$perm]); }
+function extCan(string $perm): bool {
+    $p = EXT_PERM_MAP[$perm];
+    if (can($p)) return true;
+    // פרוסה 11: "רק תיקים שהוקצו לי" — הפעולה מותרת, והתיקים עצמם מסוננים (extCase → 404, find/cases → רק שלו)
+    return extAssignedOnly() && in_array($p, CASE_PERMS, true) && in_array($p === 'case.view' ? 'case.view_assigned' : $p, ctxPerms(), true);
+}
+/** משתמש שרואה רק תיקים שהוקצו לו (פרוסה 11). */
+function extAssignedOnly(): bool { return !can('case.view') && can('case.view_assigned'); }
+/** מזהי התיקים שלו — לסינון SQL. */
+function extAssignedIds(PDO $pdo, int $orgId): array { return assignedCaseIds($pdo, $orgId, (int)ctx()['user']['id'], ctxRole()['id'] ?? null); }
 
 /** האסימון מהכותרת Authorization: Bearer בלבד. */
 function extBearer(): string {
@@ -286,7 +295,9 @@ function extSummary(array $c): array {
 /** תיק של הארגון בלבד; של ארגון אחר — כאילו לא קיים (404, existing() של 01). */
 function extCase(PDO $pdo, int $orgId, string $id): array {
     if (!preg_match('/^[a-zA-Z0-9_-]{8,100}$/D', $id)) reply(404, ['error' => 'תיק לא נמצא']);
-    return existing($pdo, $id, $orgId) ?? reply(404, ['error' => 'תיק לא נמצא. לחפש קודם עם find.']);
+    $c = existing($pdo, $id, $orgId) ?? reply(404, ['error' => 'תיק לא נמצא. לחפש קודם עם find.']);
+    if (extAssignedOnly() && !can('case.view', ['org_id' => $orgId, 'id' => $id])) reply(404, ['error' => 'תיק לא נמצא. לחפש קודם עם find.']);
+    return $c;
 }
 
 /** ההנחיות ל-GPT — נוצרות מכאן ל-gpt-prompt.md, ל-ext.php?action=prompt ולמסך החיבור. */
@@ -483,8 +494,10 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
         case 'find':
             $q = cleanText($in['q'] ?? '', 80);
             if (mb_strlen($q) < 2) extFail(400, 'נדרשים 2 תווים לפחות לחיפוש');
-            $st = $pdo->prepare("SELECT body FROM funerals WHERE org_id=? AND name LIKE ? ESCAPE '\\' ORDER BY month DESC, name LIMIT 11");
-            $st->execute([$orgId, '%' . strtr($q, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%']);
+            $only = extAssignedOnly() ? extAssignedIds($pdo, $orgId) : null;
+            $inIds = $only === null ? '' : ' AND id IN (' . (implode(',', array_fill(0, count($only), '?')) ?: "''") . ')';
+            $st = $pdo->prepare("SELECT body FROM funerals WHERE org_id=? AND name LIKE ? ESCAPE '\\'$inIds ORDER BY month DESC, name LIMIT 11");
+            $st->execute([$orgId, '%' . strtr($q, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%', ...($only ?? [])]);
             $rows = array_map(static fn($r) => extSummary(json_decode($r['body'], true)), $st->fetchAll());
             $more = count($rows) > 10;
             return ['query' => $q, 'count' => min(count($rows), 10), 'more' => $more, 'results' => array_slice($rows, 0, 10),
@@ -492,6 +505,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
 
         case 'cases':
             $where = ['org_id=?']; $args = [$orgId];
+            if (extAssignedOnly()) { $only = extAssignedIds($pdo, $orgId); $where[] = 'id IN (' . (implode(',', array_fill(0, count($only), '?')) ?: "''") . ')'; array_push($args, ...$only); }
             if (($in['month'] ?? '') !== '') { $where[] = 'month=?'; $args[] = validMonth((string)$in['month']); }
             $q = cleanText($in['q'] ?? '', 80);
             if ($q !== '') { $where[] = "name LIKE ? ESCAPE '\\'"; $args[] = '%' . strtr($q, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%'; }
@@ -591,7 +605,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
             $pdo->beginTransaction();   // של PDO — כדי ש-logRequest יבטל אותה אם הכתיבה נדחתה
             if ($guard !== null) $guard();
             $saved = formSaveCase($pdo, $raw, $via, $actor, $orgId,
-                fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
+                fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item), $o === null ? null : ['org_id' => $orgId, 'id' => $item['id']]));
             $dry ? $pdo->rollBack() : $pdo->commit();
             $out = ['fields' => [], 'checks' => [], 'note' => $line];
             $oldN = normalize($old, $orgId);   // אותם טיפוסים (100 מול 100.0) — כדי לא לדווח על שדה שלא השתנה
@@ -627,7 +641,7 @@ function extDo(PDO $pdo, string $action, array $in, string $via = 'api', bool $d
             $pdo->beginTransaction();   // של PDO — כדי ש-logRequest יבטל אותה אם הכתיבה נדחתה
             if ($guard !== null) $guard();
             $saved = formSaveCase($pdo, $raw, $via, $actor, $orgId,
-                fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item)));
+                fn(?array $o, array $item) => need(caseChangeNeeds($o === null ? null : normalize($o, $orgId), $item), $o === null ? null : ['org_id' => $orgId, 'id' => $item['id']]));
             $dry ? $pdo->rollBack() : $pdo->commit();
             return ['ok' => true, 'message' => 'התיק נפתח.', 'case' => $saved, 'summary' => extSummary($saved)];
     }

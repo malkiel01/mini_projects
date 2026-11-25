@@ -103,6 +103,10 @@ function formSaveCase(PDO $pdo, array $raw, string $via, array $actor, int $orgI
     $item = normalize($raw, $orgId);
     $old = existing($pdo, $item['id'], $orgId);
     if ($authorize !== null) $authorize($old, $item);
+    // פרוסה 11 (S1): ערך לפי סוג הבדיקה — רק לבדיקה שהערך שלה השתנה (ערך ישן לא תקין לא חוסם שמירה אחרת)
+    foreach ($item['checks'] as $k => $c) {
+        if ($c['value'] !== (string)($old['checks'][$k]['value'] ?? '') && ($err = checkValueError($pdo, $orgId, (string)$k, $c['value'])) !== null) reply(400, ['error' => $err]);
+    }
     // פרוסה 11: "מאומת" בידי אדם — רק למי שיש לו הרשאת אישור בדיקה (תפקיד גמיש). מקור אוטומטי ממילא לא מאשר (finalAllowed).
     if (($via === 'ui' || $via === 'field') && isset($GLOBALS['fd_ctx'])) {
         foreach ($item['checks'] as $k => $c) {
@@ -122,6 +126,8 @@ function formSaveCase(PDO $pdo, array $raw, string $via, array $actor, int $orgI
     }
     $item['checks'] = formApplyChecks($item['checks'], $old['checks'] ?? null, $via, (string)($actor['actor'] ?? ''));
     store($pdo, $item, $old, $orgId, $actor, formEventSource($via), 'save');
+    caseArchiveAfterSave($pdo, $orgId, $old, $item);   // פרוסה 11: הכול הושלם → ארכיון (א13)
+    tasksCloseDone($pdo, $orgId, $item, $actor['id'] ?? null);   // פרוסה 11 (S8): בדיקה שהושלמה סוגרת את המשימה שלה
     return $item;
 }
 

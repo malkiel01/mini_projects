@@ -36,7 +36,7 @@ if ($method !== 'GET' && !hash_equals((string)$_SESSION['fd_csrf'], (string)($_S
 $pdo = db();
 oauthEnsureSchema($pdo);   // כולל extEnsureSchema של 05
 $ctx = resolveAccess($pu);   // 01: המשתמש, הארגון הפעיל (מה-session, נבדק מול members) והתפקיד
-need('case.view');
+if (!canSeeCases()) need('case.view');   // פרוסה 11: גם "רק תיקים שהוקצו" — האסימון מסנן לפי ההקצאה
 $orgId = scope();
 // האסימון עובד בהרשאות התפקיד בארגון — מפתח בלי חברות בארגון לא יכול ליצור אסימון (אין לו תפקיד לתת לו)
 $m = extMember($pdo, (int)$ctx['user']['id'], $orgId);
