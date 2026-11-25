@@ -6,15 +6,15 @@
   },
   "code": [
     {
-      "session": "session_018g4NYFG5mjiidbMUvjvA8E",
-      "slice": "10",
-      "branch": "claude/funerals-dashboard-10-ai-link",
+      "session": "session_018g4NYCseqBY5SAVzwudRdg",
+      "slice": "10b",
+      "branch": "claude/funerals-dashboard-10b",
       "state": "פעיל"
     },
     {
-      "session": "session_018g4NYH1GqpeXaWBXCCakDy",
-      "slice": "11",
-      "branch": "claude/funerals-dashboard-11-settings",
+      "session": "session_018g4NYDtetivJinR3qZhG7D",
+      "slice": "12",
+      "branch": "claude/funerals-dashboard-12-ui",
       "state": "פעיל"
     }
   ],
