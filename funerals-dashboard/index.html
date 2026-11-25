@@ -34,11 +34,11 @@
   <header class="top">
     <div class="titles"><h1>🕯️ ניהול לוויות חברה קדישא</h1>
       <div class="sub"><span id="orgName"></span><select id="orgPick" class="org-pick" aria-label="בחירת ארגון" hidden></select> · <span id="topSub"></span></div></div>
-    <button class="icon-btn" id="importBtn" data-more aria-label="ייבוא ממצאים (JSON)" title="ייבוא ממצאים" hidden>📥</button>
-    <button class="icon-btn" id="exportBtn" data-more aria-label="ייצוא החודש (JSON)" title="ייצוא החודש" hidden>📤</button>
+    <button class="icon-btn" id="importBtn" data-more aria-label="ייבוא ממצאים" title="ייבוא ממצאים" hidden>📥</button>
+    <button class="icon-btn" id="exportBtn" data-more aria-label="ייצוא החודש" title="ייצוא החודש" hidden>📤</button>
     <button class="icon-btn" id="settingsBtn" data-more aria-label="הגדרות" title="הגדרות" hidden>⚙️</button>
     <button class="icon-btn" id="devBtn" data-more aria-label="מסך מפתח" title="מסך מפתח" hidden>🛠️</button>
-    <a class="icon-btn" href="connect.html" id="gptBtn" data-more aria-label="חיבור ל-ChatGPT" title="חיבור ל-ChatGPT">🤖</a>
+    <a class="icon-btn" href="connect.html" id="gptBtn" data-more aria-label="חיבור לעוזר החיצוני" title="חיבור לעוזר החיצוני">🤖</a>
     <button class="icon-btn" id="moreBtn" aria-label="עוד פעולות" title="עוד פעולות" aria-haspopup="dialog">⋯</button>
     <button class="icon-btn" id="userBtn" aria-label="תפריט משתמש" title="תפריט משתמש">👤</button>
     <input id="importFile" type="file" accept=".json,application/json,text/plain" hidden>
@@ -53,16 +53,19 @@
     <div class="summary" aria-live="polite">
       <div class="line"><b id="sumDone">0</b> <span class="muted" id="sumOf">מתוך 0 תיקים הושלמו</span><span class="pct" id="sumPct"></span></div>
       <span class="track" role="progressbar" aria-label="בדיקות שהושלמו" aria-valuemin="0" aria-valuemax="100" id="track"><span id="trackBar" style="inline-size:0"></span></span>
+      <div class="tiles" role="group" aria-label="מונים — לחיצה מסננת">
+        <button type="button" class="tile" data-tile="todo" aria-pressed="false"><b>0</b><span>פתוחים</span></button>
+        <button type="button" class="tile ok" data-tile="done" aria-pressed="false"><b>0</b><span>הושלמו</span></button>
+        <button type="button" class="tile bad" data-tile="bad" aria-pressed="false"><b>0</b><span>חסרים</span></button>
+        <button type="button" class="tile warn" data-tile="verify" aria-pressed="false"><b>0</b><span>לאימות</span></button>
+      </div>
       <div class="chips" id="sumChips"></div>
     </div>
 
-    <div class="seg-tabs six" role="tablist" aria-label="סינון תיקים">
-      <button role="tab" type="button" data-filter="todo" aria-selected="true">להשלמה <small id="nTodo"></small></button>
-      <button role="tab" type="button" data-filter="bad" aria-selected="false">חסר <small id="nBad"></small></button>
-      <button role="tab" type="button" data-filter="verify" aria-selected="false">לאימות <small id="nVerify"></small></button>
+    <!-- U2: ארבעת המונים למעלה מסננים (פתוחים, הושלמו, חסרים, לאימות); כאן — רק שני הסינונים שאין להם מונה -->
+    <div class="seg-tabs" role="tablist" aria-label="סינון נוסף">
       <button role="tab" type="button" data-filter="unchecked" aria-selected="false">טרם נבדק <small id="nUnchecked"></small></button>
-      <button role="tab" type="button" data-filter="done" aria-selected="false">הושלם <small id="nDone"></small></button>
-      <button role="tab" type="button" data-filter="all" aria-selected="false">הכול <small id="nAll"></small></button>
+      <button role="tab" type="button" data-filter="all" aria-selected="false">כל התיקים <small id="nAll"></small></button>
     </div>
     <div class="toolbar">
       <input type="search" id="search" placeholder="חיפוש: שם, תאריך, צוות" aria-label="חיפוש תיק">
@@ -106,7 +109,7 @@
       </section>
 
       <section class="group" aria-labelledby="gFiles">
-        <h3 id="gFiles">קבצים ב-Dropbox</h3>
+        <h3 id="gFiles">קבצים</h3>
         <div id="dbxFiles"></div>
       </section>
 
@@ -123,9 +126,10 @@
           <label class="f"><span>שעה</span><input id="fTime" type="time"></label>
           <label class="f"><span>מקום יציאה</span><input id="fOrigin" maxlength="180"></label>
           <label class="f"><span>צוות טהרה/קבורה</span><input id="fTeam" maxlength="180"></label>
-          <label class="f"><span>מיקום הקבר</span><input id="fGrave" maxlength="180"></label>
+          <div class="f gps-row"><label class="f"><span>מיקום הקבר</span><input id="fGrave" maxlength="180"></label>
+            <button type="button" class="btn ghost" id="fGps" aria-label="המיקום שלי — ממלא נקודת מיקום" title="המיקום שלי">📍</button></div>
           <label class="f"><span>חודש שיוך</span><input id="fMonth" type="month" required></label>
-          <label class="f wide"><span>קישור לתיקיית Dropbox</span><input id="fFolder" dir="ltr" inputmode="url" placeholder="https://www.dropbox.com/..."></label>
+          <label class="f wide"><span>קישור לתיקיית הקבצים</span><input id="fFolder" dir="ltr" inputmode="url"></label>
         </div>
       </section>
       </div>
@@ -151,8 +155,8 @@
       <button type="button" class="btn primary" id="importRun">ייבוא</button>
     </header>
     <div class="sheet-body">
-      <p class="hint">להדביק את ה-JSON שה-GPT החזיר (גם עם הטקסט שמסביב), או לבחור קובץ. תיק קיים מתעדכן רק בשדות שבתשובה.</p>
-      <textarea id="importText" rows="8" dir="ltr" spellcheck="false" autocomplete="off" aria-label="ה-JSON לייבוא" placeholder='{"schema_version":1,"month":"…","records":[…]}'></textarea>
+      <p class="hint">להדביק את התשובה שהעוזר החיצוני החזיר (גם עם הטקסט שמסביב), או לבחור קובץ. תיק קיים מתעדכן רק בשדות שבתשובה.</p>
+      <textarea id="importText" rows="8" dir="ltr" spellcheck="false" autocomplete="off" aria-label="התשובה לייבוא" placeholder="להדביק כאן את התשובה"></textarea>
       <button type="button" class="btn" id="importPick">📂 בחירת קובץ</button>
       <section id="similarBox" aria-labelledby="similarTitle" hidden>
         <h3 class="sec-title" id="similarTitle">תיקים דומים</h3>
@@ -167,12 +171,12 @@
   <form method="dialog">
     <header class="sheet-head">
       <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
-      <h2 id="tokenTitle">אסימון API חדש</h2>
+      <h2 id="tokenTitle">אסימון חדש לחיבור מערכות</h2>
       <button type="button" id="copyToken" class="btn primary">העתקה</button>
     </header>
     <div class="sheet-body">
       <p class="hint">מוצג פעם אחת בלבד — לשמור במקום פרטי. האסימון הקודם בוטל.</p>
-      <input id="tokenValue" readonly dir="ltr" aria-label="אסימון API">
+      <input id="tokenValue" readonly dir="ltr" aria-label="האסימון">
     </div>
   </form>
 </dialog>
@@ -185,8 +189,7 @@
     </header>
     <div class="sheet-body">
       <div id="preview"></div>
-      <p class="hint">אם Dropbox חוסמת תצוגה מוטמעת — לפתוח בקישור המקורי.</p>
-    </div>
+          </div>
   </form>
 </dialog>
 
@@ -203,7 +206,7 @@
         <div class="line"><span class="chip" id="uRole"></span><span class="muted" id="uOrg"></span></div>
         <div class="line"><span class="muted">גרסה <bdi id="uVersion"></bdi></span></div>
       </div>
-      <button type="button" class="btn" id="tokenBtn" hidden>🔑 אסימון ל-ingest.php</button>
+      <button type="button" class="btn" id="tokenBtn" hidden>🔑 אסימון לקליטה ממערכת אחרת</button>
       <button type="button" class="btn danger" id="logoutBtn">⎋ יציאה</button>
     </div>
   </form>
@@ -219,7 +222,7 @@
       <div class="seg-tabs" role="tablist" aria-label="הגדרות">
         <button role="tab" type="button" data-stab="members" aria-selected="true">חברים</button>
         <button role="tab" type="button" data-stab="orgs" aria-selected="false">ארגונים</button>
-        <button role="tab" type="button" data-stab="dropbox" aria-selected="false">Dropbox</button>
+        <button role="tab" type="button" data-stab="dropbox" aria-selected="false">קבצים</button>
       </div>
       <section id="sMembers">
         <div class="group">

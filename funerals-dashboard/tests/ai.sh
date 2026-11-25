@@ -282,7 +282,13 @@ ok "⚪8 — הסרת מפתח (רק מנהל), ונרשם ב-events"
 
 # ===== פרוסה 10: מפתח ברירת מחדל של הבעלים (א11), וקריאת תוכן בזיהוי וקישור — מול הספק המדומה =====
 code="$(post admin ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')"; test "$code" = 403 || fail "א11: מנהל ארגון שומר מפתח בעלים ($code)"
-code="$(post dev ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')"; test "$code" = 200 || fail "א11: שמירת מפתח בעלים ($code)"
+# 12b (ביקורת 12 ⚪4): המפתח נבדק מול הספק לפני השמירה — שגוי לא נשמר, תקין נשמר
+queue '[{"status":401,"body":{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}}]'
+code="$(post dev ai_owner_key_save '{"key":"sk-test-wrong-key-0123456789"}')"; test "$code" = 400 && test "$(j code)" = key_invalid || fail "12b: מפתח בעלים שגוי ($code)"
+test "$(sql "SELECT COUNT(*) FROM secrets WHERE name='ai_key' AND org_id=0")" = 0 || fail "12b: מפתח שגוי נשמר"
+queue "[$(text pong)]"
+code="$(post dev ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')"; test "$code" = 200 && test "$(j check)" = ok || fail "א11: שמירת מפתח בעלים ($code)"
+ok "12b — מפתח הבעלים נבדק לפני שמירה: שגוי (401) → 400 ולא נשמר; תקין → נשמר"
 get admin ai_status >/dev/null; test "$(j has_key)" = true && test "$(j key_source)" = owner || fail "א11: ארגון בלי מפתח — לא עובר למפתח הבעלים"
 ! grep -q 'sk-test-owner-key' "$tmp/out" || fail "א11: המפתח בתשובה"
 # פרוסה 12: מסך המפתח — ai_settings מחזיר למפתח רק את 4 התווים האחרונים, ולמנהל ארגון — כלום

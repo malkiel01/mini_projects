@@ -1,28 +1,12 @@
+@import url(tokens.css);   /* המשתנים — קובץ אחד להחלפת עיצוב */
 /*
  * דשבורד לוויות — שפת העיצוב "הטלפון קודם" (מועתק מ-.claude/skills/phone-first-design/references/tokens.css),
  * ובסוף הקובץ — התוספות של הדשבורד בלבד. צבעים, ריווחים ורדיוסים — רק מהמשתנים.
  */
-/* ===== משתנים ===== */
-:root {
-    --bg: #f4f5f7; --surface: #fff; --ink: #16192b; --muted: #5d6475; --line: #e3e6eb;
-    --brand: #2d4a8a; --brand-ink: #fff; --brand-soft: #e9eef8;
-    --danger: #b3261e; --danger-soft: #fdecea; --star: #e19a00; --ok: #1e7b3a;
-    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
-    --r: 10px; --tap: 40px; --head: 48px;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .06);
-}
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
-        --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
-        --star: #f5b83d; --ok: #6fcf97; --shadow: none;
-    }
-}
-
 /* ===== בסיס ===== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; }
+body { font: var(--font); background: var(--bg); color: var(--ink); min-height: 100dvh; }
 button, input, select, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -60,7 +44,7 @@ main { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(-
 .seg-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
 .seg-tabs button small:empty { display: none; }
 .seg-tabs button[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
-.seg-tabs button[aria-selected="true"] small { background: rgba(255, 255, 255, .25); color: inherit; }
+.seg-tabs button[aria-selected="true"] small { background: var(--on-brand-soft); color: inherit; }
 
 /* ===== שדות וכפתורים ===== */
 input, select, textarea { width: 100%; min-width: 0; min-height: var(--tap); padding: 0 var(--s2); font-size: 16px;   /* 16px — אחרת iOS מגדיל */
@@ -161,8 +145,8 @@ button:disabled { opacity: .55; cursor: default; }
 
 /* ===== חלון עריכה: חלון במחשב, גיליון מלא בטלפון ===== */
 dialog { margin: auto; padding: 0; border: 0; border-radius: var(--r); color: var(--ink); background: var(--surface);
-    width: min(600px, 100vw - 32px); max-height: min(90dvh, 900px); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
-dialog::backdrop { background: rgba(10, 15, 30, .45); }
+    width: min(600px, 100vw - 32px); max-height: min(90dvh, 900px); box-shadow: var(--shadow-dialog); }
+dialog::backdrop { background: var(--backdrop); }
 dialog > form { display: flex; flex-direction: column; max-height: inherit; height: 100%; min-height: 0; }
 .sheet-head { display: flex; align-items: center; gap: var(--s2); flex: none; padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line); }
 .sheet-head h2 { flex: 1; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -182,13 +166,13 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .toast { position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + env(safe-area-inset-bottom)); margin: auto; width: fit-content;
     max-width: calc(100vw - 24px); z-index: 30; background: var(--ink); color: var(--bg); padding: var(--s2) var(--s4); border-radius: 99px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.toast.err { background: var(--danger); color: #fff; }
+.toast.err { background: var(--danger); color: var(--danger-ink); }
 
 /* ===== הדפסה: רק האזור המודפס ===== */
 @media print {
     html.printing body > *:not(#print-root) { display: none !important; }
     #print-root table { inline-size: 100%; border-collapse: collapse; }
-    #print-root th, #print-root td { border: 1px solid #999; padding: 3pt 4pt; text-align: start; }
+    #print-root th, #print-root td { border: 1px solid var(--print-line); padding: 3pt 4pt; text-align: start; }
     #print-root thead { display: table-header-group; }
     #print-root tr { break-inside: avoid; }
 }
@@ -245,7 +229,7 @@ textarea.grow { resize: none; overflow: hidden; min-height: var(--tap); line-hei
 #tokenDialog .sheet-body input { font-family: ui-monospace, monospace; }
 
 /* ===== פרוסה 01: בורר ארגון, חברים, מסך מפתח ===== */
-.org-pick { max-inline-size: 60vw; min-height: 28px; padding: 0 var(--s1); border: 1px solid rgba(255, 255, 255, .4); border-radius: var(--r);
+.org-pick { max-inline-size: 60vw; min-height: 28px; padding: 0 var(--s1); border: 1px solid var(--on-brand-line); border-radius: var(--r);
     background: transparent; color: inherit; font: inherit; font-size: .78rem; }
 .org-pick option { color: var(--ink); background: var(--surface); }
 select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; padding: 0 var(--s1); border: 1px solid var(--line); border-radius: var(--r);
@@ -264,7 +248,7 @@ select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; paddi
 .next-btn { inline-size: 100%; min-height: 52px; justify-content: flex-start; gap: var(--s2); text-align: start; flex-wrap: wrap; }
 .next-btn .next-k { font-size: .78rem; opacity: .85; }
 .next-btn b { flex: 1; }
-.next-btn .chip { background: rgba(255, 255, 255, .2); color: inherit; border-color: transparent; }
+.next-btn .chip { background: var(--on-brand-soft); color: inherit; border-color: transparent; }
 .done-msg { font-weight: 600; color: var(--ok); padding: var(--s2) 0; }
 .ck-info .src.prov { color: var(--ink); opacity: .8; }
 .ck-info .src.legacy { font-style: italic; color: var(--muted); }
@@ -292,7 +276,7 @@ select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; paddi
 .more-item .ic { inline-size: 1.6em; text-align: center; font-size: 1.1rem; }
 
 /* ===== פרוסה 08 (P3): תיק דומה בייבוא ===== */
-#importText { min-height: 9em; font: .85rem/1.35 ui-monospace, Menlo, Consolas, monospace; }
+#importText { min-height: 9em; font: .85rem/1.35 var(--font-mono); }
 .similar { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
 .similar:first-child { border-top: 0; }
 .similar .l2 { color: var(--muted); font-size: .85rem; }
@@ -306,3 +290,25 @@ select.mini { flex: none; min-height: var(--tap); max-inline-size: 7.5rem; paddi
 .card.ask .q { font-weight: 600; margin-bottom: var(--s2); }
 .card.ask .tiles { margin-bottom: var(--s1); }
 #mgErr { padding: 0 var(--s4) var(--s3); }
+
+/* ===== פרוסה 12b ===== */
+/* U2: ארבעת המונים במסך הראשי — לחיצה מסננת */
+.summary .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s1); margin-top: var(--s2); }
+.summary .tile { flex-direction: column; justify-content: center; gap: 0; min-block-size: 52px; padding: var(--s1); cursor: pointer;
+    background: var(--surface); color: var(--ink); font: inherit; text-align: center; }
+.summary .tile b { font-size: 1.15rem; line-height: 1.2; }
+.summary .tile span { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-inline-size: 100%; }
+.summary .tile.ok b { color: var(--ok); }
+.summary .tile.bad b { color: var(--danger); }
+.summary .tile.warn b { color: var(--star); }
+.summary .tile[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+/* U5: בדיקה מותנית שלא חלה על התיק */
+.ck.na .use-tx b { color: var(--muted); font-weight: 500; }
+/* U1: צופה PDF בתוך האפליקציה (עמודים כתמונות) */
+.pdf-pages { display: grid; gap: var(--s2); }
+.pdf-pages canvas { inline-size: 100%; block-size: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.pdf-more { justify-self: center; }
+/* U7: "המיקום שלי" ליד מיקום הקבר */
+.gps-row { display: flex; gap: var(--s2); align-items: end; }
+.gps-row > .f { flex: 1; min-width: 0; }
+.gps-row .btn { flex: none; min-height: var(--tap); }

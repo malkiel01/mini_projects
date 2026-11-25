@@ -23,7 +23,7 @@
     const d = new Date(iso); if (isNaN(d)) return '';
     return d.toLocaleDateString('he-IL', {day: 'numeric', month: 'numeric'}) + ' ' + d.toLocaleTimeString('he-IL', {hour: '2-digit', minute: '2-digit'});
   }
-  function size(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+  function size(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' מגה' : Math.max(1, Math.round(n / 1024)) + ' ק"ב'; }
   function api(action, method, data, params) { return FD().request(action, method || 'GET', data === undefined ? null : data, params || {}); }
   async function busy(b, fn) { b.disabled = true; try { await fn(); } catch (e) { FD().toast(e.message, true); } finally { b.disabled = false; } }
 
@@ -40,14 +40,14 @@
     if (want !== caseId) return;
     box.replaceChildren();
     const head = el('div', 'dbx-head');
-    if (!data.connected) head.append(el('span', 'chip warn', data.status === 'reauth' ? 'Dropbox — צריך חיבור מחדש' : 'Dropbox מנותק'));
+    if (!data.connected) head.append(el('span', 'chip warn', data.status === 'reauth' ? 'אחסון הקבצים — צריך חיבור מחדש' : 'אחסון הקבצים מנותק'));
     else if (!data.has_root) head.append(el('span', 'chip warn', 'לא נבחרה תיקייה ראשית'));
     if (data.folder) {
-      const a = el('a', 'btn ghost sm', '↗ התיקייה ב-Dropbox'); a.href = data.folder.dropbox_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      const a = el('a', 'btn ghost sm', '↗ פתיחת התיקייה'); a.href = data.folder.dropbox_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
       head.append(a);
     } else if (data.connected && data.has_root && data.can_upload) {
       head.append(btn('📁 פתיחת תיקייה', 'ghost sm', async ev => busy(ev.currentTarget, async () => {
-        await api('dropbox_folder_create', 'POST', {case_id: caseId}); FD().toast('התיקייה נפתחה ב-Dropbox'); renderCase();
+        await api('dropbox_folder_create', 'POST', {case_id: caseId}); FD().toast('התיקייה נפתחה'); renderCase();
       })));
     }
     if (data.connected && data.has_root && data.can_upload) {
@@ -58,8 +58,21 @@
       head.append(up, input);
     }
     box.append(head);
+    // L2א/12b: התיקייה קושרה לבד (ת"ז / שם ותאריך) — אפשר לבטל בלחיצה; התיקייה חוזרת לשאלה ב"שאלות מהבינה"
+    if (data.link && data.link.auto) {
+        const why = el('div', 'warn-box link-auto');
+        why.append(el('span', '', '🔗 התיקייה קושרה לתיק לבד — ' + data.link.why + '.'));
+        if (FD().can('case.edit')) why.append(btn('ביטול הקישור', 'ghost sm', ev => busy(ev.currentTarget, async () => {
+          if (!confirm('לבטל את הקישור? הקבצים מהתיקייה יוצאו מהתיק, ובדיקות שסומנו מהם ושעוד לא אומתו יחזרו ל"טרם נבדק". התיקייה תחזור לשאלה.')) return;
+          await api('link_undo', 'POST', {case_id: caseId});
+          FD().toast('הקישור בוטל — השאלה מחכה ב"שאלות מהבינה"');
+          document.dispatchEvent(new CustomEvent('fd:changed', {detail: {id: caseId}}));
+          renderCase();
+        })));
+        box.append(why);
+    }
     const list = el('ul', 'list');
-    if (!data.files.length) list.append(el('li', 'empty', data.folder ? 'אין עדיין קבצים בתיקייה.' : 'אין תיקייה ב-Dropbox לתיק הזה.'));
+    if (!data.files.length) list.append(el('li', 'empty', data.folder ? 'אין עדיין קבצים בתיקייה.' : 'אין עדיין תיקייה לתיק הזה.'));
     data.files.forEach(f => list.append(fileRow(f)));
     box.append(list);
     document.dispatchEvent(new CustomEvent('fd:files', {detail: {id: caseId, files: data.files}}));   // הצעת סוג לקובץ (ai.js)
@@ -72,7 +85,7 @@
     else ic.textContent = f.preview === 'pdf' ? '📄' : '📎';
     const tx = el('span', 'use-tx');
     tx.append(auto(el('span', 'one', f.name)),
-      el('small', '', [when(f.server_modified), size(f.size), f.added_via === 'dropbox' ? 'מ-Dropbox' : (f.added_by || '')].filter(Boolean).join(' · ')));
+      el('small', '', [when(f.server_modified), size(f.size), f.added_via === 'dropbox' ? 'מתיקיית הקבצים' : (f.added_by || '')].filter(Boolean).join(' · ')));
     b.append(ic, tx);
     b.addEventListener('click', () => preview(f));
     li.append(b);
@@ -83,7 +96,7 @@
     b.disabled = true;
     try {
       for (const file of files) {
-        if (file.size > 50 * 1024 * 1024) { FD().toast(file.name + ': גדול מ-50MB', true); continue; }
+        if (file.size > 50 * 1024 * 1024) { FD().toast(file.name + ': גדול מ-50 מגה', true); continue; }
         FD().toast('מעלה ' + file.name + '…');
         const fd = new FormData(); fd.append('case_id', caseId); fd.append('file', file, file.name);
         fd.append('upload_id', 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
@@ -91,20 +104,70 @@
         const j = await res.json().catch(() => ({error: 'תגובת שרת לא תקינה'}));
         if (!res.ok) throw new Error(file.name + ': ' + (j.error || 'ההעלאה נכשלה'));
       }
-      FD().toast('הועלה ל-Dropbox');
+      FD().toast('הקובץ הועלה');
     } catch (e) { FD().toast(e.message, true); }
     finally { b.disabled = false; renderCase(); }
   }
+  /**
+   * U1: הצופה בתוך האפליקציה — תמונה, PDF ו-Word (השרת ממיר Word ל-PDF, file_view). PDF מצויר כעמודים (pdf.js),
+   * כי מציג ה-PDF של הדפדפן לא עובד בתוך מסגרת בטלפון. בלי קישור החוצה. אם pdf.js לא נטען — מסגרת, כגיבוי.
+   */
+  // pdf.js 4.10.38, עותק מקומי (assets/vendor/pdfjs, ביקורת 12b 🔴1): בלי CDN, ומעל התיקון של CVE-2024-4367
+  const PDFJS = 'assets/vendor/pdfjs/';
+  let pdfjs = null;
+  function loadPdfJs() {
+    if (!pdfjs) pdfjs = import(new URL(PDFJS + 'pdf.min.js', document.baseURI).href).then(lib => {
+      lib.GlobalWorkerOptions.workerSrc = new URL(PDFJS + 'pdf.worker.min.js', document.baseURI).href;
+      return lib;
+    }).catch(e => { pdfjs = null; throw e; });
+    return pdfjs;
+  }
+  async function renderPdf(box, src, name) {
+    const wait = el('p', 'hint', 'טוען את המסמך…'); box.append(wait);
+    let doc;
+    try {
+      const res = await fetch(src, {credentials: 'same-origin'});
+      if (!res.ok) { const j = await res.json().catch(() => ({})); throw Object.assign(new Error(j.error || 'המסמך לא נטען'), {server: true}); }
+      const data = new Uint8Array(await res.arrayBuffer());
+      const lib = await loadPdfJs();
+      // isEvalSupported: false — גופן בתוך PDF לא יכול להריץ קוד (CVE-2024-4367), גם אם הגרסה תשתנה
+      doc = await lib.getDocument({data, isEvalSupported: false}).promise;
+    } catch (e) {
+      wait.remove();
+      if (e.server) { box.append(el('p', 'error', e.message)); return; }
+      const fr = el('iframe', 'dbx-pdf'); fr.title = name; fr.src = src; box.append(fr); return;
+    }
+    wait.remove();
+    const pages = el('div', 'pdf-pages'); box.append(pages);
+    const width = Math.max(280, box.clientWidth || 340);
+    let next = 1;
+    const more = btn('עוד עמודים', 'ghost sm pdf-more', () => draw(5));
+    const draw = async n => {
+      more.remove();
+      for (const end = Math.min(doc.numPages, next + n - 1); next <= end; next++) {
+        const page = await doc.getPage(next);
+        const v1 = page.getViewport({scale: 1}), scale = width / v1.width, dpr = Math.min(2, window.devicePixelRatio || 1);
+        const vp = page.getViewport({scale: scale * dpr});
+        const c = el('canvas'); c.width = vp.width; c.height = vp.height; c.setAttribute('aria-label', 'עמוד ' + next + ' מתוך ' + doc.numPages);
+        pages.append(c);
+        await page.render({canvasContext: c.getContext('2d'), viewport: vp}).promise;
+      }
+      if (next <= doc.numPages) pages.append(more);
+    };
+    await draw(3);
+  }
+  /** מצייר קובץ לתוך box. kind: image / pdf / none (מ-dbxFileRow), או לפי הסיומת. */
+  function renderFile(box, name, src, kind) {
+    kind = kind || (/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(name) ? 'image' : /\.(pdf|docx?|pptx?|odt|odp|rtf)$/i.test(name) ? 'pdf' : 'none');
+    if (kind === 'image') { const img = el('img', 'dbx-preview'); img.alt = name; img.src = src; box.append(img); }
+    else if (kind === 'pdf') renderPdf(box, src, name);
+    else box.append(el('p', 'hint', 'אין תצוגה לסוג הקובץ הזה. אפשר לצפות בתמונות ובמסמכים.'));
+  }
   function preview(f) {
     const box = $('preview'); box.replaceChildren();
-    $('previewTitle').textContent = f.name;
-    const src = 'api.php?' + new URLSearchParams({action: 'file_view', id: f.id});
-    if (f.preview === 'image') { const img = el('img', 'dbx-preview'); img.alt = f.name; img.src = src; box.append(img); }
-    else if (f.preview === 'pdf') { const fr = el('iframe', 'dbx-pdf'); fr.title = f.name; fr.src = src; box.append(fr); }
-    else box.append(el('p', 'hint', 'אין תצוגה מקדימה לסוג הזה.'));
-    const a = el('a', 'btn ghost', '↗ פתיחה ב-Dropbox'); a.href = f.dropbox_url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-    box.append(a);
+    $('previewTitle').textContent = f.name; $('previewTitle').dir = 'auto';
     $('previewDialog').showModal();
+    renderFile(box, f.name, 'api.php?' + new URLSearchParams({action: 'file_view', id: f.id}), f.preview);
   }
 
   /* ---------- הגדרות Dropbox ---------- */
@@ -122,20 +185,20 @@
     line.append(el('b', '', label), d.account_name ? el('span', 'muted', ' · ' + d.account_name) : '');
     sec.append(line);
     if (d.root_path) { const r = el('p', 'hint', 'תיקייה ראשית: '); r.append(auto(el('bdi', '', d.root_path))); sec.append(r); }
-    const meta = [d.last_sync_at ? 'סנכרון אחרון: ' + when(d.last_sync_at) : '', d.last_webhook_at ? 'webhook אחרון: ' + when(d.last_webhook_at) : '']
+    const meta = [d.last_sync_at ? 'סנכרון אחרון: ' + when(d.last_sync_at) : '', d.last_webhook_at ? 'עדכון אחרון מהאחסון: ' + when(d.last_webhook_at) : '']
       .filter(Boolean).join(' · ');
     if (meta) sec.append(el('p', 'hint', meta));
     if (d.last_error) sec.append(el('p', 'error', 'שגיאה אחרונה: ' + d.last_error));
     const row = el('div', 'row-btns wrap');
     if (status.can_admin) {
-      if (!status.app_configured) sec.append(el('p', 'hint', 'מפתח האפליקציה של Dropbox טרם הוגדר (מסך המפתח).'));
-      else if (d.status !== 'connected') row.append(btn(d.status === 'reauth' ? 'חיבור מחדש' : 'חיבור ל-Dropbox', 'primary', ev => busy(ev.currentTarget, async () => {
+      if (!status.app_configured) sec.append(el('p', 'hint', 'החיבור לאחסון הקבצים עוד לא הוגדר — לפנות למפתח.'));
+      else if (d.status !== 'connected') row.append(btn(d.status === 'reauth' ? 'חיבור מחדש' : 'חיבור לאחסון הקבצים', 'primary', ev => busy(ev.currentTarget, async () => {
         const r = await api('dropbox_connect', 'POST', {}); location.href = r.url;
       })));
       else {
         row.append(btn('סנכרון עכשיו', 'ghost', ev => busy(ev.currentTarget, async () => { await api('dropbox_sync', 'POST', {}); renderSettings(); })));
         row.append(btn('ניתוק', 'ghost danger', ev => busy(ev.currentTarget, async () => {
-          if (!confirm('לנתק את Dropbox מהארגון? הקבצים ב-Dropbox לא יימחקו, ורשימות הקבצים בתיקים יישארו.')) return;
+          if (!confirm('לנתק את אחסון הקבצים מהארגון? הקבצים עצמם לא יימחקו, ורשימות הקבצים בתיקים יישארו.')) return;
           await api('dropbox_disconnect', 'POST', {}); renderSettings();
         })));
       }
@@ -143,6 +206,7 @@
     sec.append(row);
     box.append(sec);
     if (status.can_admin && d.status === 'connected') { box.append(rootSection(d)); if (d.root_path) box.append(scanSection()); }
+    if (status.can_admin) box.append(templateSection(status));
     devSection(box);
   }
   function rootSection(d) {
@@ -155,7 +219,7 @@
         const r = await api('dropbox_browse', 'GET', null, {path});
         crumbs.replaceChildren();
         const parts = path.split('/').filter(Boolean);
-        crumbs.append(btn('Dropbox', 'ghost sm', () => load('')));
+        crumbs.append(btn('🏠 ראשי', 'ghost sm', () => load('')));
         parts.forEach((p, i) => crumbs.append(btn(p, 'ghost sm', () => load('/' + parts.slice(0, i + 1).join('/')))));
         list.replaceChildren();
         if (!r.folders.length) list.append(el('li', 'empty', 'אין תת-תיקיות.'));
@@ -174,6 +238,26 @@
     const open = btn(d.root_path ? 'החלפת תיקייה' : 'בחירת תיקייה', 'ghost sm', () => { open.hidden = true; picker.hidden = false; load(''); });
     const picker = el('div', 'dbx-picker'); picker.hidden = true; picker.append(crumbs, list, choose);
     sec.append(open, picker);
+    return sec;
+  }
+  /** L3: תבנית התיקייה שהאפליקציה פותחת לתיק חדש, עם דוגמה חיה. */
+  // במסך — שמות המשתנים בעברית (U9); לשרת — כמו שהוא שומר ({name} ...)
+  const TPL = [['{name}', '{שם}'], ['{date}', '{תאריך}'], ['{dm}', '{יום.חודש}'], ['{month}', '{חודש}'], ['{year}', '{שנה}']];
+  const tplHe = t => TPL.reduce((x, [en, he]) => x.split(en).join(he), String(t || ''));
+  const tplEn = t => TPL.reduce((x, [en, he]) => x.split(he).join(en), String(t || ''));
+  function templateSection(st) {
+    const sec = el('section', 'group');
+    sec.append(el('h3', '', 'תיקייה לתיק חדש'),
+      el('p', 'hint', 'כך ייקרא הנתיב של התיקייה שנפתחת לתיק חדש, בתוך התיקייה הראשית. משתנים: {שם} של הנפטר · {תאריך} הלוויה · {יום.חודש} · {חודש} (שנה-חודש) · {שנה}. / — תיקייה בתוך תיקייה.'));
+    const f = el('label', 'f'); f.append(el('span', '', 'התבנית'));
+    const input = el('input'); input.dir = 'auto'; input.maxLength = 120; input.value = tplHe(st.folder_template); input.setAttribute('aria-label', 'תבנית התיקייה'); input.autocomplete = 'off'; f.append(input);
+    const ex = el('p', 'hint'); const exB = auto(el('bdi', '', st.folder_template_example)); ex.append('לדוגמה: ', exB);
+    const row = el('div', 'row-btns');
+    row.append(btn('שמירה', 'primary sm', ev => busy(ev.currentTarget, async () => {
+      const r = await api('dropbox_template_set', 'POST', {template: tplEn(input.value.trim())});
+      input.value = tplHe(r.folder_template); exB.textContent = r.folder_template_example; FD().toast('התבנית נשמרה');
+    })), btn('ברירת המחדל', 'ghost sm', () => { input.value = tplHe(st.folder_template_default); }));
+    sec.append(f, ex, row);
     return sec;
   }
   function scanSection() {
@@ -251,5 +335,5 @@
     api('dropbox_status').catch(() => {});      // סנכרון בפתיחת הרשימה, כשהאחרון ישן מ-2 דקות
     if (location.hash === '#dropbox') { history.replaceState(null, '', location.pathname + location.search); FD().openSettings('dropbox'); }
   });
-  window.FDDropbox = {settings(section) { host = section; renderSettings(); }};
+  window.FDDropbox = {settings(section) { host = section; renderSettings(); }, preview, renderFile};
 })();

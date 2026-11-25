@@ -80,7 +80,7 @@ const deps = {
   const send = async it => {
     if (!online) throw new TypeError('Failed to fetch');
     sent.push(it.id);
-    if (!dropbox) return {status: 409, body: {error: 'Dropbox של הארגון לא מחובר — פנה למנהל', code: 'dropbox_not_connected'}};
+    if (!dropbox) return {status: 409, body: {error: 'אחסון הקבצים של הארגון לא מחובר — פנה למנהל', code: 'dropbox_not_connected'}};
     if (!server.has(it.id)) server.set(it.id, {file_id: server.size + 1, name: it.name, link: 'api.php?action=file_view&id=' + (server.size + 1)});
     return {status: 200, body: {ok: true, file: server.get(it.id)}};
   };
@@ -100,7 +100,7 @@ const deps = {
   // W7: רשת חוזרת, Dropbox מנותק → הודעה ברורה, נשאר בתור
   online = true; t += 6e3; await q.flush();
   cur = (await q.list())[0];
-  assert.ok(cur.state === 'blocked' && cur.message === 'Dropbox של הארגון לא מחובר — פנה למנהל' && cur.blob, 'W7: הודעה ברורה, בתור');
+  assert.ok(cur.state === 'blocked' && cur.message === 'אחסון הקבצים של הארגון לא מחובר — פנה למנהל' && cur.blob, 'W7: הודעה ברורה, בתור');
 
   // ניסיון חוזר ידני אחרי שהמנהל חיבר → "נשלח ✓" עם קישור, והקובץ יורד מהמכשיר
   dropbox = true; await q.retry(it.id); await q.flush();

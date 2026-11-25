@@ -27,7 +27,7 @@ const FIELD_KINDS = [
     'other'              => ['label' => 'אחר', 'check' => null],
 ];
 /** ההודעה שהעובד רואה כש-Dropbox של הארגון לא מוכן (W7). */
-const FIELD_DBX_DOWN = 'Dropbox של הארגון לא מחובר — פנה למנהל';
+const FIELD_DBX_DOWN = 'אחסון הקבצים של הארגון לא מחובר — פנה למנהל';
 
 final class FieldUploadError extends RuntimeException {
     public function __construct(public readonly int $status, public readonly string $tag, string $msg) { parent::__construct($msg); }
@@ -282,13 +282,89 @@ function fieldDropboxUploader(PDO $pdo, int $orgId, array $case, string $tmp, st
         if (!is_a($e, 'DbxError')) throw $e;
         $tag = (string)$e->tag;
         if (in_array($tag, ['not_connected', 'no_root', 'reauth', 'no_app_key'], true)) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
-        if ($tag === 'network') throw new FieldUploadError(503, 'network', 'Dropbox לא זמין כרגע — הקובץ יישלח שוב');
-        if (str_contains($tag, 'insufficient_space')) throw new FieldUploadError(507, 'insufficient_space', 'אין מספיק מקום בחשבון ה-Dropbox — פנה למנהל');
-        throw new FieldUploadError(502, 'dropbox_error', 'ההעלאה ל-Dropbox נכשלה — נסה שוב');
+        if ($tag === 'network') throw new FieldUploadError(503, 'network', 'אחסון הקבצים לא זמין כרגע — הקובץ יישלח שוב');
+        if (str_contains($tag, 'insufficient_space')) throw new FieldUploadError(507, 'insufficient_space', 'אין מספיק מקום באחסון הקבצים — פנה למנהל');
+        throw new FieldUploadError(502, 'dropbox_error', 'ההעלאה נכשלה — נסה שוב');
     }
     // סוג המסמך — של השטח (03 משאיר אותו ריק)
     $pdo->prepare("UPDATE files SET kind = ? WHERE id = ? AND org_id = ? AND kind = ''")->execute([$kind, (int)$f['id'], $orgId]);
     return ['file_id' => (int)$f['id'], 'name' => (string)$f['name'], 'link' => 'api.php?action=file_view&id=' . (int)$f['id']];
+}
+
+/**
+ * U6 (פרוסה 12b): צילום מהשטח בלי תיק. עולה לתיקייה הראשית של הארגון בשם "צילום מהשטח <תאריך שעה>.jpg", בלי תיק —
+ * והזיהוי (link/, L5) שואל לאיזה תיק הוא שייך. אותו מזהה חד-פעמי כמו בהעלאה לתיק (field_uploads, case_id ריק):
+ * ניסיון חוזר מחזיר את אותו קובץ ולא מעלה שוב. $uploader — fn(PDO, int org, string tmp, string name, array actor, string uploadId): array.
+ */
+function fieldInboxUpload(PDO $pdo, int $orgId, string $uploadId, string $tmp, string $original, array $actor, callable $uploader,
+                          ?DateTimeImmutable $now = null): array {
+    if (!fieldUploadIdValid($uploadId)) return [400, ['error' => 'מזהה העלאה אינו תקין']];
+    $nowS = gmdate('c');
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $st = $pdo->prepare('SELECT * FROM field_uploads WHERE org_id = ? AND upload_id = ?');
+        $st->execute([$orgId, $uploadId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($row !== null && $row['case_id'] !== '') { $pdo->exec('COMMIT'); return [409, ['error' => 'מזהה ההעלאה שייך לתיק אחר', 'code' => 'upload_id_conflict']]; }
+        if ($row !== null && $row['status'] === 'done') { $pdo->exec('COMMIT'); return [200, ['ok' => true, 'duplicate' => true] + (json_decode((string)$row['result'], true) ?: [])]; }
+        if ($row !== null && $row['status'] === 'pending' && strtotime((string)$row['updated_at']) > time() - FIELD_PENDING_WINDOW) {
+            $pdo->exec('COMMIT');
+            return [409, ['error' => 'הקובץ הזה כבר בשליחה', 'code' => 'in_progress']];
+        }
+        $pdo->prepare("INSERT INTO field_uploads(org_id, upload_id, case_id, kind, status, user_id, created_at, updated_at) VALUES (?,?,'','other','pending',?,?,?)
+            ON CONFLICT(org_id, upload_id) DO UPDATE SET status = 'pending', user_id = excluded.user_id, error = NULL, updated_at = excluded.updated_at")
+            ->execute([$orgId, $uploadId, $actor['id'] ?? null, $nowS, $nowS]);
+        $pdo->exec('COMMIT');
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->exec('ROLLBACK');
+        throw $e;
+    }
+    $t = ($now ?? new DateTimeImmutable('now'))->setTimezone(new DateTimeZone(FIELD_TZ));
+    $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+    $name = 'צילום מהשטח ' . $t->format('Y-m-d Hi') . '.' . (in_array($ext, ['png', 'webp', 'heic', 'heif'], true) ? $ext : 'jpg');
+    try {
+        $file = $uploader($pdo, $orgId, $tmp, $name, $actor, $uploadId);
+    } catch (FieldUploadError $e) {
+        $pdo->prepare("UPDATE field_uploads SET status = 'failed', error = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
+            ->execute([$e->tag, gmdate('c'), $orgId, $uploadId]);
+        return [$e->status, ['error' => $e->getMessage(), 'code' => $e->tag]];
+    }
+    recordEvent($orgId, null, $actor, 'ui', 'field_upload', ['file' => [null, $file['name']], 'via' => [null, 'field'], 'upload_id' => [null, $uploadId]]);
+    $result = ['file' => $file, 'check' => null, 'inbox' => true];
+    $pdo->prepare("UPDATE field_uploads SET status = 'done', result = ?, updated_at = ? WHERE org_id = ? AND upload_id = ?")
+        ->execute([json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), gmdate('c'), $orgId, $uploadId]);
+    return [200, ['ok' => true, 'duplicate' => false] + $result];
+}
+
+/** ההעלאה של U6 לתיקייה הראשית, ושורה ב-files בלי תיק (added_via = field). אחר כך הזיהוי רץ מיד, בלי קריאה לספק — שואל. */
+function fieldDropboxInbox(PDO $pdo, int $orgId, string $tmp, string $name, array $actor, string $uploadId): array {
+    if (!function_exists('dbxUploadFile')) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
+    $by = (string)($actor['actor'] ?? '');
+    $st = $pdo->prepare('SELECT * FROM files WHERE org_id = ? AND upload_id = ?');
+    $st->execute([$orgId, $uploadId]);
+    $f = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($f === null) {
+        try {
+            $org = dbxReadyOrg($pdo, $orgId);
+            $meta = dbxUploadFile($pdo, $org, (string)$org['root_path'], $tmp, $name);
+            if (!isset($meta['id'], $meta['path_lower']) || !dbxLowerInRoot($org, (string)$meta['path_lower'])) throw new DbxError('upload_result');
+        } catch (Throwable $e) {
+            if (!is_a($e, 'DbxError')) throw $e;
+            $tag = (string)$e->tag;
+            if (in_array($tag, ['not_connected', 'no_root', 'reauth', 'no_app_key'], true)) throw new FieldUploadError(409, 'dropbox_not_connected', FIELD_DBX_DOWN);
+            if ($tag === 'network') throw new FieldUploadError(503, 'network', 'אחסון הקבצים לא זמין כרגע — הקובץ יישלח שוב');
+            throw new FieldUploadError(502, 'dropbox_error', 'ההעלאה נכשלה — נסה שוב');
+        }
+        dbxUpsertFile($pdo, $orgId, $meta, 'field', $by);
+        $pdo->prepare('UPDATE files SET added_via = ?, added_by = COALESCE(added_by, ?), upload_id = COALESCE(upload_id, ?) WHERE org_id = ? AND dbx_id = ?')
+            ->execute(['field', $by, $uploadId, $orgId, $meta['id']]);
+        $st->execute([$orgId, $uploadId]);
+        $f = $st->fetch(PDO::FETCH_ASSOC) ?: ['id' => 0, 'name' => $name];
+    }
+    if (function_exists('linkRun')) {
+        try { linkRun($pdo, $orgId, ['read' => false, 'budget' => 3.0]); } catch (Throwable $e) { error_log('funerals-dashboard link (field inbox): ' . $e->getMessage()); }
+    }
+    return ['file_id' => (int)$f['id'], 'name' => (string)$f['name'], 'link' => null];
 }
 
 /** שעת הצילום מהדפדפן (ms מ-1970) — לשם "קבר <שם> <תאריך שעה>". מחוץ לשבוע אחורה / 10 דקות קדימה → שעת השרת. */
@@ -355,8 +431,15 @@ function fieldAction(PDO $pdo, string $action, string $method, int $orgId, array
             reply(200, ['ok' => true, 'record' => $item]);
         case 'field_upload':
             if ($method !== 'POST') reply(405, ['error' => 'שיטה לא מורשית']);
-            if ($mine !== null) { $sid = (string)($_POST['case_id'] ?? ''); if (!in_array($sid, $mine, true)) reply(404, ['error' => 'התיק לא נמצא']); need('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId]); }
-            else need('case.track');
+            if ($mine !== null && (string)($_POST['case_id'] ?? '') !== '') { $sid = (string)($_POST['case_id'] ?? ''); if (!in_array($sid, $mine, true)) reply(404, ['error' => 'התיק לא נמצא']); need('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId]); }
+            elseif ($mine !== null) {
+                // U6 (ביקורת 12b 🟡3, הוחלט): עובד "רק שהוקצו לי" מצלם גם בלי תיק — אם יש לו הרשאת מעקב על תיק שהוקצה לו.
+                // הצילום לא חושף שום תיק: הוא עולה לתיקייה הראשית, והזיהוי שואל את המשרד לאיזה תיק הוא שייך.
+                $track = false;
+                foreach ($mine as $sid) if (can('case.track', (existing($pdo, $sid, $orgId) ?? []) + ['id' => $sid, 'org_id' => $orgId])) { $track = true; break; }
+                if (!$track) reply(403, ['error' => 'אין לך הרשאה לפעולה הזו']);
+            }
+            else need('case.track');   // גם צילום בלי תיק (U6)
             $f = $_FILES['file'] ?? null;
             $tmp = is_array($f) && is_string($f['tmp_name'] ?? null) ? $f['tmp_name'] : '';
             if ($tmp !== '') register_shutdown_function(static function () use ($tmp) { if (is_file($tmp)) @unlink($tmp); });
@@ -371,6 +454,12 @@ function fieldAction(PDO $pdo, string $action, string $method, int $orgId, array
             $kind = (string)($_POST['kind'] ?? '');
             if (!function_exists('dbxAllowedUpload') || !dbxAllowedUpload($orig, $tmp)) reply(415, ['error' => 'סוג קובץ לא נתמך (תמונה, PDF או מסמך Office)']);
             if ($kind === 'grave_photo' && !str_starts_with((string)(new finfo(FILEINFO_MIME_TYPE))->file($tmp), 'image/')) reply(415, ['error' => 'צילום קבר חייב להיות תמונה']);
+            if ((string)($_POST['case_id'] ?? '') === '') {
+                // U6: בלי תיק — רק תמונה, לתיקייה הראשית
+                if (!str_starts_with((string)(new finfo(FILEINFO_MIME_TYPE))->file($tmp), 'image/')) reply(415, ['error' => 'צילום בלי תיק חייב להיות תמונה']);
+                [$status, $body] = fieldInboxUpload($pdo, $orgId, (string)($_POST['upload_id'] ?? ''), $tmp, $orig, $actor, 'fieldDropboxInbox', fieldTakenAt($_POST['taken_at'] ?? null));
+                reply($status, $body);
+            }
             [$status, $body] = fieldUpload($pdo, $orgId, (string)($_POST['case_id'] ?? ''), (string)($_POST['upload_id'] ?? ''),
                 $kind, $tmp, $orig, $actor, 'fieldDropboxUploader', fieldTakenAt($_POST['taken_at'] ?? null));
             reply($status, $body);
