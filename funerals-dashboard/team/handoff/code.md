@@ -170,6 +170,21 @@
 4. CORS — Inspector עושה גילוי ו-token מהדפדפן. `oauthCors()` כבר עונה `*` ו-OPTIONS 204; לבדוק שהשרת לא מוחק את הכותרת.
 5. `redirect_uri` של ChatGPT לא https או משתנה → `oauthRedirectOk()`. ההתאמה ב-authorize — מדויקת, בכוונה.
 
+## אחרי פרוסה 11 — הגדרות בדיקות ותפקידים (PR #1896, מוזג)
+
+- **מסד:** מיגרציה v5 — `check_defs`, `roles`, `tasks`, `case_archive`, `members.role_id`, `invites.role_id`. המיגרציה הבאה — v6.
+- **בדיקות מטבלה** (`lib/checks.php`): org_id 0 = כללית (מפתח), N = דריסה של ארגון לפי key. הסרה רכה. **לקרוא רק דרך** `checkDefs()`,
+  `checkNames()`, `caseChecks()` (מצבים missing/found/doubt/done/na, complete), `caseUrgent()`, `checkForDocKind($pdo,$org,$kind)` (חוזה S5 עם 10).
+  ערך נבדק לפי סוג ב-`formSaveCase` (`checkValueError`).
+- **תפקידים** (`lib/roles.php`): `ROLE_PERMS` רשימה סגורה; 3 מובנים = ההרשאות שלפני. `can()` → `ctxPerms()` מהטבלה בכל בקשה.
+  `members.role` נשאר לתאימות (מחושב ב-`roleBase`). "רק שהוקצו" (`case.view_assigned`): בלי תיק — אף הרשאת תיק; עם תיק — רק אם יש משימה
+  לו/לתפקיד. ב-ext/MCP — `extAssignedOnly()` מסנן, אחר → 404. סטטוס סופי בידי אדם דורש `case.approve`.
+- **משימות:** `tasks` + משימות-בדיקה מחושבות (`check_defs.role`). הקצאה מפורשת גוברת; השלמת בדיקה סוגרת (`tasksCloseDone`).
+- **ארכיון:** `case_archive`; `list` מסנן (`&archived=1`), `case_restore`. בדיקה חדשה לא מוציאה מהארכיון.
+- **API לפרוסה 12:** הטבלה ב-README ("הגדרות בדיקות ותפקידים"). בדיקות: `tests/settings.sh` S1–S15 (מיפוי ל-10-acceptance בראשו).
+- **פתוח:** פרוסה 10 (`link/lib.php:127` `linkCheckForKind`) עדיין על `AI_DOC_CHECKS` — צריכה לעבור ל-`checkForDocKind()`. גם `ai/lib.php` על
+  `EXT_CHECKS`. מסך השטח חסום ל"רק שהוקצו" (field דורש case.view) — ל-12. openapi/הנחיות GPT — 9 ברירות המחדל (נבנה מראש).
+
 ## פרוסה 10 — זיהוי וקישור (PR #1894, ענף `claude/funerals-dashboard-10-ai-link`)
 
 **איפה:** `link/parse.php` (טהור: `linkParseMonth`, `linkParseName`, `linkScore`, `linkDecide`, `linkFilePattern`), `link/lib.php`
