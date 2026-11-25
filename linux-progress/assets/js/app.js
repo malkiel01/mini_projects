@@ -2,7 +2,8 @@
 (function () {
   'use strict';
 
-  const STATUS_LABEL = { none: 'לא התחלתי', done: 'נלמד', verified: 'אומת' };
+  const STATUS_LABEL = { not_started: 'לא התחלתי', in_progress: 'בתרגול', learned_pending_verification: 'נלמד, ממתין לאימות', verified: 'אומת' };
+  const LESSON_LABEL = { not_started: 'לא התחלתי', in_progress: 'בתרגול', completed: 'הושלם', verified: 'אומת' };
   const MESSAGES = {
     no_token: 'עדיין לא הוגדר סוד לקריאה. הגדר אותו במסך ההגדרות.',
     no_file: 'עדיין אין קובץ התקדמות בריפו. אחרי שייווצר, הנתונים יופיעו כאן.',
@@ -42,9 +43,9 @@
     box.append(el('h2', 'sec', 'איך לקרוא את הדף'));
     const list = el('ul', 'legend');
     const items = [
-      ['legend-none', 'לא התחלתי', 'עוד לא תרגלת את הנושא.'],
-      ['legend-done', 'נלמד', 'תרגלת את הנושא. זה עדיין לא אושר.'],
-      ['legend-verified', 'אומת', 'אושרה שליטה בנושא.'],
+      ['legend-none', 'תרגול', 'רשומת תרגול בלבד. לא משלימה יחידה ולא מודול.'],
+      ['legend-done', 'הושלם', 'יחידה שמנהל האקדמיה אישר השלמתה.'],
+      ['legend-verified', 'אומת', 'מודול שמנהל האקדמיה אישר אימות שלו.'],
     ];
     for (const [cls, name, desc] of items) {
       const li = el('li', cls);
@@ -59,7 +60,7 @@
     const ul = el('ul', 'lessons');
     for (const l of lessons) {
       const li = el('li', 'lesson');
-      li.append(el('span', 'kind', l.kind), el('strong', '', l.title));
+      li.append(el('span', 'kind', l.kind), el('span', 'chip', LESSON_LABEL[l.status] || l.status), el('strong', '', l.title));
       if (l.objectives && l.objectives.length) {
         const ob = el('ul', 'objectives');
         for (const o of l.objectives) ob.append(el('li', '', o));
@@ -80,13 +81,15 @@
     const o = sum.overall;
     const top = el('div', 'overall');
     const big = el('div', 'overall-ring');
-    big.append(ring(o.percent), el('div', 'ring-label', o.percent + '%'));
+    big.append(ring(o.percentLessonsCompleted), el('div', 'ring-label', o.percentLessonsCompleted + '%'));
     const text = el('div', 'overall-text');
     text.append(
-      el('p', 'big', `נלמדו ${o.practiced} מתוך ${o.total} מודולים`),
-      el('p', 'muted', `אומתו ${o.verified} מודולים`),
+      el('p', 'big', `הושלמו ${o.lessonsCompleted} מתוך ${o.lessonsTotal} יחידות`),
+      el('p', 'muted', `אומתו ${o.modulesVerified} מתוך ${o.modulesTotal} מודולים (החלטת מנהל)`),
+      el('p', 'muted', `בתרגול ${o.modulesInProgress} מודולים · ממתינים לאימות ${o.modulesLearnedPending}`),
     );
-    if (sum.pace) text.append(el('p', 'muted', `קצב: ${sum.pace.modulesPerWeek} מודולים בשבוע (מאז ${sum.pace.since})`));
+    if (sum.pace) text.append(el('p', 'muted', `פעילות מתועדת: ${sum.pace.modulesTouchedPerWeek} מודולים שנגעתי בהם בשבוע (מאז ${sum.pace.since})`));
+    if (sum.decisions && sum.decisions.error) text.append(el('p', 'error', 'קובץ ההחלטות לא נקרא: ' + sum.decisions.error + '. לא נספרת אף החלטה.'));
     top.append(big, text);
     box.append(top);
 
@@ -94,11 +97,11 @@
     for (const t of sum.tracks) {
       const card = el('details', 'track');
       const head = el('summary', 'track-head');
-      head.append(el('span', 'track-title', t.title), el('span', 'track-pct', `${t.practiced}/${t.total} · ${t.percent}%`));
+      head.append(el('span', 'track-title', t.title), el('span', 'track-pct', `${t.lessonsCompleted}/${t.lessonsTotal} יחידות · ${t.percentLessons}%`));
       card.append(head);
       const bar = el('div', 'bar');
       const fill = el('div', 'fill');
-      fill.style.width = Math.min(100, t.percent) + '%';
+      fill.style.width = Math.min(100, t.percentLessons) + '%';
       bar.append(fill);
       card.append(bar);
 
@@ -114,22 +117,14 @@
       card.append(mods);
       box.append(card);
     }
-    if (sum.unmapped) box.append(el('p', 'muted small', `${sum.unmapped} תרגולים לא מקושרים למודול בתוכנית.`));
+    if (sum.unmapped) box.append(el('p', 'muted small', `${sum.unmapped} רשומות לא מקושרות למודול בתוכנית (לא נספרות בהתקדמות).`));
+    if (sum.practice && sum.practice.lessonMismatch) box.append(el('p', 'muted small', `${sum.practice.lessonMismatch} רשומות עם יחידה שלא תואמת את המודול שלה.`));
   }
 
 
   // ---------- מדדים, תחזית, סימולטור ואבני דרך ----------
   const LAB_SHARE = 0.33;
-  const MILESTONES = [
-    { title: 'שליטה ביסודות מחשוב', tracks: ['01'] },
-    { title: 'שליטה ב-Linux וברשתות', tracks: ['02', '03'] },
-    { title: 'אבטחת Web ו-API', tracks: ['05', '07'] },
-    { title: 'ביצוע בדיקות חדירה בסיסיות בסביבות מורשות', tracks: ['08'] },
-    { title: 'ביצוע בדיקות חדירה עצמאיות וכתיבת דוחות', tracks: ['08', '09'] },
-    { title: 'מוכנות ראשונית להשתלבות מקצועית', tracks: ['11'] },
-    { title: 'יכולת מקצועית מתקדמת', tracks: ['09', '10'] },
-    { title: 'יכולת מחקר אבטחה עצמאית', tracks: ['10'] },
-  ];
+
 
   function fmtDate(d) {
     return d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
@@ -159,9 +154,9 @@
     box.append(el('h2', 'sec', 'מדדים (רק מה שנמדד)'));
     const grid = el('div', 'kpis');
     const kpis = [
-      ['נלמד', m.percentPracticed + '%', `${m.modulesPracticed} מתוך ${m.modulesTotal} מודולים`],
-      ['אומת', m.percentVerified + '%', `${m.modulesVerified} מודולים`],
-      ['נותרו', String(m.modulesRemaining), 'מודולים'],
+      ['יחידות שהושלמו', m.percentLessonsCompleted + '%', `${m.lessonsCompleted} מתוך ${m.lessonsTotal}`],
+      ['מודולים שאומתו', m.percentModulesVerified + '%', `${m.modulesVerified} מתוך ${m.modulesTotal}`],
+      ['בתרגול בלבד', String(m.modulesInProgress), `רשומות תרגול: ${m.practiceRecords} · אימותי יכולת: ${m.capabilityChecks}`],
       ['ימים פעילים', String(m.activeDays), m.daysSinceLast === null ? 'עדיין לא נרשם' : `התרגול האחרון לפני ${m.daysSinceLast} ימים`],
     ];
     for (const [label, value, sub] of kpis) {
@@ -254,24 +249,15 @@
   function renderMilestones(sum) {
     const box = $('milestones');
     box.textContent = '';
-    if (!sum) { box.hidden = true; return; }
+    if (!sum || !sum.milestones) { box.hidden = true; return; }
     box.hidden = false;
     box.append(el('h2', 'sec', 'אבני דרך מקצועיות'));
-    box.append(el('p', 'warn', 'טיוטה בלבד. ההגדרות והדרישות ממתינות לאישור מנהל האקדמיה.'));
-    const byTrack = {};
-    for (const t of sum.tracks) byTrack[t.id] = t;
+    box.append(el('p', 'warn', 'מדדי ניהול בלבד: כיסוי מודולים מתוך התוכנית. אבני הדרך אינן מדד מומחיות, והתנאים הנוספים ממתינים לאישור מנהל.'));
     const list = el('ul', 'milestones-list');
-    for (const ms of MILESTONES) {
-      let total = 0, verified = 0;
-      for (const id of ms.tracks) {
-        const t = byTrack[id];
-        if (!t) continue;
-        total += t.total;
-        verified += t.modules.filter((m) => m.status === 'verified').length;
-      }
-      const pct = total ? Math.round((verified / total) * 100) : 0;
+    for (const ms of sum.milestones) {
+      const pct = ms.requiredModules ? Math.round((ms.verifiedModules / ms.requiredModules) * 100) : 0;
       const li = el('li', 'ms');
-      li.append(el('div', 'ms-title', ms.title), el('div', 'ms-sub', `מסלולים: ${ms.tracks.join(', ')} · מאומתים ${verified}/${total}`));
+      li.append(el('div', 'ms-title', ms.title), el('div', 'ms-sub', `מודולים מאומתים ${ms.verifiedModules}/${ms.requiredModules} · תנאי נוסף: ${ms.extraCondition} (${ms.extraStatus})`));
       const bar = el('div', 'bar'); const fill = el('div', 'fill'); fill.style.width = pct + '%'; bar.append(fill);
       li.append(bar);
       list.append(li);

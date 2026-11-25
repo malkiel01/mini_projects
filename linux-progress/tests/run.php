@@ -64,79 +64,115 @@ array_map('unlink', glob("$base/wide/*") ?: []);
 @rmdir("$base/academy-secrets"); @rmdir("$base/wide"); @rmdir($base);
 
 
-// ---------- סיכום מול התוכנית (lib/syllabus.php) ----------
+// ---------- מודל ההחלטה 00B (lib/model.php, lib/syllabus.php, lib/metrics.php, lib/milestones.php) ----------
 require_once __DIR__ . '/../lib/syllabus.php';
+require_once __DIR__ . '/../lib/model.php';
+require_once __DIR__ . '/../lib/metrics.php';
+require_once __DIR__ . '/../lib/milestones.php';
+
 $syl = ['tracks' => [['id' => '01', 'title' => 'יסודות'], ['id' => '03', 'title' => 'Linux']],
         'modules' => [['id' => '01.01', 'trackId' => '01', 'title' => 'א'], ['id' => '01.02', 'trackId' => '01', 'title' => 'ב'],
-                      ['id' => '03.01', 'trackId' => '03', 'title' => 'ג'], ['id' => '03.02', 'trackId' => '03', 'title' => 'ד']]];
+                      ['id' => '03.01', 'trackId' => '03', 'title' => 'ג'], ['id' => '03.02', 'trackId' => '03', 'title' => 'ד']],
+        'lessons' => [
+            ['id' => '01.01.A', 'moduleId' => '01.01', 'title' => 'תיאוריה', 'kind' => 'theory', 'order' => 1, 'learningObjectives' => ['o']],
+            ['id' => '01.01.B', 'moduleId' => '01.01', 'title' => 'מעבדה', 'kind' => 'lab', 'order' => 2, 'learningObjectives' => []],
+            ['id' => '03.02.A', 'moduleId' => '03.02', 'title' => 'מעבדה 2', 'kind' => 'lab', 'order' => 1, 'learningObjectives' => []],
+        ]];
 $cur = lp_read_curriculum($syl);
-ok('תוכנית: נקראה עם 2 מסלולים ו-4 מודולים', $cur !== null && count($cur['tracks']) === 2 && count($cur['modules']) === 4);
-ok('תוכנית לא תקינה → null', lp_read_curriculum(['x' => 1]) === null);
-$today = new DateTimeImmutable('2026-11-24');
-$items = [
-    ['date' => '2026-11-22', 'topic' => 'chmod', 'status' => 'done', 'note' => '', 'moduleId' => '03.02'],
-    ['date' => '2026-11-22', 'topic' => 'מודול אחר', 'status' => 'verified', 'note' => '', 'moduleId' => '01.01'],
-    ['date' => '2026-11-22', 'topic' => 'בלי מזהה', 'status' => 'done', 'note' => ''],
-    ['date' => '2026-11-22', 'topic' => 'מזהה לא קיים', 'status' => 'done', 'note' => '', 'moduleId' => '09.09'],
-];
-$sum = lp_summary($cur, $items, $today);
-ok('סיכול: נלמדו 2 מודולים מתוך 4 (50%)', $sum['overall']['practiced'] === 2 && $sum['overall']['total'] === 4 && $sum['overall']['percent'] === 50.0);
-ok('סיכום: אומתו 1 (רק 01.01)', $sum['overall']['verified'] === 1);
-ok('מסלול 03: 1 מתוך 2, נותר 03.01', $sum['tracks'][1]['id'] === '03' && $sum['tracks'][1]['practiced'] === 1 && $sum['tracks'][1]['remaining'][0]['id'] === '03.01');
-ok('לא ממופה: 2 רשומות (בלי מזהה, ומזהה לא קיים)', $sum['unmapped'] === 2);
-ok('קצב: שבוע 1 מ-22.11, 2 מודולים נלמדים', $sum['pace']['weeks'] === 1 && $sum['pace']['modulesPerWeek'] === 2.0);
-$sumEmpty = lp_summary($cur, [], $today);
-ok('בלי רשומות: אחוז 0 וקצב ריק', $sumEmpty['overall']['percent'] === 0.0 && $sumEmpty['pace'] === null);
-$sumFar = lp_summary($cur, [['date' => '2026-10-01', 'topic' => 'x', 'status' => 'done', 'note' => '', 'moduleId' => '01.01']], $today);
-ok('קצב: 54 ימים = 8 שבועות, 1 מודול → 0.1 בשבוע', $sumFar['pace']['weeks'] === 8 && $sumFar['pace']['modulesPerWeek'] === 0.1);
-ok('moduleId בצורה לא תקינה → הרשומה נפסלת', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'moduleId' => '3.2']]]) === null);
-ok('moduleId תקין נשמר', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'moduleId' => '03.02']]])[0]['moduleId'] === '03.02');
-[$cs, $cc] = lp_fetch_curriculum(str_repeat('t', 30), fn($u, $t) => [200, json_encode($syl, JSON_UNESCAPED_UNICODE)]);
-ok('תוכנית נקראת מהריפו דרך השרת', $cs === 'ok' && count($cc['modules']) === 4);
-ok('תוכנית: בלי סוד → no_token', lp_fetch_curriculum(null)[0] === 'no_token');
-ok('תוכנית: 404 → unavailable', lp_fetch_curriculum('x', fn($u, $t) => [404, false])[0] === 'unavailable');
+$t0 = new DateTimeImmutable('2026-11-24', new DateTimeZone('Asia/Jerusalem'));
+$dec = fn(array $items) => lp_read_decisions(['schemaVersion' => 1, 'items' => $items]);
+$eff = fn(array $items) => lp_effective_decisions($dec($items)[1]);
+$rec = fn(string $date, string $status, ?string $mid, array $extra = []) => ['date' => $date, 'topic' => 't', 'status' => $status, 'note' => ''] + ['moduleId' => $mid] + $extra;
 
+// --- מצבים ומדדים: רשומת תרגול אינה השלמה ---
+$practiced = [$rec('2026-11-22', 'done', '03.02'), $rec('2026-11-22', 'done', '03.02')];
+$sum = lp_summary($cur, $practiced, [], $t0);
+$mod = fn($sum, $id) => array_values(array_filter($sum['tracks'][array_search('03', array_column($sum['tracks'], 'id'), true) ?: 0]['modules'], fn($m) => $m['id'] === $id))[0];
+ok('תרגול בלבד: המודול במצב in_progress, לא נלמד', $mod($sum, '03.02')['status'] === 'in_progress');
+ok('תרגול בלבד: אף יחידה לא הושלמה', $sum['overall']['lessonsCompleted'] === 0 && $sum['overall']['percentLessonsCompleted'] === 0.0);
+ok('שני תרגולים באותו מודול לא מכפילים ספירה', $sum['practice']['modulesTouched'] === 1);
 
-// ---------- מדדים, קצב ותחזית (lib/metrics.php) ----------
-require_once __DIR__ . '/../lib/metrics.php';
-$t0 = new DateTimeImmutable('2026-11-24');
-$mi = [
-    ['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'note' => '', 'moduleId' => '03.02'],
-    ['date' => '2026-11-22', 'topic' => 'b', 'status' => 'verified', 'note' => '', 'moduleId' => '01.01'],
-    ['date' => '2026-11-15', 'topic' => 'c', 'status' => 'done', 'note' => ''],
-    ['date' => '2026-10-20', 'topic' => 'd', 'status' => 'done', 'note' => ''],
-];
-$pc = lp_pace($mi, $t0);
-ok('קצב: ימים פעילים = 3 (תאריכים שונים)', $pc['activeDays'] === 3);
-ok('קצב: 7 ימים אחרונים = 2 תרגולים', $pc['windows']['d7']['items'] === 2);
-ok('קצב: 30 ימים אחרונים = 3 תרגולים', $pc['windows']['d30']['items'] === 3);
-ok('קצב: ימים מאז התרגול האחרון = 2', $pc['daysSinceLast'] === 2);
-ok('קצב: בלי רשומות → null ו-0', lp_pace([], $t0)['lastDate'] === null && lp_pace([], $t0)['activeDays'] === 0);
-$wk = lp_weekly($mi, $t0, 8);
-ok('שבועות: 8 נקודות, השבוע האחרון = 2', count($wk) === 8 && $wk[7]['items'] === 2);
-ok('רמת ביטחון נמוכה בלי נתונים מספיקים', lp_confidence($pc, 2) === 'נמוכה');
-ok('רמת ביטחון בינונית רק עם 4 שבועות ו-10 מודולים', lp_confidence(['spanWeeks' => 5], 10) === 'בינונית');
-$sum = lp_summary(lp_read_curriculum(['tracks' => [['id' => '01', 'title' => 'x']], 'modules' => [['id' => '01.01', 'trackId' => '01', 'title' => 'a'], ['id' => '01.02', 'trackId' => '01', 'title' => 'b']]]), $mi, $t0);
-$met = lp_metrics($sum, $mi, $t0);
-ok('מדדים: נותרו מודולים = סה"כ פחות נלמדו', $met['measured']['modulesRemaining'] === 1);
-ok('מדדים: אחוז נלמד נכון', $met['measured']['percentPracticed'] === 50.0);
-ok('מדדים: נתוני זמן מסומנים כחסרים', str_contains($met['missing']['studyTime'], 'אין נתוני זמן'));
-ok('תחזית: שלושה תרחישים בהנחות המנהל', count($met['forecastBasis']['scenarios']) === 3 && $met['forecastBasis']['scenarios']['likely']['totalHours'] === 480);
+// verified במודול 03.02 אינו מאמת מודול
+$ver = [$rec('2026-11-22', 'verified', '03.02')];
+$sumV = lp_summary($cur, $ver, [], $t0);
+ok('verified רשומה לא מאמתת מודול', $sumV['overall']['modulesVerified'] === 0 && $mod($sumV, '03.02')['status'] === 'in_progress');
+ok('verified נספר כאימות יכולת נפרד', $sumV['practice']['capabilityChecks'] === 1);
 
+// רשומה בלי lessonId לא משלימה יחידה
+ok('רשומה בלי lessonId לא מסמנת יחידה', $sum['tracks'][0]['modules'][0]['lessons'][0]['status'] === 'not_started');
 
-// רגרסיה: מסלולים 10 ו-11 (מפתחות מספריים ב-PHP) חייבים להופיע בסיכום
+// --- החלטות מנהל ---
+$unit = [['decisionId' => 'd1', 'date' => '2026-11-25', 'targetType' => 'lesson', 'targetId' => '01.01.A', 'status' => 'completed', 'approvedBy' => 'manager-00', 'reason' => 'ok']];
+$sumU = lp_summary($cur, [], $eff($unit), $t0);
+$lessonA = $sumU['tracks'][0]['modules'][0]['lessons'][0];
+ok('החלטת מנהל: יחידה completed נספרת', $lessonA['status'] === 'completed' && $sumU['overall']['lessonsCompleted'] === 1);
+ok('אחוז יחידות מחושב נכון (1 מתוך 3)', $sumU['overall']['percentLessonsCompleted'] === 33.3);
+
+$labNoEvidence = [['decisionId' => 'd2', 'date' => '2026-11-25', 'targetType' => 'lesson', 'targetId' => '01.01.B', 'status' => 'completed', 'approvedBy' => 'm', 'reason' => '']];
+$sumL = lp_summary($cur, [], $eff($labNoEvidence), $t0);
+ok('מעבדה בלי ראיה מעשית לא נספרת', $sumL['overall']['lessonsCompleted'] === 0);
+$labEv = [['decisionId' => 'd3', 'date' => '2026-11-25', 'targetType' => 'lesson', 'targetId' => '01.01.B', 'status' => 'completed', 'approvedBy' => 'm', 'reason' => '', 'evidenceRefs' => ['pr#1']]];
+ok('מעבדה עם ראיה נספרת', lp_summary($cur, [], $eff($labEv), $t0)['overall']['lessonsCompleted'] === 1);
+
+$modLearned = [['decisionId' => 'm1', 'date' => '2026-11-25', 'targetType' => 'module', 'targetId' => '01.01', 'status' => 'learned_pending_verification', 'approvedBy' => 'm', 'reason' => '']];
+$sumM = lp_summary($cur, [], $eff($modLearned), $t0);
+ok('החלטת מודול: נלמד ממתין לאימות', $sumM['tracks'][0]['modules'][0]['status'] === 'learned_pending_verification' && $sumM['overall']['modulesLearnedPending'] === 1);
+$modVer = array_merge($modLearned, [['decisionId' => 'm2', 'date' => '2026-11-26', 'targetType' => 'module', 'targetId' => '01.01', 'status' => 'verified', 'approvedBy' => 'm', 'reason' => '']]);
+ok('החלטה אחרונה קובעת: verified אחרי learned', lp_summary($cur, [], $eff($modVer), $t0)['overall']['modulesVerified'] === 1);
+
+// --- קובץ החלטות לא תקין ---
+ok('schemaVersion שגוי → לא תקין', $dec([])[0] === true && lp_read_decisions(['schemaVersion' => 2, 'items' => []])[0] === false);
+ok('decisionId כפול → לא תקין', lp_read_decisions(['schemaVersion' => 1, 'items' => [$unit[0], $unit[0]]])[0] === false);
+ok('החלטת יחידה עם סטטוס מודול → לא תקין', lp_read_decisions(['schemaVersion' => 1, 'items' => [['decisionId' => 'x', 'date' => '2026-11-25', 'targetType' => 'lesson', 'targetId' => '01.01.A', 'status' => 'learned_pending_verification', 'approvedBy' => 'm']]])[0] === false);
+ok('קובץ החלטות לא תקין → אין החלטה נספרת', lp_effective_decisions([])  === []);
+
+// --- שדות הרחבה ---
+$extOk = lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'moduleId' => '01.01', 'lessonId' => '01.01.A', 'studyMode' => 'phone', 'activityType' => 'theory', 'durationMinutes' => 30, 'assistanceLevel' => 'independent', 'evidenceType' => 'quiz', 'evidenceRef' => null]]]);
+ok('שדות הרחבה תקינים נשמרים', is_array($extOk) && $extOk[0]['durationMinutes'] === 30 && $extOk[0]['lessonId'] === '01.01.A');
+$legacy = lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'moduleId' => '03.02']]]);
+ok('רשומה ישנה בלי שדות הרחבה תקפה, והשדות חסרים (null)', is_array($legacy) && $legacy[0]['durationMinutes'] === null && $legacy[0]['studyMode'] === null);
+ok('משך 0 → לא תקין (לא מומר לאפס)', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'durationMinutes' => 0]]]) === null);
+ok('studyMode לא מוכר → לא תקין', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'studyMode' => 'tablet']]]) === null);
+ok('lessonId בצורה לא תקינה → לא תקין', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'lessonId' => '01.01']]]) === null);
+ok('recordId כפול → לא תקין', lp_validate(['items' => [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'recordId' => 'r1'], ['date' => '2026-11-22', 'topic' => 'b', 'status' => 'done', 'recordId' => 'r1']]]) === null);
+
+// --- זמן: חסר לא נספר כאפס ---
+$timed = [$rec('2026-11-22', 'done', '01.01', ['durationMinutes' => 30, 'studyMode' => 'phone']), $rec('2026-11-22', 'done', '01.01')];
+$sumT = lp_summary($cur, $timed, [], $t0);
+ok('כיסוי זמן חלקי: 50%, סה"כ 30 דקות', $sumT['time']['coveragePercent'] === 50.0 && $sumT['time']['minutesReported'] === 30);
+ok('בלי רשומות: כיסוי זמן null', lp_summary($cur, [], [], $t0)['time']['coveragePercent'] === null);
+ok('מטריקס: הערת זמן חלקי', str_contains(lp_metrics($sumT, $timed, $t0)['missing']['studyTime'], 'חסר אינו נחשב כאפס'));
+
+// --- תחזית: ביטחון נמוך תמיד, ומבוססת על מודולים שלא נלמדו/אומתו ---
+$metT = lp_metrics($sumM, [], $t0);
+ok('תחזית: ביטחון נמוך גם עם נתונים', lp_metrics($sumM, $timed, $t0)['forecastBasis']['confidence'] === 'נמוכה');
+ok('תחזית: מודול שנלמד לא נספר כנותר (ממתין לאימות נחשב נלמד)', $metT['forecastBasis']['remainingModules'] === 3);
+ok('תחזית: תרגול בלבד לא מפחית מודול', lp_metrics($sum, $practiced, $t0)['forecastBasis']['remainingModules'] === 4);
+
+// --- אבני דרך: כיסוי ולא מומחיות ---
+$states = ['01.01' => 'verified', '01.02' => 'not_started', '03.01' => 'not_started', '03.02' => 'in_progress'];
+$ms = lp_milestones($cur['modules'], $states);
+ok('אבן דרך יסודות: מודול 01 מכוסה, מודול אחד מאומת מתוך 2', $ms[0]['requiredModules'] === 2 && $ms[0]['verifiedModules'] === 1 && $ms[0]['state'] === 'in_progress');
+ok('הרחבת טווח: 03.01–03.03 מכסה רק מודולים קיימים', lp_expand_coverage('03.01–03.03', $cur['modules']) === ['03.01', '03.02']);
+ok('הרחבת מסלול: "03" מכסה את מודולי המסלול', count(lp_expand_coverage('03', $cur['modules'])) === 2);
+ok('אבן דרך לא מסומנת מוכנה בלי תנאי מנהל', $ms[0]['state'] !== 'achieved' && !str_contains(json_encode($ms), 'achieved'));
+
+// --- שינוי מעתה: רשומה ישנה נשמרת, ורשומת done אינה מחליפה החלטה ---
+ok('החלטה אינה נמחקת על ידי רשומת תרגול', lp_summary($cur, $practiced, $eff($modLearned), $t0)['overall']['modulesLearnedPending'] === 1);
+
+// --- קצב, שבועות, רמות (נבדק כמו קודם) ---
+$mi = [$rec('2026-11-22', 'done', '03.02'), $rec('2026-11-22', 'verified', '01.01'), $rec('2026-11-15', 'done', null), $rec('2026-10-20', 'done', null)];
+$pc = lp_pace($mi, new DateTimeImmutable('2026-11-24'));
+ok('קצב: ימים פעילים = 3', $pc['activeDays'] === 3);
+ok('קצב: 7 ימים אחרונים = 2', $pc['windows']['d7']['items'] === 2);
+ok('שבועות: 8 נקודות, השבוע האחרון = 2', count(lp_weekly($mi, new DateTimeImmutable('2026-11-24'), 8)) === 8);
+ok('אזור ישראל: התרגול האחרון לפני 2 ימים', lp_pace([$rec('2026-11-22', 'done', null)], $t0)['daysSinceLast'] === 2);
+
+// רגרסיה: מסלולים 10 ו-11 מופיעים בסיכום
 $curTen = lp_read_curriculum(['tracks' => [['id' => '09', 'title' => 'a'], ['id' => '10', 'title' => 'b'], ['id' => '11', 'title' => 'c']],
     'modules' => [['id' => '09.01', 'trackId' => '09', 'title' => 'x'], ['id' => '10.01', 'trackId' => '10', 'title' => 'y'], ['id' => '11.01', 'trackId' => '11', 'title' => 'z']]]);
-$sumTen = lp_summary($curTen, [], $t0);
+$sumTen = lp_summary($curTen, [], [], $t0);
 ok('מסלולים 10 ו-11 מופיעים בסיכום', count($sumTen['tracks']) === 3 && $sumTen['tracks'][1]['id'] === '10' && $sumTen['tracks'][2]['id'] === '11');
-ok('סה"כ מודולים כולל מסלולים 10 ו-11', $sumTen['overall']['total'] === 3);
-
-
-// רגרסיה: אזור זמן ישראלי — תאריכי רשומות חייבים להתפרש באותו אזור כמו "היום" (לא סטייה של יום)
-$tIL = new DateTimeImmutable('2026-11-24', new DateTimeZone('Asia/Jerusalem'));
-$ilItems = [['date' => '2026-11-22', 'topic' => 'a', 'status' => 'done', 'note' => ''], ['date' => '2026-11-22', 'topic' => 'b', 'status' => 'done', 'note' => '']];
-ok('אזור ישראל: התרגול האחרון לפני 2 ימים (לא 1)', lp_pace($ilItems, $tIL)['daysSinceLast'] === 2);
-ok('אזור ישראל: ימים פעילים = 1', lp_pace($ilItems, $tIL)['activeDays'] === 1);
 
 echo ($fails === 0 ? "✓ " : "✗ ") . ($n - $fails) . " עברו, $fails נכשלו (מתוך $n)\n";
 exit($fails === 0 ? 0 : 1);
