@@ -5,6 +5,8 @@
 
 **מנהל הצוותים:** `session_018g4NYD35seRmtSNaQMvhfG` (מנהל (10), מ-2026-11-25) — שעון `trig_01FTghnYAPVLygbjjq3S8pp5`, כל שעתיים בדקה 13. (הקודמים: `session_018g4NYErnK3WuzJdkhQ9xUb` (9), שעון `trig_01UjKfyZT5dJ1Z4GcFmtRBVH` — כבוי; `session_018g4NYG45Exe4anpHuvUXAP` (8), שעון `trig_01TKPhzFYwnP8yT2Qo4Ks7P4` — כבוי; `session_018g4NYDVnE3HNq6fpyVr1b8` (7), שעון `trig_01L7PcVY4iyTRPcpD74RmY6f` — כבוי; `session_018g4NYCk7ewEb3ryfYPAaoA` (6), שעון `trig_01UiWD41TAbAXkitcgLTeANf` — כבוי; `session_018g4NYCbBPFt8wcKkYCTSP9` (5), שעון `trig_016wU15GJpyQAkCeTbJ6QkU5` — כבוי; `session_018g4NYFBib6zieTUP467tex` (4), שעון `trig_016SiPhMTUW2wVw2Q73PHzRg` — כבוי; `session_018g4NYGVHYR6Kruh7ktecg3` (3), שעון `trig_01BNGJ8SmxZdndUqBsepanVL` — כבוי; `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
 
+**הרשאת ארכיון (הבעלים, 25.11):** מנהל הצוותים מעביר לארכיון תמיד כל צ'אט שסיים את עבודתו, בלי לשאול.
+
 **דף ההתקדמות של כל הצוותים:** https://claude.ai/artifact/5p12Fsrc2EeQtkWrNaAWRu (Artifact פרטי). המקור: `.claude/teams/progress.html`, נבנה ב-`python3 .claude/teams/progress-build.py` מהקבצים של כל צוות; מה שאי אפשר לקרוא מגיט (שעון דולק, בבנייה עכשיו) — ב-`progress-overrides.json`. מנהל הצוותים בונה ומפרסם מחדש לאותה כתובת בכל סבב שיש בו שינוי.
 
 | אפליקציה | מצב | בקרה |
