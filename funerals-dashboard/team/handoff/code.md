@@ -169,3 +169,43 @@
    דרך הבקרה (`.claude/teams/requests/`): הפניה כללית לכל אפליקציה אל `<app>/.well-known/oauth-authorization-server`. לא נוגעים מכאן.
 4. CORS — Inspector עושה גילוי ו-token מהדפדפן. `oauthCors()` כבר עונה `*` ו-OPTIONS 204; לבדוק שהשרת לא מוחק את הכותרת.
 5. `redirect_uri` של ChatGPT לא https או משתנה → `oauthRedirectOk()`. ההתאמה ב-authorize — מדויקת, בכוונה.
+
+## אחרי פרוסה 11 — הגדרות בדיקות ותפקידים (PR #1896, מוזג)
+
+- **מסד:** מיגרציה v5 — `check_defs`, `roles`, `tasks`, `case_archive`, `members.role_id`, `invites.role_id`. המיגרציה הבאה — v6.
+- **בדיקות מטבלה** (`lib/checks.php`): org_id 0 = כללית (מפתח), N = דריסה של ארגון לפי key. הסרה רכה. **לקרוא רק דרך** `checkDefs()`,
+  `checkNames()`, `caseChecks()` (מצבים missing/found/doubt/done/na, complete), `caseUrgent()`, `checkForDocKind($pdo,$org,$kind)` (חוזה S5 עם 10).
+  ערך נבדק לפי סוג ב-`formSaveCase` (`checkValueError`).
+- **תפקידים** (`lib/roles.php`): `ROLE_PERMS` רשימה סגורה; 3 מובנים = ההרשאות שלפני. `can()` → `ctxPerms()` מהטבלה בכל בקשה.
+  `members.role` נשאר לתאימות (מחושב ב-`roleBase`). "רק שהוקצו" (`case.view_assigned`): בלי תיק — אף הרשאת תיק; עם תיק — רק אם יש משימה
+  לו/לתפקיד. ב-ext/MCP — `extAssignedOnly()` מסנן, אחר → 404. סטטוס סופי בידי אדם דורש `case.approve`.
+- **משימות:** `tasks` + משימות-בדיקה מחושבות (`check_defs.role`). הקצאה מפורשת גוברת; השלמת בדיקה סוגרת (`tasksCloseDone`).
+- **ארכיון:** `case_archive`; `list` מסנן (`&archived=1`), `case_restore`. בדיקה חדשה לא מוציאה מהארכיון.
+- **API לפרוסה 12:** הטבלה ב-README ("הגדרות בדיקות ותפקידים"). בדיקות: `tests/settings.sh` S1–S15 (מיפוי ל-10-acceptance בראשו).
+- **פתוח:** פרוסה 10 (`link/lib.php:127` `linkCheckForKind`) עדיין על `AI_DOC_CHECKS` — צריכה לעבור ל-`checkForDocKind()`. גם `ai/lib.php` על
+  `EXT_CHECKS`. מסך השטח חסום ל"רק שהוקצו" (field דורש case.view) — ל-12. openapi/הנחיות GPT — 9 ברירות המחדל (נבנה מראש).
+
+## פרוסה 10 — זיהוי וקישור (PR #1894, ענף `claude/funerals-dashboard-10-ai-link`)
+
+**איפה:** `link/parse.php` (טהור: `linkParseMonth`, `linkParseName`, `linkScore`, `linkDecide`, `linkFilePattern`), `link/lib.php`
+(`linkRun`, `linkFolder`, `linkCreateCase`, `linkFiles`/`linkClassify`/`linkApplyKind`, `linkAnswer`, `linkRules`/`linkRulePut`, `linkReadFile`),
+`link/actions.php` (`link_questions/answer/rules/rule_save/rule_delete/run`; החיבור ב-`api.php` — שתי שורות). מופעל מ-`dropbox-webhook.php`
+(`read:false`) ומ-`bin/dropbox-sync.php` (`read:true`).
+- **טבלאות:** `linkEnsureSchema()` (לפי שם, בלי `SCHEMA_VERSION` — בגלל 11): `ai_rules` (org_id 0 = משותף; ערך ריק בארגון = כיבוי),
+  `ai_questions` (kind: folder / month / kind / file; UNIQUE לנושא), `link_folders` (role: month/year/case/pending/other/sub), `link_files`
+  (state + `extract` — קריאת הספק נשמרת ולא חוזרת), `link_keys` (ת"ז לתיק). אם הבקרה תבקש — להעביר ל-migrateV6 אחרי 11.
+- **ההחלטה:** `link` רק עם מועמד חזק יחיד (ת"ז, או שם מלא + תאריך זהה) שאינו מקושר; `new` רק כשאין אף מועמד **ויש תאריך או ת"ז**; כל
+  השאר — שאלה. תוכן נקרא רק בספק/בתיק חדש (`LINK_READ_PER_FOLDER`=2, `LINK_READ_PER_RUN`=20).
+- **ממשק צר ל-11:** `linkCheckForKind()` / `linkDocKinds()` — היום `AI_DOC_CHECKS`; S5 של 11 מחליף רק אותן (לקרוא את השיוך מההגדרות).
+- **"מאשר לבד":** `ai_rules.auto=1` רק דרך `link_rule_save` (רק `file_kind`); הכתיבה ב-`via: ui` בשם יוצר הכלל.
+- **מפתח (א11):** `aiKey()` — של הארגון, אחרת `secretGet('ai_key', 0)`; `aiKeySource()`; `ai_owner_key_save/remove` — `dev`.
+- **בדיקות:** `tests/link.test.php` (reader מדומה ב-`$GLOBALS['fd_link_reader']`), וקטע "10" בסוף `tests/ai.sh` (קריאת PDF מול הספק המדומה).
+- **לא נבנה — 10b (צ'אט קוד חדש, לפי בקרה 7), מול `docs/spec/10-acceptance.md`:**
+  - L1 — תיק חדש מתיקייה: למלא שם/ת"ז מהמסמך גם כשבשם התיקייה אין; מקור "בינה" בהיסטוריה (היום `system` + `via: ai`).
+  - L3 — בדיקה ייעודית ש-`dbxCreateCaseFolder` לא נספרת כתיקייה חדשה; תבנית תיקייה לארגון.
+  - L5 — שאלת קובץ יתום: 2–4 תשובות (היום 1–5, ב-`linkAskOrphan`).
+  - L9 — עלות משוערת לכל קריאה (היום טוקנים ב-`ai_usage`).
+  - L10 — בדיקת prompt injection במוק (הפלט בסכמה סגורה ונכתב רק לתיק של הקובץ — להוכיח בבדיקה).
+  - L11 — קובץ בלי כלל ובלי מפתח: לא להישאר "בשקט" (שאלה או סימון "ממתין לבינה").
+  - L2 — "אותו שם ותאריך בלי ת"ז": היום קישור; ממתין להכרעת האפיון (דרך הבקרה).
+  - העברת קובץ יתום לתיק (`files/move_v2`) — אין במוק של Dropbox ולא נבדקה. אין מסך — פרוסה 12.

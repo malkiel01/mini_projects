@@ -9,7 +9,10 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 
 const ROLES = ['admin' => 'מנהל', 'office' => 'משרד', 'field' => 'שטח'];
-/** ההרשאות לפי תפקיד. מפתח — הכול, בכל הארגונים. */
+/**
+ * ההרשאות לפי תפקיד לפני פרוסה 11 — היום רק רשימת השמות של ההרשאות, ונפילה כשאין טבלת roles.
+ * ההרשאות בפועל — מטבלת roles (lib/roles.php, ctxPerms). מפתח — הכול, בכל הארגונים.
+ */
 const PERMS = [
     'case.view'      => ['field', 'office', 'admin'],
     'case.track'     => ['field', 'office', 'admin'],   // בדיקה, הערה, מיקום קבר
@@ -20,9 +23,15 @@ const PERMS = [
     'token.manage'   => ['admin'],                      // אסימון ingest.php (של ארגון 1)
     'dropbox.manage' => ['admin'],                      // פרוסה 03: חיבור Dropbox, תיקייה ראשית, סריקה ושיוך תיקיות
     'files.upload'   => ['office', 'admin'],            // פרוסה 03: העלאה לתיקיית התיק (שטח — פרוסה 04)
+    'case.view_assigned' => [],                         // פרוסה 11: צפייה רק בתיקים שהוקצו (לתפקיד מותאם)
+    'case.approve'   => ['field', 'office', 'admin'],   // פרוסה 11: אישור בדיקה (מאומת)
+    'tasks.manage'   => ['admin'],                      // פרוסה 11: הקצאת משימות
+    'settings.manage' => ['admin'],                     // פרוסה 11: בדיקות, תפקידים (ו-dropbox.manage / token.manage)
     'orgs.manage'    => [],
     'dev'            => [],
 ];
+/** הרשאות שפועלות על תיקים — למשתמש "רק תיקים שהוקצו לי" הן חלות רק עם תיק מסוים (can($perm, $case)). */
+const CASE_PERMS = ['case.view', 'case.track', 'case.edit', 'case.approve', 'files.upload', 'case.import', 'case.export'];
 /** השדות שעובד שטח רשאי לשנות בתיק. */
 const TRACK_FIELDS = ['checks', 'notes', 'grave'];
 
@@ -85,6 +94,7 @@ function resolveAccess(array $pu): array {
     // המפתח הראשון אחרי המיגרציה — admin של ארגון 1, כדי שהבעלים לא יינעל מחוץ לתיקים שלו
     if ($isDev && !(int)$pdo->query("SELECT COUNT(*) FROM members WHERE org_id = 1 AND role = 'admin'")->fetchColumn()) {
         $pdo->prepare("INSERT OR REPLACE INTO members(org_id, user_id, role, created_at, created_by) VALUES (1, ?, 'admin', ?, NULL)")->execute([$uid, $now]);
+        rolesSeed($pdo, 1);   // פרוסה 11: role_id = המנהל המובנה
         recordEvent(1, null, $actorSys, 'system', 'member_added', ['user_id' => [null, $uid], 'role' => [null, 'admin']]);
     }
 
@@ -134,14 +144,17 @@ function acceptInvites(int $uid, string $email, string $actor): void {
     $pdo = db();
     $st = $pdo->prepare('SELECT * FROM invites WHERE email = ? AND used_at IS NULL ORDER BY id');
     $st->execute([mb_strtolower($email)]);
-    foreach ($st->fetchAll() as $inv) {
+    $rows = $st->fetchAll();
+    foreach ($rows as $inv) {
         $now = gmdate('c');
-        $ins = $pdo->prepare('INSERT OR IGNORE INTO members(org_id, user_id, role, created_at, created_by) VALUES (?,?,?,?,?)');
-        $ins->execute([$inv['org_id'], $uid, $inv['role'], $now, $inv['created_by']]);
+        // role_id (פרוסה 11) — התפקיד הגמיש מההזמנה; הזמנה ישנה בלי role_id — rolesSeed() למטה ממלא לפי role
+        $ins = $pdo->prepare('INSERT OR IGNORE INTO members(org_id, user_id, role, role_id, created_at, created_by) VALUES (?,?,?,?,?,?)');
+        $ins->execute([$inv['org_id'], $uid, $inv['role'], $inv['role_id'] ?? null, $now, $inv['created_by']]);
         $pdo->prepare('UPDATE invites SET used_at = ? WHERE id = ?')->execute([$now, $inv['id']]);
         if ($ins->rowCount()) recordEvent((int)$inv['org_id'], null, ['id' => $uid, 'actor' => $actor], 'system', 'invite_used',
             ['user_id' => [null, $uid], 'role' => [null, $inv['role']]]);
     }
+    foreach (array_unique(array_column($rows, 'org_id')) as $o) rolesSeed($pdo, (int)$o);
 }
 
 /**
@@ -154,8 +167,22 @@ function can(string $perm, ?array $case = null): bool {
     if (!$c['active'] || $c['org'] === null) return false;
     if ($case !== null && (int)($case['org_id'] ?? 0) !== scope()) return false;
     if ($c['dev']) return true;
-    return in_array($c['role'], PERMS[$perm], true);
+    if ($perm === 'orgs.manage' || $perm === 'dev') return false;
+    $perms = ctxPerms();
+    // פרוסה 11: "רק תיקים שהוקצו לי" — כל פעולה על תיק מסוים דורשת שהתיק הוקצה (משימה לי או לתפקיד שלי)
+    if ($case !== null && !in_array('case.view', $perms, true)) {
+        if (!in_array('case.view_assigned', $perms, true) || !caseAssigned(db(), scope(), (string)($case['id'] ?? ''), (int)$c['user']['id'], ctxRole()['id'] ?? null)) return false;
+        if ($perm === 'case.view') return true;
+    } elseif ($case === null && !in_array('case.view', $perms, true) && in_array($perm, CASE_PERMS, true)) {
+        // בלי תיק מסוים (רשימות, API חיצוני, MCP, שטח, בינה) — רק מי שרואה את כל התיקים. "רק שהוקצו" עובר דרך הפעולות של 11
+        // (list, save, history, case_checks, my_tasks), שבודקות את התיק עצמו.
+        return false;
+    }
+    return in_array(PERM_FROM[$perm] ?? $perm, $perms, true);
 }
+
+/** רואה תיקים: בכל התיקים, או רק באלה שהוקצו לו. */
+function canSeeCases(): bool { return can('case.view') || can('case.view_assigned'); }
 
 /** הארגון הפעיל — כל שאילתה על תיקים מסוננת לפיו. אין ארגון → 403 (נבדק לפני כל פעולה). */
 function scope(): int {
