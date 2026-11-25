@@ -68,9 +68,12 @@ if ($action === 'me') {
     if ($ctx['org'] === null) reply(403, noOrgBody());
     $perms = [];
     foreach (array_keys(PERMS) as $p) $perms[$p] = can($p);
+    $roleDef = ctxRole();   // פרוסה 11: התפקיד הגמיש (שם ומזהה) בארגון הפעיל
     reply(200, ['ok' => true, 'csrf' => $_SESSION['fd_csrf'], 'version' => VERSION,
         'user' => ['name' => $ctx['user']['name'], 'email' => $ctx['user']['email']],
-        'dev' => $ctx['dev'], 'role' => $ctx['role'], 'role_label' => $ctx['role'] ? ROLES[$ctx['role']] : ($ctx['dev'] ? 'מפתח' : ''),
+        'dev' => $ctx['dev'], 'role' => $ctx['role'], 'role_label' => $roleDef['name'] ?? ($ctx['role'] ? ROLES[$ctx['role']] : ($ctx['dev'] ? 'מפתח' : '')),
+        'role_id' => $roleDef['id'] ?? null,
+        'checks' => array_map(fn($d) => ['key' => $d['key'], 'name' => $d['name']], checkDefs($pdo, (int)$ctx['org']['id'])),
         'org' => ['id' => $ctx['org']['id'], 'name' => $ctx['org']['name']],
         'orgs' => array_map(fn($o) => ['id' => $o['id'], 'name' => $o['name']], $ctx['orgs']),
         'perms' => $perms,
@@ -120,9 +123,16 @@ if (str_starts_with($action, 'dev-') || $action === 'devloop-client-error') {
 require_once __DIR__ . '/lib/field.php';
 if (fieldHandles($action)) fieldAction($pdo, $action, $method, $org, $actor);
 
+/* ===== הגדרות: בדיקות, תפקידים, משימות (פרוסה 11) — lib/settings-actions.php ===== */
+require_once __DIR__ . '/lib/settings-actions.php';
+if (settingsHandles($action)) settingsAction($pdo, $action, $method, $org, $actor);
+
 switch ($action) {
     /* ===== תיקים ===== */
     case 'list':
+        // פרוסה 11: "רק תיקים שהוקצו לי" — הרשימה מסוננת למה שהוקצה לו (משימה לו או לתפקיד שלו)
+        if (!can('case.view') && can('case.view_assigned')) listMonth($pdo, $action, $method, $org,
+            assignedCaseIds($pdo, $org, (int)$ctx['user']['id'], ctxRole()['id'] ?? null));
         need('case.view');
         listMonth($pdo, $action, $method, $org);
     case 'export':
@@ -133,14 +143,19 @@ switch ($action) {
         importRecords($pdo, $method, $org, $actor, 'ui');
     case 'save':
         $payload = $post();
-        need('case.view');
+        if (!canSeeCases()) need('case.view');
         // lib/form.php: manual_fields, מקור לכל בדיקה (via: ui), ו-store() שרושם ב-events. תיק של ארגון אחר → 404
         $item = formSaveCase($pdo, $payload, 'ui', $actor, $org,
-            fn(?array $old, array $item) => need(caseChangeNeeds($old === null ? null : normalize($old, $org), $item)));
+            function (?array $old, array $item) use ($org) {
+                // פרוסה 11: על תיק קיים — ההרשאה לתיק הזה (משתמש "רק שהוקצו" — רק תיק שהוקצה לו); תיק חדש — case.edit בלי תיק
+                $ref = $old === null ? null : ['org_id' => $org, 'id' => $item['id']];
+                need('case.view', $ref);
+                need(caseChangeNeeds($old === null ? null : normalize($old, $org), $item), $ref);
+            });
         reply(200, ['ok' => true, 'record' => $item]);
     case 'history':
         // יומן התיק (פרוסה 02): 50 אחרונים מ-events. תיק של ארגון אחר → 404 (ה5)
-        need('case.view');
+        need('case.view', can('case.view') ? null : ['org_id' => $org, 'id' => (string)($_GET['id'] ?? '')]);
         formHistoryAction($pdo, $method, $org);
 
     case 'api_token':
@@ -163,18 +178,20 @@ switch ($action) {
         $in = $post();
         need('members.manage');
         $email = mb_strtolower(cleanText($in['email'] ?? '', 200));
-        $role = (string)($in['role'] ?? '');
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) reply(400, ['error' => 'כתובת מייל לא תקינה']);
-        if (!isset(ROLES[$role])) reply(400, ['error' => 'תפקיד לא תקין']);
+        // פרוסה 11: role_id (תפקיד גמיש), או role הישן (admin/office/field) → התפקיד המובנה
+        try { $rdef = roleResolveInput($pdo, $org, $in['role_id'] ?? null, $in['role'] ?? null); }
+        catch (RoleError $e) { reply($e->getCode() ?: 400, ['error' => $e->getMessage()]); }
+        $role = roleBase($rdef['perms']);
         $st = $pdo->prepare('SELECT id FROM users WHERE email = ?');
         $st->execute([$email]);
         $uid = $st->fetchColumn();
         if ($uid !== false && memberRole($org, (int)$uid) !== null) reply(400, ['error' => 'המשתמש כבר חבר בארגון']);
         // ההזמנה תמיד ממתינה — מצטרפים בכניסה הבאה. לא מגלים אם יש חשבון במייל הזה, ולא מצרפים מיד.
         $pdo->prepare('DELETE FROM invites WHERE org_id = ? AND email = ? AND used_at IS NULL')->execute([$org, $email]);
-        $pdo->prepare('INSERT INTO invites(org_id, email, role, created_by, created_at) VALUES (?,?,?,?,?)')
-            ->execute([$org, $email, $role, $ctx['user']['id'], gmdate('c')]);
-        recordEvent($org, null, $actor, 'ui', 'invite', ['email' => [null, $email], 'role' => [null, $role]]);
+        $pdo->prepare('INSERT INTO invites(org_id, email, role, role_id, created_by, created_at) VALUES (?,?,?,?,?,?)')
+            ->execute([$org, $email, $role, $rdef['id'], $ctx['user']['id'], gmdate('c')]);
+        recordEvent($org, null, $actor, 'ui', 'invite', ['email' => [null, $email], 'role' => [null, $rdef['name']]]);
         reply(200, membersOf($org));
     case 'invite_cancel':
         $in = $post();
@@ -188,16 +205,13 @@ switch ($action) {
         $in = $post();
         need('members.manage');
         $uid = (int)($in['user_id'] ?? 0);
-        $role = (string)($in['role'] ?? '');
-        if (!isset(ROLES[$role])) reply(400, ['error' => 'תפקיד לא תקין']);
-        $cur = memberRole($org, $uid) ?? reply(404, ['error' => 'החבר לא נמצא']);
-        if ($cur === 'admin' && $role !== 'admin' && adminCount($org) <= 1) {
-            reply(400, ['error' => 'זה המנהל האחרון של הארגון. קודם למנות מנהל נוסף.']);
-        }
-        if ($cur !== $role) {
-            $pdo->prepare('UPDATE members SET role = ? WHERE org_id = ? AND user_id = ?')->execute([$role, $org, $uid]);
-            recordEvent($org, null, $actor, 'ui', 'member_role', ['user_id' => [$uid, $uid], 'role' => [$cur, $role]]);
-        }
+        memberRole($org, $uid) ?? reply(404, ['error' => 'החבר לא נמצא']);
+        // פרוסה 11: role_id (תפקיד גמיש), או role הישן → המובנה. "המנהל האחרון" — memberSetRole()
+        try {
+            $rdef = roleResolveInput($pdo, $org, $in['role_id'] ?? null, $in['role'] ?? null);
+            [$was, $now] = memberSetRole($pdo, $org, $uid, $rdef);
+        } catch (RoleError $e) { reply($e->getCode() ?: 400, ['error' => $e->getMessage()]); }
+        if ($was !== $now) recordEvent($org, null, $actor, 'ui', 'member_role', ['user_id' => [$uid, $uid], 'role' => [$was, $now]]);
         reply(200, membersOf($org));
     case 'member_active':
         $in = $post();
@@ -238,6 +252,7 @@ switch ($action) {
         if ($name === '') reply(400, ['error' => 'נדרש שם ארגון']);
         $pdo->prepare('INSERT INTO orgs(name, created_at, settings) VALUES (?,?,\'{}\')')->execute([$name, gmdate('c')]);
         $id = (int)$pdo->lastInsertId();
+        rolesSeed($pdo, $id);   // פרוסה 11: שלושת התפקידים המובנים
         recordEvent($id, null, $actor, 'ui', 'org_create', ['name' => [null, $name]]);
         reply(200, ['orgs' => allOrgs(), 'active' => $org, 'created' => $id]);
     case 'org_rename':
@@ -296,13 +311,18 @@ function adminCount(int $org): int {
     return (int)$st->fetchColumn();
 }
 function membersOf(int $org): array {
-    $st = db()->prepare('SELECT u.id, u.name, u.email, m.active, u.last_seen_at, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY u.name, u.email');
+    $roles = rolesOf(db(), $org);   // פרוסה 11 — גם ממלא role_id חסר
+    $st = db()->prepare('SELECT u.id, u.name, u.email, m.active, u.last_seen_at, m.role, m.role_id, r.name AS role_name FROM members m JOIN users u ON u.id = m.user_id
+        LEFT JOIN roles r ON r.id = m.role_id WHERE m.org_id = ? ORDER BY u.name, u.email');
     $st->execute([$org]);
     $members = array_map(fn($r) => ['id' => (int)$r['id'], 'name' => $r['name'], 'email' => $r['email'], 'active' => (int)$r['active'] === 1,
-        'role' => $r['role'], 'last_seen_at' => $r['last_seen_at'], 'me' => (int)$r['id'] === ctx()['user']['id']], $st->fetchAll());
-    $st = db()->prepare('SELECT id, email, role, created_at FROM invites WHERE org_id = ? AND used_at IS NULL ORDER BY id DESC');
+        'role' => $r['role'], 'role_id' => $r['role_id'] === null ? null : (int)$r['role_id'], 'role_name' => $r['role_name'] ?? ROLES[$r['role']] ?? $r['role'],
+        'last_seen_at' => $r['last_seen_at'], 'me' => (int)$r['id'] === ctx()['user']['id']], $st->fetchAll());
+    $st = db()->prepare('SELECT i.id, i.email, i.role, i.role_id, COALESCE(r.name, i.role) AS role_name, i.created_at FROM invites i LEFT JOIN roles r ON r.id = i.role_id
+        WHERE i.org_id = ? AND i.used_at IS NULL ORDER BY i.id DESC');
     $st->execute([$org]);
-    return ['members' => $members, 'invites' => $st->fetchAll(), 'roles' => ROLES];
+    return ['members' => $members, 'invites' => $st->fetchAll(), 'roles' => ROLES,
+        'role_defs' => array_map(fn($r) => ['id' => $r['id'], 'name' => $r['name']], $roles)];
 }
 function allOrgs(): array {
     return array_map(fn($r) => ['id' => (int)$r['id'], 'name' => $r['name'], 'created_at' => $r['created_at'], 'members' => (int)$r['members'], 'cases' => (int)$r['cases']],

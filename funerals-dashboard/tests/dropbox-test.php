@@ -114,7 +114,7 @@ pdo()->exec('DROP TABLE dbx_orgs; DROP TABLE dbx_folders; DROP TABLE case_folder
 pdo()->exec("INSERT INTO funerals(id,month,name,body,updated_at,org_id) VALUES('fd_v1case000001','2026-09','תיק ישן','{\"id\":\"fd_v1case000001\",\"month\":\"2026-09\",\"name\":\"תיק ישן\"}','2026-09-01',1)");
 $before = q('SELECT id, body FROM funerals ORDER BY id');
 login($DEV);
-ok((int)q1('PRAGMA user_version') === 4, 'v2: user_version=4 (v2 של 03, ואחריו v3 של 04 ו-v4 של 06)');
+ok((int)q1('PRAGMA user_version') === (int)preg_replace('/.*const SCHEMA_VERSION = (\d+);.*/s', '$1', file_get_contents(__DIR__ . '/../lib/schema.php')), 'v2: user_version עדכני (v2 של 03, ואחריו v3 של 04, v4 של 06, v5 של 11)');
 ok((int)q1("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('dbx_orgs','dbx_folders','case_folders','files')") === 4, 'v2: הטבלאות נוספו');
 ok(q('SELECT id, body FROM funerals ORDER BY id') === $before, 'v2: התיקים לא השתנו');
 ok(count(glob("$data/backup/funerals-*-v1.sqlite")) === 1, 'v2: גיבוי לפני הקפיצה');

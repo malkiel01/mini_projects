@@ -24,14 +24,14 @@ php "$APP/tests/fixture-v0.php" "$D" "fd_$(printf 'x%.0s' {1..64})" >/dev/null
 php -r 'chdir($argv[1]); require "lib.php"; db();' "$APP" >/dev/null
 DB="$D/funerals.sqlite"
 php "$APP/tests/ai-fixture.php" "$DB"
-test "$(php -r '$p=new PDO("sqlite:".$argv[1]); echo $p->query("PRAGMA user_version")->fetchColumn();' "$DB")" = 4 || fail "v4: user_version"
+test "$(php -r '$p=new PDO("sqlite:".$argv[1]); echo $p->query("PRAGMA user_version")->fetchColumn();' "$DB")" -ge 4 || fail "v4: user_version"
 # v4 על מסד שכבר יש בו טבלאות AI בצורה הישנה (ALTER עצל, לפני v4): העמודות נוספות, הנתונים נשארים
 php -r '$p=new PDO("sqlite:".$argv[1]); $p->exec("ALTER TABLE ai_proposals DROP COLUMN base; ALTER TABLE ai_usage DROP COLUMN tokens;
   INSERT INTO ai_proposals(thread_id,org_id,user_id,tool,input,card,created_at) VALUES (\"t_old\",1,1,\"case_update\",\"{}\",\"{}\",\"2026-11-01\");
   PRAGMA user_version=3");' "$DB"
 php -r 'chdir($argv[1]); require "lib.php"; db();' "$APP" >/dev/null
 php -r '$p=new PDO("sqlite:".$argv[1]); $c=fn($t)=>array_column($p->query("PRAGMA table_info($t)")->fetchAll(),"name");
-  exit($p->query("PRAGMA user_version")->fetchColumn()==4 && in_array("base",$c("ai_proposals")) && in_array("tokens",$c("ai_usage"))
+  exit($p->query("PRAGMA user_version")->fetchColumn()>=4 && in_array("base",$c("ai_proposals")) && in_array("tokens",$c("ai_usage"))
     && $p->query("SELECT COUNT(*) FROM ai_proposals WHERE thread_id=\"t_old\"")->fetchColumn()==1 ? 0 : 1);' "$DB" || fail "v4 על טבלאות AI ישנות"
 php -r '$p=new PDO("sqlite:".$argv[1]); $p->exec("DELETE FROM ai_proposals WHERE thread_id=\"t_old\"");' "$DB"   # מסד בדיקה בלבד
 sql(){ php -r '$p=new PDO("sqlite:".$argv[1]); foreach($p->query($argv[2])->fetchAll(PDO::FETCH_NUM) as $r) echo implode("|",$r),"\n";' "$DB" "$1"; }

@@ -151,3 +151,11 @@
 - טבלאות: `linkEnsureSchema()` אידמפוטנטית ולפי שם, בלי `SCHEMA_VERSION` — כדי לא להתנגש ב-11. הכול תחת `data/` — אין `--exclude` חדש.
 - בדיקות: `tests/link.test.php` (נקרא מ-run.sh) + קטע "10" ב-`tests/ai.sh`. run.sh ירוק.
 - לא נבנה: מסך לשאלות/כללים (פרוסה 12 — ה-API מוכן); העברת קובץ יתום לתיק (move_v2) לא נבדקה אוטומטית.
+- 2026-11-25 — **פרוסה 11 (הגדרות בדיקות ותפקידים גמישים), ענף `claude/funerals-dashboard-11-settings`.** מיגרציה v5 (`check_defs`, `roles`,
+  `tasks`, `members.role_id`, `invites.role_id`) — מוסיפה בלבד, 22 התיקים זהים. `lib/checks.php` (בדיקות מטבלה, כללית + דריסה, הסרה רכה,
+  סדר, מותנית, דחוף), `lib/roles.php` (תפקידים, `ctxPerms`, משימות, "המשימות שלי"), `lib/settings-actions.php` (14 פעולות API).
+  `can()` קורא הרשאות מהטבלה; `case.view_assigned` חוסם כל הרשאת תיק בלי תיק מסוים. `formSaveCase`: "מאומת" בידי אדם דורש `case.approve`.
+  `ext-lib.php`: `extChecks()` — הבדיקות של הארגון במקום הרשימה הקבועה (openapi/הנחיות GPT — עדיין 9 ברירות המחדל). UI מינימלי:
+  `FDForm.setChecks(me.checks)`, ובחירת תפקיד גמיש במשתמשים. בדיקות: `tests/settings.sh` S1–S11 + `form.test.js`. אין נתיב נתונים חדש
+  מחוץ ל-SQLite — אין צורך ב-`--exclude`. **הכרעות טכניות:** ראה ה-PR.
+
