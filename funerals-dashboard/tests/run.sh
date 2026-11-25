@@ -16,7 +16,8 @@ ok(){ echo "  ✓ $*"; }
 
 # ===== A17: בדיקות סטטיות =====
 for f in api.php lib.php ingest.php tokens.php ext-lib.php tests/fixes08.test.php lib/schema.php lib/access.php lib/events.php lib/secrets.php lib/devtasks.php lib/form.php tests/gate-prepend.php tests/fixture-v0.php tests/form.test.php lib/field.php tests/field.test.php tests/field-dropbox.test.php \
-    dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php; do
+    dropbox-webhook.php bin/dropbox-sync.php dropbox/lib.php dropbox/actions.php dropbox/compat.php tests/dropbox-mock.php tests/dropbox-test.php \
+    link/parse.php link/lib.php link/actions.php tests/link.test.php; do
   php -l "$APP/$f" >/dev/null || fail "php -l $f"
 done
 node --check "$APP/assets/js/app.js" || fail "node --check app.js"
@@ -485,6 +486,10 @@ wipe
 php "$APP/tests/field.test.php" || fail "פרוסה 04 — field.test.php"
 wipe
 php "$APP/tests/field-dropbox.test.php" || fail "פרוסה 04 — מול Dropbox מדומה"
+
+# ===== פרוסה 10 — זיהוי וקישור (מבנה, שם, תוכן, כללים ושאלות), מסד נקי =====
+wipe
+php "$APP/tests/link.test.php" || fail "פרוסה 10 — link.test.php"
 
 # ===== פרוסה 06 — AI מובנה (שרת וספק מדומה נפרדים, מסד נקי; השרת של 01 כבר נעצר למעלה) =====
 bash "$APP/tests/ai.sh"
