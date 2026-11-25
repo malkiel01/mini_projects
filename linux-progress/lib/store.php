@@ -74,10 +74,23 @@ function lp_save_token(string $token, ?string $path = null): bool {
     return $ok;
 }
 
-/** אימות צורה: מחזיר רשימת פריטים נקיה, או null אם הקובץ לא תקין. שדות נוספים נזרקים. */
+/** ערכים מותרים לשדות האופציונליים של רשומה (חוזה ההרחבה, החלטה 00B סעיף 2). */
+const LP_STUDY_MODES = ['phone', 'computer', 'other', 'unknown'];
+const LP_ACTIVITY_TYPES = ['theory', 'analysis', 'lab', 'unknown'];
+const LP_ASSISTANCE = ['independent', 'documentation', 'hinted', 'guided', 'unknown'];
+const LP_EVIDENCE_TYPES = ['command_output', 'screenshot', 'quiz', 'oral_explanation', 'other', 'unknown'];
+const LP_LESSON_ID = '/^\d{2}\.\d{2}\.[A-Z]$/';
+const LP_RECORD_ID = '/^[A-Za-z0-9_.:-]{1,64}$/';
+
+/**
+ * אימות צורה: מחזיר רשימת רשומות נקיות, או null אם הקובץ לא תקין.
+ * שדות נוספים נזרקים. שדה אופציונלי שחסר נשמר כ-null (לא ידוע) — לעולם לא כאפס.
+ * מזהה רשומה כפול → הקובץ לא תקין.
+ */
 function lp_validate(mixed $data): ?array {
     if (!is_array($data) || !isset($data['items']) || !is_array($data['items'])) return null;
     $out = [];
+    $seenIds = [];
     foreach ($data['items'] as $it) {
         if (!is_array($it)) return null;
         $date = $it['date'] ?? null;
@@ -90,13 +103,51 @@ function lp_validate(mixed $data): ?array {
         if (!is_string($note) || mb_strlen($note) > 500) return null;
         $row = ['date' => $date, 'topic' => $topic, 'status' => $status, 'note' => $note];
         // moduleId אופציונלי: מזהה מודול בתוכנית, למשל "03.02". צורה לא תקינה → הרשומה נפסלת.
+        $row['moduleId'] = null;
         if (isset($it['moduleId'])) {
             if (!is_string($it['moduleId']) || !preg_match(LP_MODULE_ID, $it['moduleId'])) return null;
             $row['moduleId'] = $it['moduleId'];
         }
+        // שדות ההרחבה: כולם אופציונליים; חסר = null.
+        $row['recordId'] = null;
+        if (isset($it['recordId'])) {
+            if (!is_string($it['recordId']) || !preg_match(LP_RECORD_ID, $it['recordId'])) return null;
+            if (isset($seenIds[$it['recordId']])) return null;
+            $seenIds[$it['recordId']] = true;
+            $row['recordId'] = $it['recordId'];
+        }
+        $row['lessonId'] = null;
+        if (isset($it['lessonId'])) {
+            if (!is_string($it['lessonId']) || !preg_match(LP_LESSON_ID, $it['lessonId'])) return null;
+            $row['lessonId'] = $it['lessonId'];
+        }
+        $row['studyMode'] = lp_enum($it, 'studyMode', LP_STUDY_MODES);
+        if ($row['studyMode'] === false) return null;
+        $row['activityType'] = lp_enum($it, 'activityType', LP_ACTIVITY_TYPES);
+        if ($row['activityType'] === false) return null;
+        $row['assistanceLevel'] = lp_enum($it, 'assistanceLevel', LP_ASSISTANCE);
+        if ($row['assistanceLevel'] === false) return null;
+        $row['evidenceType'] = lp_enum($it, 'evidenceType', LP_EVIDENCE_TYPES);
+        if ($row['evidenceType'] === false) return null;
+        $row['durationMinutes'] = null;
+        if (isset($it['durationMinutes'])) {
+            if (!is_int($it['durationMinutes']) || $it['durationMinutes'] <= 0 || $it['durationMinutes'] > 1440) return null;
+            $row['durationMinutes'] = $it['durationMinutes'];
+        }
+        $row['evidenceRef'] = null;
+        if (isset($it['evidenceRef'])) {
+            if (!is_string($it['evidenceRef']) || mb_strlen($it['evidenceRef']) > 300) return null;
+            $row['evidenceRef'] = $it['evidenceRef'];
+        }
         $out[] = $row;
     }
     return $out;
+}
+
+/** שדה enum אופציונלי: מחזיר את הערך, null אם חסר, או false אם הערך לא מותר. */
+function lp_enum(array $it, string $key, array $allowed): string|false|null {
+    if (!isset($it[$key])) return null;
+    return (is_string($it[$key]) && in_array($it[$key], $allowed, true)) ? $it[$key] : false;
 }
 
 /**

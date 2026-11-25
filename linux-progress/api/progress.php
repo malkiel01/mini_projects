@@ -9,6 +9,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../lib/store.php';
 require_once __DIR__ . '/../lib/syllabus.php';
 require_once __DIR__ . '/../lib/metrics.php';
+require_once __DIR__ . '/../lib/model.php';
+require_once __DIR__ . '/../lib/milestones.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -30,12 +32,22 @@ try {
         [$status, $items] = lp_fetch_progress($token);
         $curStatus = null;
         $summary = null;
+        $decStatus = null;
+        $decError = null;
         if ($status === 'ok') {
             [$curStatus, $cur] = lp_fetch_curriculum($token);
+            // החלטות מנהל: קובץ חסר = אין החלטות. קובץ לא תקין = לא נספרת אף החלטה, והשגיאה מוצגת.
+            [$decStatus, $decisions, $decError] = lp_fetch_decisions($token);
+            if ($decStatus === 'invalid' || $decStatus === 'unavailable') $decisions = [];
             if ($curStatus === 'ok') {
                 $today = new DateTimeImmutable('now', new DateTimeZone('Asia/Jerusalem'));
-                $summary = lp_summary($cur, $items, $today);
+                $effective = lp_effective_decisions($decisions);
+                $summary = lp_summary($cur, $items, $effective, $today);
                 $summary['metrics'] = lp_metrics($summary, $items, $today);
+                $states = [];
+                foreach ($summary['tracks'] as $t) foreach ($t['modules'] as $m) $states[$m['id']] = $m['status'];
+                $summary['milestones'] = lp_milestones($cur['modules'], $states);
+                $summary['decisions'] = ['status' => $decStatus, 'count' => count($decisions), 'error' => $decError];
             }
         }
         lp_out(200, ['ok' => true, 'status' => $status, 'items' => $items, 'curriculum' => $curStatus, 'summary' => $summary]);
