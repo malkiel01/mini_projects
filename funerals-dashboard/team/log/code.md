@@ -160,4 +160,5 @@
   מחוץ ל-SQLite — אין צורך ב-`--exclude`. **הכרעות טכניות:** ראה ה-PR.
 
 
+- 25.11 — פרוסה 12 (ממשק הגדרות/תפקידים/משימות, שאלות מהבינה, מפתח בעלים, שטח ל"רק שהוקצו"): ענף `claude/funerals-dashboard-12-ui`, PR טיוטה. פירוט ב-handoff.
 - 25.11 — פרוסה 10b (L1, L2א, L3, L5, L9, L10, L11, S5): ענף `claude/funerals-dashboard-10b`, `tests/run.sh` עובר. מסירה ב-`team/handoff/code.md`.

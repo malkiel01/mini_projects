@@ -153,10 +153,14 @@
     try {
       const d = await api('field_today');
       day = d;
-      const today = d.cases.filter(c => c.date === d.today), tom = d.cases.filter(c => c.date === d.tomorrow);
+      // פרוסה 12: "רק תיקים שהוקצו לי" — רשימה אחת של התיקים שהוקצו, בכל התאריכים
+      const mine = !!d.assigned_only;
+      const today = mine ? d.cases : d.cases.filter(c => c.date === d.today), tom = mine ? [] : d.cases.filter(c => c.date === d.tomorrow);
+      $('fwTodayT').textContent = mine ? 'המשימות שלי' : 'היום';
+      $('fwTomT').hidden = $('fwTomorrow').hidden = mine;
       $('fwDay').textContent = 'היום ' + dm(d.today);
-      $('fwCount').textContent = ' · ' + today.length + ' היום · ' + tom.length + ' מחר';
-      for (const [id, list, empty] of [['fwToday', today, 'אין לוויות היום'], ['fwTomorrow', tom, 'אין לוויות מחר']]) {
+      $('fwCount').textContent = mine ? ' · ' + today.length + ' תיקים שהוקצו לי' : ' · ' + today.length + ' היום · ' + tom.length + ' מחר';
+      for (const [id, list, empty] of [['fwToday', today, mine ? 'עוד לא הוקצה לך תיק' : 'אין לוויות היום'], ['fwTomorrow', tom, 'אין לוויות מחר']]) {
         const ul = $(id); ul.replaceChildren();
         if (!list.length) ul.append(node('li', 'empty', empty));
         list.forEach(c => ul.append(caseRow(c, x => openCase(x.id))));

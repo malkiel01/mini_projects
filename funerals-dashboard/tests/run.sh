@@ -23,6 +23,8 @@ done
 node --check "$APP/assets/js/app.js" || fail "node --check app.js"
 node --check "$APP/assets/js/form.js" || fail "node --check form.js"
 node --check "$APP/assets/js/dropbox.js" || fail "node --check dropbox.js"
+node --check "$APP/assets/js/manage.js" || fail "node --check manage.js"
+grep -q 'src="assets/js/manage.js"' "$APP/index.html" || fail "index.html לא טוען את manage.js"
 # פרוסה 02 — בדיקות יחידה (בלי שרת ובלי data/)
 php "$APP/tests/form.test.php" || fail "form.test.php"
 # פרוסה 08 — P2 (הנחיות לפרויקט), P4 (caseDiff), parseImport — בלי שרת

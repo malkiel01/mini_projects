@@ -286,7 +286,17 @@ ok($caseOf($fA1) === $a1['id'], 'L2א: שם (סדר הפוך) + תאריך זה�
 $why = $pdo->prepare("SELECT diff FROM events WHERE case_id = ? AND action = 'dropbox_folder_linked'");
 $why->execute([$a1['id']]);
 ok(str_contains((string)$why->fetchColumn(), 'שם ותאריך זהים'), 'L2א: הקישור נרשם בהיסטוריה עם הסיבה');
+$fa = $file('/Funerals/2026-12/שי אלון 8.12/רישיון אלון.pdf');
+$answers['רישיון אלון.pdf'] = ['kind' => 'license_document', 'confidence' => 'high', 'name' => '', 'tz' => '000000042', 'death_date' => '', 'license_number' => 'AL-1'];
+linkRun($pdo, 1, ['read' => true]);
+$ac = existing($pdo, $a1['id'], 1)['checks'];
+ok(($ac['license_document']['status'] ?? '') === 'document_present' && ($ac['license_number']['value'] ?? '') === 'AL-1', 'L2א: לפני ביטול — הבינה כתבה לתיק מקובץ בתיקייה');
 $u = linkUndo($pdo, $org, $a1['id'], $actor);
+$ac = existing($pdo, $a1['id'], 1)['checks'];
+ok(!in_array($ac['license_document']['status'] ?? 'unknown', ['document_present', 'verified'], true) && ($ac['license_number']['value'] ?? '') === '', 'L2א: ביטול מחזיר את הבדיקות ומספר הרישיון שהקישור כתב');
+$kq = $pdo->prepare("SELECT COUNT(*) FROM link_keys WHERE org_id = 1 AND case_id = ?");
+$kq->execute([$a1['id']]);
+ok((int)$kq->fetchColumn() === 0, 'L2א: ביטול מסיר את הת"ז שנלמדה מהתיקייה');
 ok($u['ok'] && $caseOf($fA1) === null && ($q('folder', $fA1)['status'] ?? '') === 'open', 'L2א: ביטול → מנותק ושאלה פתוחה');
 linkRun($pdo, 1, ['read' => true]);
 ok($caseOf($fA1) === null, 'L2א: אחרי ביטול — לא מקושר שוב לבד');

@@ -465,6 +465,7 @@ function linkUndo(PDO $pdo, array $org, string $caseId, array $actor): array {
     $lf->execute([$orgId, $link['dbx_folder_id']]);
     $why = (string)($lf->fetchColumn() ?: '');
     if (!in_array($why, ['ת"ז זהה', 'שם ותאריך זהים', 'מזהה זהה'], true)) return ['ok' => false, 'error' => 'זה לא קישור אוטומטי — לנתק ב-⚙️ Dropbox', 'status' => 409];
+    linkUndoWrites($pdo, $orgId, $caseId, mb_strtolower((string)$link['dbx_path']));
     $pdo->prepare('DELETE FROM case_folders WHERE org_id = ? AND case_id = ?')->execute([$orgId, $caseId]);
     $pdo->prepare('UPDATE files SET case_id = NULL WHERE org_id = ? AND case_id = ? AND path_lower LIKE ? ESCAPE \'\\\'')
         ->execute([$orgId, $caseId, dbxLikePrefix(mb_strtolower((string)$link['dbx_path']))]);
@@ -484,6 +485,47 @@ function linkUndo(PDO $pdo, array $org, string $caseId, array $actor): array {
     return ['ok' => true];
 }
 
+/**
+ * ביטול מה שהקישור כתב לתיק: בדיקות שהבינה סימנה מקובצי התיקייה (מקור "Dropbox: <קובץ>") ושאדם לא שינה אחר כך
+ * (עדיין "לאימות") → חוזרות ל"טרם נבדק"; ת"ז שנלמדו מהתיקייה ומהמסמכים שבה יוצאות מ-link_keys; הקבצים יעברו מיון מחדש.
+ */
+function linkUndoWrites(PDO $pdo, int $orgId, string $caseId, string $dirLower): void {
+    $st = $pdo->prepare("SELECT f.id, f.name, f.path, lf.extract FROM files f LEFT JOIN link_files lf ON lf.org_id = f.org_id AND lf.file_id = f.id
+        WHERE f.org_id = ? AND f.case_id = ? AND f.path_lower LIKE ? ESCAPE '\\'");
+    $st->execute([$orgId, $caseId, dbxLikePrefix($dirLower)]);
+    $files = $st->fetchAll();
+    $sources = []; $tz = linkParseName(basename($dirLower), null)['tz'];
+    foreach ($files as $f) {
+        $sources['Dropbox: ' . $f['name']] = true;
+        $x = is_string($f['extract']) ? (json_decode($f['extract'], true) ?: []) : [];
+        if (($x['tz'] ?? '') !== '') $tz[] = $x['tz'];
+    }
+    if ($tz) {
+        $del = $pdo->prepare("DELETE FROM link_keys WHERE org_id = ? AND case_id = ? AND kind = 'tz' AND value = ?");
+        foreach (array_unique($tz) as $t) $del->execute([$orgId, $caseId, $t]);
+    }
+    if ($files) {
+        $ids = implode(',', array_map(static fn($f) => (int)$f['id'], $files));
+        $pdo->exec("UPDATE link_files SET state = 'read', kind = '' WHERE org_id = $orgId AND file_id IN ($ids) AND extract IS NOT NULL");
+        $pdo->exec("DELETE FROM link_files WHERE org_id = $orgId AND file_id IN ($ids) AND extract IS NULL");
+        $pdo->prepare("UPDATE ai_questions SET status = 'resolved', answered_at = ? WHERE org_id = ? AND kind = 'kind' AND status = 'open' AND subject IN ($ids)")
+            ->execute([gmdate('c'), $orgId]);
+    }
+    $case = linkExisting($pdo, $caseId, $orgId);
+    if ($case === null || !$sources) return;
+    $checks = $case['checks'] ?? [];
+    $changed = false;
+    foreach ($checks as $k => $c) {
+        if (is_array($c) && isset($sources[(string)($c['source'] ?? '')]) && ($c['status'] ?? '') === 'document_present') {
+            $checks[$k] = ['status' => 'unknown', 'value' => '', 'source' => '', 'note' => 'בוטל עם קישור התיקייה'];
+            $changed = true;
+        }
+    }
+    if (!$changed) return;
+    $case['checks'] = $checks;
+    [$ok, $err] = linkSave($pdo, $case, 'ai', LINK_ACTOR, $orgId);
+    if (!$ok) error_log('funerals-dashboard link: ביטול הבדיקות נכשל — ' . $err);
+}
 /** ראיות מתוכן התיקייה: עד LINK_READ_PER_FOLDER קבצים (תמונה / PDF) נקראים. */
 function linkFolderEvidence(PDO $pdo, int $orgId, string $lower): array {
     $st = $pdo->prepare("SELECT id, name, path_lower FROM files WHERE org_id = ? AND deleted = 0 AND path_lower LIKE ? ESCAPE '\\' ORDER BY id");

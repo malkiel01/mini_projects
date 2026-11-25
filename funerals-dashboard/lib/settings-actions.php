@@ -36,7 +36,9 @@ function settingsCase(PDO $pdo, int $org, string $id): array {
 function settingsChecksBody(PDO $pdo, int $org): array {
     return ['checks' => checkDefsAll($pdo, $org), 'global' => ctx()['dev'] ? checkDefsAll($pdo, 0) : null,
         'types' => CHECK_TYPES, 'value_kinds' => CHECK_VALUE_KINDS, 'states' => CHECK_STATES,
-        'urgent_days' => urgentDays($pdo, $org), 'can_edit' => can('settings.manage'), 'can_edit_global' => (bool)ctx()['dev']];
+        'urgent_days' => urgentDays($pdo, $org),
+        // פרוסה 12: סוגי המסמכים לבחירה במסך (מפתח → שם בעברית)
+        'doc_kind_options' => defined('AI_DOC_CHECKS') && function_exists('aiKindLabel') ? array_combine(AI_DOC_CHECKS, array_map('aiKindLabel', AI_DOC_CHECKS)) : (object)[], 'can_edit' => can('settings.manage'), 'can_edit_global' => (bool)ctx()['dev']];
 }
 
 function settingsAction(PDO $pdo, string $action, string $method, int $org, array $actor): never {
