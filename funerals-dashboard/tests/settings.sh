@@ -4,6 +4,8 @@
 #   S1 מיגרציה לא מוחקת · S2 בדיקה חדשה = "חסר" בתיקים קיימים · S3 הסרה לא מוחקת ערכים · S4 כללית + דריסה בארגון
 #   S5 סדר · S6 מותנית · S7 דחוף · S8 תפקיד מוגבל באמת מוגבל (בשרת) · S9 שינוי הרשאה חל מיד, המנהל האחרון
 #   S10 משימות ו"המשימות שלי" · S11 משתמש בשני ארגונים
+#   מיפוי ל-docs/spec/10-acceptance.md §11: S1→S5+S12 · S2→S6+S12 · S3→S4 · S4→S3 · S5→checkForDocKind (חוזה עם 10) · S6→S8+S13
+#   S7→S1 · S8→S10+S14 · S9→S7 · S10→S15 · S11→S9
 #   S12–S15 — לפי docs/spec/10-acceptance.md: ערך לפי סוג, API/MCP לתיקים שהוקצו, הקצאה גוברת וסגירה, ארכיון
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -182,6 +184,8 @@ code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["grave"]="�
 body="$(sql "SELECT body FROM funerals WHERE id='$FID'")"
 code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["origin"]="אחר"; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$body")")"; test "$code" = 403 || fail "S8: פרטים בלי case.edit ($code)"
 code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["checks"]["license_document"]=["status"=>"verified"]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$body")")"; test "$code" = 403 || fail "S8: אישור בדיקה בלי case.approve ($code)"
+code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["checks"]["hall_service"]=["status"=>"not_applicable"]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$body")")"; test "$code" = 403 || fail "S8: \"לא רלוונטי\" בלי case.approve ($code)"
+code="$(post photo save "$(php -r '$b=json_decode($argv[1],true); $b["checks"]["identity_source"]=["status"=>"reported","value"=>"x"]; echo json_encode($b,JSON_UNESCAPED_UNICODE);' "$body")")"; test "$code" = 403 || fail "S8: \"עודכן ידנית\" בלי case.approve ($code)"
 test "$(sql "SELECT body FROM funerals WHERE id='$FID'")" = "$body" || fail "S8: משהו נשמר אחרי 403"
 code="$(get photo case_checks "&id=$FID2")"; test "$code" = 403 || fail "S8: תיק אחר עדיין חסום ($code)"
 ok "S8 — תפקיד מותאם (רק שהוקצו + מעקב): בלי הקצאה — כלום; עם הקצאה — רק התיק הזה, בלי פרטים ובלי אישור; שטח/ייצוא/הגדרות → 403"

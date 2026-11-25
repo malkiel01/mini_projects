@@ -282,13 +282,14 @@ function extChecks(): array {
 function extSummary(array $c): array {
     $n = ['missing' => 0, 'verify' => 0, 'unchecked' => 0, 'done' => 0];
     $first = [];
-    foreach (extChecks() as $k => $label) {
+    $names = extChecks();
+    foreach ($names as $k => $label) {
         $g = extGroupOf((string)($c['checks'][$k]['status'] ?? 'unknown'));
         $n[$g]++;
         $first[$g] ??= ['check' => $k, 'label' => $label];
     }
     $next = $first['missing'] ?? $first['verify'] ?? $first['unchecked'] ?? null;
-    $status = $n['done'] === count(extChecks()) ? 'done' : ($n['missing'] ? 'missing' : ($n['verify'] ? 'verify' : 'unchecked'));
+    $status = $n['done'] === count($names) ? 'done' : ($n['missing'] ? 'missing' : ($n['verify'] ? 'verify' : 'unchecked'));
     return ['id' => $c['id'], 'name' => $c['name'], 'date' => $c['date'] ?? '', 'time' => $c['time'] ?? '', 'month' => $c['month'],
         'origin' => $c['origin'] ?? '', 'status' => $status, 'next' => $next, 'counts' => $n];
 }

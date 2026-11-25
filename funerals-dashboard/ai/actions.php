@@ -9,7 +9,8 @@ declare(strict_types=1);
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/lib.php';
 
-const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test', 'ai_chat', 'ai_thread', 'ai_decide', 'ai_file_kinds', 'ai_file_kind_decide', 'ai_key_remove'];
+const AI_ACTIONS = ['ai_status', 'ai_settings', 'ai_settings_save', 'ai_key_test', 'ai_chat', 'ai_thread', 'ai_decide', 'ai_file_kinds', 'ai_file_kind_decide', 'ai_key_remove',
+    'ai_owner_key_save', 'ai_owner_key_remove'];
 
 function aiHandles(string $action): bool { return in_array($action, AI_ACTIONS, true); }
 
@@ -26,7 +27,7 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 $want('GET');
                 need('case.view');
                 $s = aiSettings($pdo, $org);
-                reply(200, ['has_key' => aiKey($org) !== null, 'used' => aiUsed($pdo, $org), 'cap' => $s['monthly_cap'],
+                reply(200, ['has_key' => aiKey($org) !== null, 'key_source' => aiKeySource($org), 'used' => aiUsed($pdo, $org), 'cap' => $s['monthly_cap'],
                     'tokens' => aiTokensUsed($pdo, $org), 'token_cap' => $s['token_cap'],
                     'model' => $s['model'], 'can_manage' => can('members.manage'), 'tools_ready' => aiToolsReady(),
                     'auto_approve' => $s['auto_approve']]);
@@ -75,6 +76,23 @@ function aiAction(PDO $pdo, string $action, string $method): never {
                 aiSettingsSave($pdo, $org, $s);
                 recordEvent($org, null, $c['actor'], 'ui', 'ai_settings', ['key' => ['מוגדר', 'הוסר']]);
                 reply(200, aiPublicSettings($pdo, $org));
+
+            case 'ai_owner_key_save':
+                // מפתח ברירת המחדל של הבעלים (א11) — לכל ארגון שלא הגדיר מפתח משלו. מפתח בלבד.
+                $want('POST');
+                need('dev');
+                $key = trim((string)(body()['key'] ?? ''));
+                if (strlen($key) < 20 || strlen($key) > 300 || preg_match('/\s/', $key)) reply(400, ['error' => 'המפתח לא נראה תקין (בלי רווחים, 20–300 תווים)']);
+                secretPut('ai_key', 0, $key);
+                recordEvent(null, null, $c['actor'], 'ui', 'ai_owner_key', ['key' => ['—', 'הוחלף']]);
+                reply(200, ['ok' => true, 'hint' => aiKeyHint($key)]);
+
+            case 'ai_owner_key_remove':
+                $want('POST');
+                need('dev');
+                $pdo->prepare("DELETE FROM secrets WHERE name = 'ai_key' AND org_id = 0")->execute();
+                recordEvent(null, null, $c['actor'], 'ui', 'ai_owner_key', ['key' => ['מוגדר', 'הוסר']]);
+                reply(200, ['ok' => true]);
 
             case 'ai_key_test':
                 $want('POST');

@@ -367,3 +367,15 @@ function archivedIds(PDO $pdo, int $orgId): array {
     $st->execute([$orgId]);
     return $st->fetchAll(PDO::FETCH_COLUMN);
 }
+
+/**
+ * החוזה עם הבינה (פרוסה 10, S5): הבדיקה שסוג מסמך עונה עליה — לפי doc_kinds בהגדרות של הארגון (ולא לפי EXT_CHECKS).
+ * $kind — שם סוג המסמך (כמו ב-doc_kinds), או מפתח של בדיקה. null — אין בדיקה פעילה לסוג הזה.
+ */
+function checkForDocKind(PDO $pdo, int $orgId, string $kind): ?string {
+    $kind = trim($kind);
+    if ($kind === '') return null;
+    foreach (checkDefs($pdo, $orgId) as $d) if ($d['key'] === $kind) return $d['key'];
+    foreach (checkDefs($pdo, $orgId) as $d) if ($d['type'] === 'document' && in_array($kind, $d['doc_kinds'], true)) return $d['key'];
+    return null;
+}

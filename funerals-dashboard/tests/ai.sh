@@ -280,6 +280,27 @@ ok "🟡4 — טוקנים נצברים לחודש ולארגון; מעבר לת
 post admin ai_key_remove '{}' >/dev/null; test "$(j has_key)" = false && test "$(sql "SELECT COUNT(*) FROM secrets WHERE name='ai_key'")" = 0 || fail "⚪8 הסרת מפתח"
 ok "⚪8 — הסרת מפתח (רק מנהל), ונרשם ב-events"
 
+# ===== פרוסה 10: מפתח ברירת מחדל של הבעלים (א11), וקריאת תוכן בזיהוי וקישור — מול הספק המדומה =====
+code="$(post admin ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')"; test "$code" = 403 || fail "א11: מנהל ארגון שומר מפתח בעלים ($code)"
+code="$(post dev ai_owner_key_save '{"key":"sk-test-owner-key-0123456789"}')"; test "$code" = 200 || fail "א11: שמירת מפתח בעלים ($code)"
+get admin ai_status >/dev/null; test "$(j has_key)" = true && test "$(j key_source)" = owner || fail "א11: ארגון בלי מפתח — לא עובר למפתח הבעלים"
+! grep -q 'sk-test-owner-key' "$tmp/out" || fail "א11: המפתח בתשובה"
+code="$(get field link_questions)"; test "$code" = 200 && test "$(j can_answer)" = false || fail "10: link_questions לשטח ($code)"
+code="$(post field link_run '{}')"; test "$code" = 403 || fail "10: link_run לשטח ($code)"
+code="$(post admin link_rule_save '{"kind":"month","pattern":"חשון","value":"2026-11","layer":"shared"}')"; test "$code" = 403 || fail "10: מנהל ארגון כותב כלל משותף ($code)"
+code="$(post admin link_rule_save '{"kind":"month","pattern":"חשון","value":"2026-11"}')"; test "$code" = 200 || fail "10: כלל בארגון ($code)"
+get admin link_rules >/dev/null; test "$(j rules.0.layer)" = org && grep -q '11/2026' "$tmp/out" || fail "10: link_rules"
+# מספר הרישיון של התיק — "טרם נבדק" (מסד הבדיקה בלבד), כדי שהבינה תמלא אותו; בדיקה שמולאה — לא נדרסת (tests/link.test.php, F3)
+php -r '$p=new PDO("sqlite:".$argv[1]); $b=json_decode($p->query("SELECT body FROM funerals WHERE id=".$p->quote($argv[2]))->fetchColumn(),true);
+  $b["checks"]["license_number"]=["status"=>"unknown","value"=>"","source"=>"","note"=>""]; $p->prepare("UPDATE funerals SET body=? WHERE id=?")->execute([json_encode($b,JSON_UNESCAPED_UNICODE),$argv[2]]);' "$DB" "$DCASE"
+queue "[$(msg end_turn '[{"type":"text","text":"{\"kind\":\"license_document\",\"confidence\":\"high\",\"name\":\"\",\"tz\":\"\",\"death_date\":\"\",\"license_number\":\"L-7788\"}"}]')]"
+n="$(calls)"
+code="$(post admin link_run '{}')"; test "$code" = 200 || fail "10: link_run ($code)"
+test "$(calls)" = "$((n + 1))" || fail "10: הקובץ לא נשלח לספק"
+lastreq | php -r '$r=json_decode(stream_get_contents(STDIN),true); exit(($r["body"]["output_config"]["format"]["type"]??"")==="json_schema" && ($r["body"]["messages"][0]["content"][0]["type"]??"")==="document" ? 0 : 1);' || fail "10: בקשה לספק — PDF + structured output"
+caseBody "$DCASE" | php -r '$c=json_decode(stream_get_contents(STDIN),true); $l=$c["checks"]["license_number"]??[]; exit(($l["value"]??"")==="L-7788" && ($l["via"]??"")==="ai" && ($l["status"]??"")!=="verified" ? 0 : 1);' || fail "10: מספר הרישיון לא נשלף לתיק"
+ok "10 — מפתח הבעלים כברירת מחדל (רק מפתח שומר; לא בתשובה); link_* בהרשאות; קריאת PDF ב-structured output → מספר רישיון בתיק via ai"
+
 head -n 4 "$M/requests.jsonl" | tail -n 1 | grep -q '"version":"2023-06-01"' || fail "anthropic-version"
 ! grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -vq 'in Unknown on line 0' || { grep -E 'PHP (Fatal|Warning|Parse|Deprecated|Notice)' "$tmp/server.log" | grep -v 'in Unknown on line 0' | head; fail "שגיאות PHP בשרת"; }
 echo "PASS (06): F1–F7 — מפתח מוצפן ו-4 תווים, בלי מפתח בלי קריאה, הצעה עד ✓, ✓ → לאימות via ai, שטח 403, ארגון אחר 404, תקרה; §2.2.2 קובץ לספק; §2.3 הצעת סוג; ביקורת: R1–R3, בלי base64, ⚪7, תקרת טוקנים"

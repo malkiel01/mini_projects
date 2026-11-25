@@ -107,10 +107,10 @@ function formSaveCase(PDO $pdo, array $raw, string $via, array $actor, int $orgI
     foreach ($item['checks'] as $k => $c) {
         if ($c['value'] !== (string)($old['checks'][$k]['value'] ?? '') && ($err = checkValueError($pdo, $orgId, (string)$k, $c['value'])) !== null) reply(400, ['error' => $err]);
     }
-    // פרוסה 11: "מאומת" בידי אדם — רק למי שיש לו הרשאת אישור בדיקה (תפקיד גמיש). מקור אוטומטי ממילא לא מאשר (finalAllowed).
+    // פרוסה 11: סגירת בדיקה בידי אדם (מאומת / עודכן ידנית / לא רלוונטי) — רק למי שיש לו הרשאת אישור בדיקה (תפקיד גמיש). מקור אוטומטי ממילא לא מאשר (finalAllowed).
     if (($via === 'ui' || $via === 'field') && isset($GLOBALS['fd_ctx'])) {
         foreach ($item['checks'] as $k => $c) {
-            if ($c['status'] === 'verified' && ($old['checks'][$k]['status'] ?? '') !== 'verified') {
+            if (in_array($c['status'], FORM_FINAL_STATUSES, true) && ($old['checks'][$k]['status'] ?? '') !== $c['status']) {
                 need('case.approve', ['org_id' => $orgId, 'id' => $item['id']]);
                 break;
             }

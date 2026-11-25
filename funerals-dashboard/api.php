@@ -108,6 +108,10 @@ if (dbxHandles($action)) dbxAction($action, $method, $pu);
 require_once __DIR__ . '/ai/actions.php';
 if (aiHandles($action)) aiAction($pdo, $action, $method);
 
+/* ===== זיהוי וקישור (פרוסה 10) — link/actions.php ===== */
+require_once __DIR__ . '/link/actions.php';
+if (linkHandles($action)) linkAction($pdo, $action, $method);
+
 /* ===== DevLoop (מפתח בלבד) ===== */
 if (str_starts_with($action, 'dev-') || $action === 'devloop-client-error') {
     need('dev');
