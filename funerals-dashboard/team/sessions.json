@@ -6,9 +6,9 @@
   },
   "code": [],
   "control": {
-    "session": "session_018g4NYEtyGfJPB3ADzV5Upg",
+    "session": "session_018g4NYEmc1swmXwJd11ZcQW",
     "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_013zPmsBMZiHTC9V8S7SdN1V"
+    "clock": "trig_018AZvr3yfhJafuYGjJa36fM"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -77,6 +77,11 @@
     {
       "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
       "role": "בקרה 3",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEtyGfJPB3ADzV5Upg",
+      "role": "בקרה 4",
       "state": "רדום"
     }
   ]
