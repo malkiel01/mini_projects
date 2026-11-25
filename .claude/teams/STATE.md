@@ -18,7 +18,7 @@
 | `grave-prices` מחירוני קברים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי; פרוסות 01–05 באתר; GP-02 עד GP-05 אצל הבעלים. היה: פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) PR #1666 בביקורת; שעון — דקה 53 (`trig_01Ecqo638xYguboqngvZbKWx`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
 | `sforno` ספורנו | פעיל — קוד ברצף עד סיום; 01–10 ב-main (10: #1799); 11 השקה — חלק לא-חי בלבד עד "עוברים"; cron אצל הבעלים — חוסם תזכורות; שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51) | `session_018g4NYFaERcGPs7d3j8QKsZ` (בקרה 3) |
 | `funerals-dashboard` ניהול לוויות חברה קדישא | פעיל — אפיון חדש מאושר (PR #1884), פירוק לפרוסות לפי 08-gap; ממתין לבעלים: דוח ביטוח לאומי; שעון `trig_018AZvr3yfhJafuYGjJa36fM` (דקה 22, כל שעתיים) | `session_018g4NYEmc1swmXwJd11ZcQW` (בקרה 5, Sonnet, 24.11 — עוברת לבקרה 6, בפתיחת המנהל; קודם בקרה 4 `session_018g4NYEtyGfJPB3ADzV5Upg`, בקרה 3 `session_018g4NYDegWrLYkRkfQRRfVQ`, בקרה 2 `session_018g4NYES4G3kVk57413GPnM`) |
-| `claude-tasks` מטלות לקלוד | פעיל — צוות חדש לאפליקציה קיימת (24.11); פרוסה ראשונה: סקר `dev/audit.md`; אפיון מחדש לפי `docs/owner-brief.md` (צ'אט בפלטפורמה ↔ Claude Code, גשר על המחשב של הבעלים); שעון `trig_013ioXFENB6BAZ6HQa8V1hU5` (דקה 47) | `session_018g4NYEu2Vj9Rytz6qezZ8Z` (בקרה 1, Sonnet) |
+| `claude-tasks` מטלות לקלוד | פעיל — אפיון מאושר בידי הבעלים (25.11), #1883 ממוזג; הבא: ריפו פרטי ייעודי ופרוסה 0 לצוות הקוד; **שעון: אין טריגר פעיל** — בקרה 3 בעומק שושלת 8 ולא יכלה ליצור (הישן `trig_01DLStrAkSJ2HoirMNooPbzV` כבוי); דרוש session חדש ליצירת שעון | `session_018g4NYFK283KrndGW72PUKe` (בקרה 3, Sonnet, 25.11) |
 
 ## ממתין לבעלים
 
