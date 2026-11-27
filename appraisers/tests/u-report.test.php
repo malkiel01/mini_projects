@@ -11,6 +11,9 @@ $GLOBALS['apr_upload_rate'] = [100000, 600];
 set_error_handler(function (int $no, string $msg, string $file, int $line) use (&$warnings) { if (!(error_reporting() & $no)) return true; $warnings[] = "$msg @" . basename($file) . ":$line"; return true; });
 $GLOBALS['apr_time'] = 1794400000;      // שעון קפוא
 
+/** מבטל את הטרנזקציה של סריקת הסכימה (סבב 3): מה שנשתל בה אינו נשאר במסד. */
+final class SweepRollback extends RuntimeException {}
+
 /** המתאם המדומה: רושם כל בקשה ומחזיר את התשובה שנקבעה. */
 final class FakeR implements AprAiAdapter
 {
@@ -311,7 +314,7 @@ $inA2 = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, $cpSec, 
 $inP2 = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'property', 'title' => 'זיהוי הנכס והזכויות'], apr_pc_report_default());
 $builtP = json_encode(apr_report_resolve(['user' => null, 'office' => null], $cpRow, apr_report_build($cpRow, 'property', apr_pc_report_default())['blocks'], apr_pc_report_default()), JSON_UNESCAPED_UNICODE);
 eq([str_contains($inA2['message'], 'פלוני'), str_contains($inA2['message'], 'תקופת השכירות'), in_array(['type' => 'fact', 'attr' => 'rent_term'], $inA2['kept'], true), in_array(['type' => 'fact', 'attr' => 'actual_use'], $inA2['kept'], true),
-    str_contains($inA2['message'], 'שטח: 90'), apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'purpose', 'title' => 'x'], apr_pc_report_default())['items'],
+    str_contains($inA2['message'], 'שטח: 90'), array_filter(array_map(fn($k) => apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => $k, 'title' => 'x'], apr_pc_report_default())['items'], ['purpose', 'documents', 'methods', 'comps', 'assume', 'conclusion', 'appendix', 'custom_x'])),
     str_contains($inP2['message'], 'פלמוני'), str_contains($inP2['message'], '6158'), str_contains($builtP, 'פלמוני')],
     [false, false, true, true, true, [], false, true, true],
     'B1: נתון מסוג טקסט אינו נשלח באף קבוצה (שכירות, תיאור הנכס) ונשאר בפרק כהפניה; נתון מספרי נשלח; פרק שאינו ברשימה הסגורה אינו מרכיב קלט; טקסט חופשי של מזהה "אחר" אינו נשלח — אבל נשאר בדוח עצמו; גוש וחלקה נשלחים');
@@ -887,6 +890,170 @@ eq([$nvU[0], in_array('floors_total', array_column(array_filter($adU['proposal']
     array_key_exists('reopen_reason', $headP), array_key_exists('rev', $headP), apr_report_version_head($verRowU)['reopen_reason'], array_keys($secP), array_map('array_keys', $secP['blocks'])],
     [200, true, false, false, 'נתון נוסף', ['pid', 'key', 'title', 'mandatory', 'blocks'], [['type', 'text'], ['type', 'attr', 'label', 'value'], ['type', 'table', 'cols', 'rows']]],
     '🟡5: בגרסה חדשה, נתון שהגיע אחרי האישור אינו נבלע — לפרק שנערך הוא מגיע כהצעת עדכון; 🟡6: שותף אינו מקבל את reopen_reason / rev, ולא origin / ai_reviewed / src / fact / refs / was / changed / ai / num_unknown');
+
+// ═══ סבב 3 — B1: טקסט חופשי שאדם הקליד אינו מגיע לספק הבינה. הבדיקה נגזרת מהסכימה, לא מרשימה של שדות ═══
+// סמן ייחודי (אותיות בלבד, 10 תווים — שורד גם substr של תאריך) לכל מאפיין ולכל עמודה. סמן ב-payload = דליפה.
+$mk = fn(string $name) => 'ZQ' . strtr(substr(md5($name), 0, 6), '0123456789', 'ghijklmnop') . 'QZ';
+$anyMark = fn(mixed $x) => preg_match('/ZQ[a-p]{6}QZ/', (string)json_encode($x, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === 1;
+$nobody = ['user' => null, 'office' => null];
+$CT = make_case($avi, $PM);
+$ctId = $caseId($CT);
+$members($CT);
+// נתון לכל מאפיין שבמערכת, לפי הסוג שלו: מאפיין מסוג טקסט (וכל סוג שיתווסף) מקבל סמן; השאר — ערך מובנה. בלי רשימה של מפתחות
+$attrMarks = [];
+$factFail = [];
+foreach (apr_attrs_all() as $a) {
+    if ($a['status'] !== 'active') continue;
+    $value = match ($a['value_type']) { 'number', 'money' => '7', 'bool' => true, 'date' => '2026-01-05', 'choice' => (json_decode((string)$a['choices'], true) ?: [])[0]['key'] ?? null, default => null };
+    if ($value === null) $value = ($attrMarks[$a['key']] = $mk('attr.' . $a['key'])) . ' — טקסט שאדם הקליד: בעלים אברהם אבינו';
+    $more = (APR_UNITS[$a['unit_kind']] ? ['unit' => array_key_first(APR_UNITS[$a['unit_kind']])] : []) + ((int)$a['has_area_kind'] ? ['area_kind' => 'registered'] : []);
+    if ($post('fact-add', ['case' => $CT, 'attribute' => $a['key'], 'value' => $value, 'source' => ['kind' => 'user', 'note' => 'בדיקה']] + $more)[0] !== 200) $factFail[] = $a['key'];
+}
+// וכל מקום אחר שבו אדם מקליד טקסט שארבעת הפרקים מציגים: מזהה "אחר" / תיק בניין, ממצא של בדיקת מקור, כיתוב של תמונה
+$apiMarks = ['other' => $mk('api.ident.other'), 'file' => $mk('api.ident.file'), 'summary' => $mk('api.check.summary'), 'caption' => $mk('api.photo.caption')];
+$setupT = [call('POST', 'case-identifier-add', ['case' => $CT, 'kind' => 'address', 'street' => 'הרצל', 'house_no' => '5', 'apartment_no' => '3', 'locality' => 'תל אביב', 'municipality' => 'תל אביב-יפו', 'note' => $mk('api.ident.note')], $avi)[0],
+    call('POST', 'case-identifier-add', ['case' => $CT, 'kind' => 'other', 'value_text' => $apiMarks['other'] . ' הדירה של משפחת זילברמן'], $avi)[0],
+    call('POST', 'case-identifier-add', ['case' => $CT, 'kind' => 'building_file', 'value_text' => $apiMarks['file']], $avi)[0],
+    call('POST', 'source-check-record', ['case' => $CT, 'source' => $srcKey, 'status' => 'found', 'result_summary' => $apiMarks['summary'] . ' נסח טאבו: בעלים אברהם אבינו, הערת אזהרה לטובת שרה אמנו',
+        'coverage_note' => $mk('api.check.coverage'), 'query_text' => $mk('api.check.query'), 'limitation' => $mk('api.check.limitation')], $avi)[0]];
+[$VTv] = $visit($CT);
+$fidT = apr_insert('files', ['pid' => apr_pid(), 'office_id' => apr_val('SELECT office_id FROM cases WHERE pid = ?', [$CT]), 'case_id' => $ctId, 'sha256' => hash('sha256', 't'), 'size' => 1, 'mime' => 'image/jpeg', 'ext' => 'jpg',
+    'original_name' => 't.jpg', 'storage_key' => 'k' . bin2hex(random_bytes(4)), 'uploader_kind' => 'user', 'uploader_id' => 1, 'channel' => 'internal', 'received_at' => apr_now(), 'scan_state' => 'clean']);
+apr_insert('visit_photos', ['pid' => apr_pid(), 'visit_id' => apr_val('SELECT id FROM visits WHERE pid = ?', [$VTv]), 'file_id' => $fidT, 'field_key' => 'x', 'row_no' => 0, 'sort' => 1, 'usage' => 'report', 'for_report' => 1, 'rights_by' => 1, 'rights_at' => apr_now(),
+    'caption' => $apiMarks['caption'] . ' חזית הבית של משפחת כהן', 'created_by' => 1, 'created_at' => apr_now(), 'updated_at' => apr_now()]);
+$ctRow = fn() => apr_row('SELECT * FROM cases WHERE id = ?', [$ctId]) + ['perms' => [], 'my_role' => 'system', 'share' => null];
+/** מה שארבעת הפרקים **מציגים** בדוח (כולל הכותרת שנשמרה), ומה ש**נשלח** עליהם לבינה — מהמסד כפי שהוא ברגע הקריאה. */
+$stateT = function () use ($ctId, $ctRow, $nobody) {
+    $c = $ctRow();
+    $v = apr_row('SELECT * FROM report_versions WHERE case_id = ? ORDER BY id DESC LIMIT 1', [$ctId]);
+    $tpl = $v ? apr_report_tpl($v) : apr_report_profile($c);
+    $view = [];
+    $msgs = [];
+    foreach (APR_REPORT_AI_KEYS as $key) {
+        $s = ($v ? apr_row('SELECT * FROM report_sections WHERE version_id = ? AND key = ?', [$v['id'], $key]) : null) ?? ['key' => $key, 'title' => ''];
+        $view[] = [$s['title'], apr_report_resolve($nobody, $c, apr_report_build($c, $key, $tpl)['blocks'], $tpl)];
+        $msgs[] = apr_report_ai_input($nobody, $c, $s, $tpl)['message'];
+    }
+    return [(string)json_encode($view, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $msgs];
+};
+/** כל בקשה שהמתאם קיבל היא בדיוק: מודל, תקרת פלט, הנחיית המערכת הקבועה, וחלק טקסט אחד — אחת מההודעות ש-apr_report_ai_input הרכיב. שום שדה אחר. */
+$shapeOk = function (array $calls, array $msgs): bool {
+    foreach ($calls as $r) {
+        if (array_keys($r) !== ['model', 'max_tokens', 'system', 'parts'] || !is_string($r['model']) || $r['max_tokens'] !== APR_REPORT_AI_MAX_OUTPUT || $r['system'] !== APR_REPORT_AI_SYSTEM
+            || count($r['parts']) !== 1 || array_keys($r['parts'][0]) !== ['type', 'text'] || $r['parts'][0]['type'] !== 'text' || !in_array($r['parts'][0]['text'], $msgs, true)) return false;
+    }
+    return true;
+};
+/** שלושת המסלולים אל הספק: "הכול" ($all — ai_all), "פרק בודד" (report-section-ai), וניסוח שנשמר כהצעה (הפרק נערך בזמן הקריאה). מחזיר את הבקשות שהמתאם קיבל. */
+$VT = null;
+$pathsT = function (callable $all) use ($fake, $echo, $ver, $sec, $post, $save, $dana, &$VT) {
+    $out = [];
+    $fake->next = $echo;
+    $fake->calls = [];
+    $all();
+    $out['all'] = $fake->calls;
+    $fake->calls = [];
+    foreach ($ver($VT)[1]['sections'] as $s) if (in_array($s['key'], APR_REPORT_AI_KEYS, true)) $post('report-section-ai', ['section' => $s['pid'], 'rev' => $s['rev'], 'replace' => true], $dana);
+    $out['single'] = $fake->calls;
+    $fake->calls = [];
+    $sp = $sec($ver($VT)[1], 'planning');
+    $fake->next = function (array $req) use ($echo, $save, $sp) { $save($sp['pid'], [['type' => 'p', 'text' => 'עריכה ידנית בזמן הניסוח ' . bin2hex(random_bytes(3))]]); return $echo($req); };
+    $out['as_proposal'] = $post('report-section-ai', ['section' => $sp['pid'], 'rev' => $sp['rev'], 'replace' => true], $dana)[1]['as_proposal'] ?? null;
+    $out['proposal'] = $fake->calls;
+    $fake->next = $echo;
+    $fake->calls = [];
+    return $out;
+};
+$allCalls = fn(array $p) => [...$p['all'], ...$p['single'], ...$p['proposal']];
+
+// שלב א — דרך ה-API, כמו משתמש: כל מאפיין טקסט נושא סמן. שלושת המסלולים; שום סמן אינו ב-payload, והנתונים עצמם נשארים בפרקים (כהפניה)
+[, $msgsA] = $stateT();
+$pA = $pathsT(function () use ($post, $CT, $versions, &$VT) { $post('report-draft-create', ['case' => $CT]); $VT = $versions($CT)[0]['pid'] ?? null; });
+$viewA = (string)json_encode([$ver($VT)[1]['sections'] ?? null, apr_rows('SELECT p.content FROM section_proposals p JOIN report_sections s ON s.id = p.section_id JOIN report_versions v ON v.id = s.version_id WHERE v.pid = ?', [$VT])], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$viewBuilt = $stateT()[0];
+eq([$factFail, $setupT, count($attrMarks) >= 5, [count($pA['all']), count($pA['single']), count($pA['proposal']), $pA['as_proposal']], $shapeOk($allCalls($pA), $msgsA), $anyMark($pA),
+    array_keys(array_filter($attrMarks, fn($m) => !str_contains($viewBuilt, $m))), array_keys(array_filter($apiMarks, fn($m) => !str_contains($viewBuilt, $m))),
+    str_contains(implode("\n", $msgsA), 'שטח: 7 מ"ר'), str_contains(implode("\n", $msgsA), 'הרצל 5, דירה 3, תל אביב'), str_contains(implode("\n", $msgsA), 'מצב: נמצא'), str_contains(implode("\n", $msgsA), 'סוג: אחר')],
+    [[], [200, 200, 200, 200], true, [4, 4, 1, true], true, false, [], [], true, true, true, false],
+    'B1 (סבב 3), דרך ה-API: נתון עם סמן **לכל מאפיין טקסט שבמערכת** (נגזר מ-apr_attrs_all — מאפיין שיתווסף ייבדק לבד), ממצא של בדיקת מקור, מזהה "אחר", תיק בניין וכיתוב תמונה — בשלושת המסלולים (הכול / פרק בודד / ניסוח שנשמר כהצעה) אף סמן אינו ב-payload של המתאם; כל בקשה היא בדיוק ההודעה שהורכבה ותו לא; כל הטקסטים מוצגים בפרקים עצמם; הנתונים המובנים (מספר, בחירה, כתובת, מצב ומועד של בדיקה) נשלחים');
+
+// שלב ב — סריקת הסכימה: לכל עמודה שאינה מספרית, בכל טבלה שבמסד, שותלים סמן (בטרנזקציה שמתבטלת, בלי הטריגרים של הטבלה) ובודקים אם הוא
+// **מוצג** בארבעת הפרקים ואם הוא **נשלח**. עמודה שתתווסף למסד נבדקת בלי לגעת בבדיקה; ומה שנשלח חייב להיות ברשימת העמודות המובנות שלמטה.
+$noTriggers = function (string $t, callable $fn) {
+    $trg = apr_rows("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?", [$t]);
+    foreach ($trg as $g) apr_db()->exec('DROP TRIGGER "' . $g['name'] . '"');
+    try { return $fn(); } finally { foreach ($trg as $g) apr_db()->exec($g['sql']); }
+};
+$plant = function (string $t, string $col, string $where = null) use ($mk): int {       // כל השורות; אם המסד מסרב (CHECK בין עמודות) — רק שורות שכבר יש בהן ערך
+    foreach ($where !== null ? [$where] : ['', " WHERE \"$col\" IS NOT NULL"] as $w) {
+        try { return apr_exec("UPDATE \"$t\" SET \"$col\" = ? || rowid$w", [$mk("$t.$col")]); } catch (PDOException) {}
+    }
+    return 0;
+};
+$triggersBefore = (int)apr_val("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger'");
+$base = $stateT();
+$sweep = ['tables' => 0, 'relevant' => 0, 'planted' => 0, 'shown' => [], 'sent' => [], 'errors' => []];
+foreach (array_column(apr_rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"), 'name') as $t) {
+    $cols = array_column(array_filter(apr_rows("PRAGMA table_info(\"$t\")"), fn($col) => preg_match('/INT|REAL|FLOA|DOUB|NUM|BLOB|BOOL/i', (string)$col['type']) !== 1), 'name');
+    if (!$cols || !apr_val("SELECT 1 FROM \"$t\" LIMIT 1")) continue;
+    $sweep['tables']++;
+    try {
+        apr_tx(function () use ($t, $cols, $mk, $plant, $stateT, $noTriggers, $base, &$sweep) {
+            $noTriggers($t, function () use ($t, $cols, $mk, $plant, $stateT, $base, &$sweep) {
+                $try = function (callable $do) use ($stateT) {
+                    apr_db()->exec('SAVEPOINT sweep');
+                    try { return $do() > 0 ? $stateT() : null; } catch (Throwable $e) { return $e; } finally { apr_db()->exec('ROLLBACK TO sweep'); apr_db()->exec('RELEASE sweep'); }
+                };
+                // קודם כל העמודות של הטבלה יחד: שום דבר לא זז — הטבלה אינה נוגעת לארבעת הפרקים, ואין מה לבדוק בה עמודה-עמודה
+                $allAtOnce = $try(function () use ($t, $cols, $plant) { $n = 0; foreach ($cols as $col) $n += $plant($t, $col); return $n; });
+                if ($allAtOnce === null || $allAtOnce === $base) return;
+                $sweep['relevant']++;
+                foreach ($cols as $col) {
+                    $s = $try(fn() => $plant($t, $col));
+                    if ($s === null) continue;
+                    $sweep['planted']++;
+                    if ($s instanceof Throwable) { $sweep['errors'][] = "$t.$col: " . get_class($s) . ' ' . mb_substr($s->getMessage(), 0, 80); continue; }
+                    if (str_contains($s[0], $mk("$t.$col"))) $sweep['shown'][] = "$t.$col";
+                    if (str_contains(implode("\n", $s[1]), $mk("$t.$col"))) $sweep['sent'][] = "$t.$col";
+                }
+            });
+            throw new SweepRollback();
+        });
+    } catch (SweepRollback) {}
+}
+// העמודות ש**מותר** להן להגיע לספק — מובנות בלבד (הכרעת הבקרה, סבב 3). עמודה אחרת שתגיע ל-payload מכשילה את הבדיקה, עד שתיבדק ותתווסף לכאן במודע
+$STRUCTURED = ['attributes.label',                                                                                              // שם המאפיין — מהקטלוג של המשרד
+    'case_identifiers.apartment_no', 'case_identifiers.gush', 'case_identifiers.helka', 'case_identifiers.house_no', 'case_identifiers.locality', 'case_identifiers.street', 'case_identifiers.tat_helka',     // כתובת מובנית, גוש-חלקה
+    'source_checks.performed_at', 'sources.name', 'visits.completed_at'];                                                       // מועד בדיקה, שם המקור מהקטלוג, מועד הביקור
+$sortedOf = function (array $a) { sort($a); return $a; };
+$freeCols = array_values(array_diff($sweep['shown'], $sweep['sent']));
+// עמודות טקסט חופשי שהפרקים מציגים — חייבות להימצא בסריקה (אחרת היא ריקה מתוכן), ואסור שיישלחו
+$mustFree = ['case_identifiers.value_text', 'facts.value_text', 'facts.value_date', 'facts.unit', 'report_sections.title', 'source_checks.result_summary', 'users.name', 'visit_photos.caption'];
+eq([$sweep['errors'], $sortedOf($sweep['sent']), array_values(array_diff($mustFree, $freeCols)), $sweep['tables'] >= 40, $sweep['relevant'] >= 8, $sweep['planted'] >= 60, $stateT() === $base,
+    (int)apr_val("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger'") === $triggersBefore, !empty($GLOBALS['apr_in_tx'])],
+    [[], $sortedOf($STRUCTURED), [], true, true, true, true, true, false],
+    'B1 (סבב 3), סריקת הסכימה: סמן בכל עמודה לא-מספרית של כל טבלה במסד — לספק מגיעות **רק** העמודות המובנות שברשימה (שם מאפיין ושם מקור מהקטלוג, כתובת מובנית וגוש-חלקה, מועד ביקור ומועד בדיקה); ערך טקסט / תאריך / יחידה של נתון שאינם מובנים, ממצא של בדיקת מקור, טקסט של מזהה, כותרת שנשמרה בפרק, שם המבקר וכיתוב תמונה — מוצגים בדוח ואינם נשלחים; הסריקה אינה משאירה דבר במסד');
+
+// שלב ג — כל העמודות החופשיות שהסריקה מצאה, שתולות **יחד**, ושלושת המסלולים עד המתאם (בטרנזקציה שמתבטלת)
+$pB = null;
+$stateB = null;
+try {
+    apr_tx(function () use ($freeCols, $noTriggers, $plant, $stateT, $pathsT, $post, $ctRow, &$VT, &$pB, &$stateB) {
+        foreach ($freeCols as $tc) { [$t, $col] = explode('.', $tc, 2); $noTriggers($t, fn() => $plant($t, $col, " WHERE \"$col\" IS NOT NULL")); }
+        $stateB = $stateT();
+        $pB = $pathsT(function () use ($post, $ctRow, &$VT) {
+            $post('report-rebuild', ['version' => $VT, 'include_edited' => true]);
+            apr_report_ai_all(null, $ctRow(), apr_row('SELECT * FROM report_versions WHERE pid = ?', [$VT]));
+        });
+        throw new SweepRollback();
+    });
+} catch (SweepRollback) {}
+eq([[count($pB['all'] ?? []), count($pB['single'] ?? []), count($pB['proposal'] ?? []), $pB['as_proposal'] ?? null], $shapeOk($allCalls($pB), $stateB[1]), $anyMark($pB),
+    array_values(array_filter($mustFree, fn($tc) => !str_contains($stateB[0], $mk($tc)))), str_contains(implode("\n", $stateB[1]), 'הרצל 5, דירה 3, תל אביב'), str_contains(implode("\n", $stateB[1]), 'קומה: 7'),
+    apr_val("SELECT name FROM users WHERE email = 'avi@example.com'"), $stateT() === $base, !empty($GLOBALS['apr_in_tx'])],
+    [[4, 4, 1, true], true, false, [], true, true, 'אבי', true, false],
+    'B1 (סבב 3), כל עמודות הטקסט החופשי שהפרקים מציגים שתולות יחד: בשלושת המסלולים (הכול / פרק בודד / ניסוח שנשמר כהצעה) אף סמן אינו ב-payload של המתאם, כל בקשה היא בדיוק ההודעה שהורכבה, והסמנים כולם מוצגים בדוח; הנתונים המובנים ממשיכים להישלח; אחרי הבדיקה המסד כפי שהיה');
+$fake->next = $echo;
 
 // 🟡7: הסרת פרק דורשת שמאי בתיק; תמונה של תיק אחר אינה נכנסת לבלוק; תשובת בינה קטועה (stop_reason) נדחית; הגבלת הקצב נאכפת לפני השער
 $prR = $sec($ver($VR)[1], 'property');

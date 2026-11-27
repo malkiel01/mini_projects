@@ -546,7 +546,11 @@ function apr_report_ai_input(array $ctx, array $c, array $section, array $tpl): 
             if (!$sent) $kept[] = ['type' => 'fact', 'attr' => $b['attr']];
         }
         if ($b['type'] === 'data_table' && ($cols = APR_REPORT_AI_TABLE_COLS[$b['table']] ?? [])) {
-            foreach ($b['rows'] as $i => $row) $put($b['label'] . ' — ' . implode(' · ', array_map(fn($j) => $b['cols'][$j] . ': ' . ($row[$j] ?? '—'), $cols)), $b['refs'][$i]);
+            foreach ($b['rows'] as $i => $row) {
+                // שורה שכל מה שנשאר ממנה הוא הסוג (מזהה "אחר" בלי הטקסט החופשי שלו) אינה אומרת דבר — אינה נשלחת
+                if (count(array_filter($cols, fn($j) => ($row[$j] ?? '—') !== '—')) < min(2, count($cols))) continue;
+                $put($b['label'] . ' — ' . implode(' · ', array_map(fn($j) => $b['cols'][$j] . ': ' . ($row[$j] ?? '—'), $cols)), $b['refs'][$i]);
+            }
         }
     }
     $lines = array_map(fn($id, $it) => "$id. " . $it['text'], array_keys($items), $items);

@@ -133,10 +133,50 @@ B],
     ['B1 / 🟡7 טלפון שמור של גורם', 'report_build.php', <<<'A'
             if (strlen($core) >= 7 && str_contains($digits, $core)) return null;
 A, ''],
-    ['B1 העיקרון: טקסט חופשי בזכויות / שכירות / עסקה אינו נשלח', 'report_build.php', <<<'A'
-in_array($a['grp'], APR_REPORT_AI_NO_FREE_TEXT, true));
+    // ── סבב 3: טקסט חופשי שאדם הקליד אינו נשלח — בשום קבוצה ובשום מסלול (סריקת הסכימה שבסוף u-report) ──
+    ['סבב 3: נתון שהערך שלו טקסט חופשי אינו נשלח', 'report_build.php', <<<'A'
+            $free = $facts[$b['attr']]['free'] ?? true;
 A, <<<'B'
-false);
+            $free = false;
+B],
+    ['סבב 3: "בחירה" שאינה אחת מהאפשרויות היא טקסט', 'report_build.php', <<<'A'
+            return $a['value_type'] !== 'choice' || !in_array($f['value_text'], array_column(json_decode((string)($a['choices'] ?? ''), true) ?: [], 'key'), true);
+A, <<<'B'
+            return $a['value_type'] !== 'choice';
+B],
+    ['סבב 3: יחידה שאינה מהרשימה הסגורה היא טקסט', 'report_build.php', <<<'A'
+            if ($f['unit'] !== null && !isset(APR_REPORT_UNIT_LABELS[$f['unit']])) return true;
+A, ''],
+    ['סבב 3: תאריך שאינו תאריך הוא טקסט', 'report_build.php', <<<'A'
+return preg_match('/^\d{4}-\d{2}-\d{2}\z/', (string)$f['value_date']) !== 1;
+A, <<<'B'
+return false;
+B],
+    ['סבב 3: עמודת "ממצא" של בדיקת מקור אינה נשלחת', 'report_build.php', <<<'A'
+'source_checks' => [0, 1, 2]];
+A, <<<'B'
+'source_checks' => [0, 1, 2, 3]];
+B],
+    ['סבב 3: הכותרת הקבועה של המפתח, לא זו שנשמרה בפרק', 'report_build.php', <<<'A'
+    $title = array_column(apr_pc_report_default()['sections'], 'title', 'key')[$section['key']] ?? 'פרק בדוח';
+A, <<<'B'
+    $title = $section['title'];
+B],
+    ['סבב 3: פרק שאינו ברשימה הסגורה אינו מרכיב קלט', 'report_build.php', <<<'A'
+    if (!in_array($section['key'], APR_REPORT_AI_KEYS, true)) return ['items' => [], 'omitted' => 0, 'kept' => [], 'message' => '', 'hash' => apr_report_hash([])];
+A, ''],
+    ['סבב 3: פסקת הביקור — מועד בלבד, מסומנת safe', 'report_build.php', <<<'A'
+                + (empty($tpl['for_ai']) ? [] : ['safe' => true]);
+A, <<<'B'
+                ;
+B],
+    ['סבב 3: שורה שנשאר ממנה רק הסוג אינה נשלחת', 'report_build.php', <<<'A'
+                if (count(array_filter($cols, fn($j) => ($row[$j] ?? '—') !== '—')) < min(2, count($cols))) continue;
+A, ''],
+    ['סבב 3: ת"ז ברווחים', 'report_build.php', <<<'A'
+    if (preg_match('/(?<![\d.,])\d(?:[ \x{00A0}]?\d){7,8}(?![\d.,])/u', $text) === 1) return null;
+A, <<<'B'
+    if (false) return null;
 B],
     ['B1 העיקרון: טקסט חופשי של מזהה אינו נשלח', 'report_build.php', <<<'A'
 empty($tpl['for_ai']) ? $i['value_text'] : null]);
