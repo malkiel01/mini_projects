@@ -45,7 +45,7 @@ function taskRow(t, withCase) {
 // ── לוח ראשי ──────────────────────────────────────────────────
 
 async function viewDashboard(o) {
-    const [t, cs, pd, rf] = await Promise.all([api('my-tasks'), api('cases'), api('docs-pending'), api('requests-failed')]);
+    const [t, cs, pd, rf, mv, ms] = await Promise.all([api('my-tasks'), api('cases'), api('docs-pending'), api('requests-failed'), api('my-visits'), api('my-shares')]);
     const tiles = [['#/cases', '📁', C.cases], ['#/tasks', '☑️', C.myTasks], ['#/contacts', '📇', C.contacts], ['#/sources', '🔎', T.s.catalog]];
     if (o.is_admin) tiles.push(['#/office/cases', '🗂️', C.officeCases]);
     if (rf.inbox !== null && rf.inbox !== undefined) tiles.push(['#/inbox', '📥', T.ch.inboxTile]);
@@ -55,7 +55,7 @@ async function viewDashboard(o) {
           <a class="btn primary" href="#/cases/new"><span aria-hidden="true">+</span> ${C.newCase}</a></form>
         <h2 class="sec-title">☑️ ${C.myTasks} <small>${t.tasks.length || ''}</small></h2>
         ${t.tasks.length ? `<ul class="list">${t.tasks.slice(0, 5).map(x => taskRow(x, true)).join('')}</ul>${t.tasks.length > 5 ? `<p class="hint"><a href="#/tasks">${C.allTasks}</a></p>` : ''}` : `<p class="empty">${C.noMyTasks}</p>`}
-        ${failedRequestsHtml(rf.failed)}${contactBoardHtml(rf)}${pendingDocsHtml(pd.pending)}
+        ${sharedHomeHtml(ms, true)}${myVisitsHtml(mv.visits)}${failedRequestsHtml(rf.failed)}${contactBoardHtml(rf)}${pendingDocsHtml(pd.pending)}
         <h2 class="sec-title">📁 ${C.myCases} <small>${cs.cases.length || ''}</small></h2>
         ${cs.cases.length ? `<ul class="list">${cs.cases.slice(0, 8).map(caseRow).join('')}</ul>${cs.cases.length > 8 ? `<p class="hint"><a href="#/cases">${C.allCases}</a></p>` : ''}` : `<p class="empty">${C.noCases}</p>`}
         <div class="tiles">${tiles.map(([h, i, x]) => `<a class="tile" href="${h}"><span class="tile-ic" aria-hidden="true">${i}</span>${x}</a>`).join('')}</div>${manageTiles()}`;
@@ -65,6 +65,8 @@ async function viewDashboard(o) {
         location.hash = '#/cases';
     });
     cOn('[data-task]', el => myTaskSheet(t.tasks.find(x => x.pid === el.dataset.task), route));
+    cOn('[data-go]', el => { location.hash = el.dataset.go; });
+    sharedHomeBind(route);
 }
 
 // ── רשימה וחיפוש ──────────────────────────────────────────────
@@ -72,10 +74,18 @@ async function viewDashboard(o) {
 async function viewCases(pid, sub, arg) {
     await pLists();
     if (pid === 'new') return viewCaseNew();
+    if (pid === 'shared') return viewCasesShared();
     if (pid && sub === 'reqs' && arg) return viewRequirement(pid, arg);
     if (pid && sub === 'facts' && arg) return viewAttribute(pid, arg);
     if (pid && sub === 'conflicts') return arg ? viewConflict(pid, arg) : viewConflicts(pid);
     if (pid && sub === 'sources' && arg) return viewCaseSource(pid, arg);
+    if (pid && sub === 'visits' && arg) return viewVisit(pid, arg);
+    if (pid && sub === 'comps' && arg) return viewComp(pid, arg);
+    if (pid && sub === 'compset' && arg) return viewCompSet(pid, arg);
+    if (pid && sub === 'compimport' && arg) return viewCompImport(pid, arg);
+    if (pid && sub === 'alt' && arg) return viewAlt(pid, arg);
+    if (pid && sub === 'calcsheet' && arg) return viewCalcSheet(pid, arg);
+    if (pid && sub === 'renovation') return viewRenovation(pid);
     if (pid && sub === 'check' && arg) return viewCheck(pid, arg);
     if (pid && sub === 'planning' && arg) return viewPlanningItem(pid, arg);
     if (pid && sub === 'file') return arg ? viewFile(pid, arg) : viewCase(pid, 'reqs');
@@ -83,12 +93,13 @@ async function viewCases(pid, sub, arg) {
     setHead(C.cases, null);
     let f = {};
     try { f = JSON.parse(sessionStorage.getItem('apr-cf') || '{}') || {}; } catch { f = {}; }
-    const [d, ds] = await Promise.all([api('cases', { params: f }), f.q ? api('docs-search', { params: { q: f.q } }) : { results: [] }]);
+    const [d, ds, ms] = await Promise.all([api('cases', { params: f }), f.q ? api('docs-search', { params: { q: f.q } }) : { results: [] }, api('my-shares')]);
     const n = Object.keys(f).filter(k => k !== 'q' && f[k]).length;
-    App.main.innerHTML = `<form class="toolbar" id="csearch"><input type="search" name="q" value="${esc(f.q || '')}" placeholder="${C.search}" aria-label="${C.search}" style="flex:1">
+    App.main.innerHTML = `${ms.shared.length ? tabsHtml([['#/cases', SH.mineTab], ['#/cases/shared', SH.sharedTab, ms.shared.length]], '#/cases') : ''}${sharedHomeHtml(ms, false)}<form class="toolbar" id="csearch"><input type="search" name="q" value="${esc(f.q || '')}" placeholder="${C.search}" aria-label="${C.search}" style="flex:1">
           <button type="button" class="btn ghost" id="cfilter">${n ? esc(C.filtersOn(n)) : C.filters}</button></form>
         <div class="toolbar"><a class="btn primary" href="#/cases/new"><span aria-hidden="true">+</span> ${C.newCase}</a></div>
         ${d.cases.length ? `<ul class="list">${d.cases.map(caseRow).join('')}</ul>` : `<p class="empty">${f.q || n ? C.noResults : C.noCases}</p>`}${docResultsHtml(ds.results)}`;
+    sharedHomeBind(() => viewCases());
     const setF = nf => { sessionStorage.setItem('apr-cf', JSON.stringify(nf)); viewCases(); };
     $('#csearch').addEventListener('submit', e => { e.preventDefault(); setF({ ...f, q: e.target.q.value.trim() }); });
     $('#csearch').q.addEventListener('search', e => { if (!e.target.value && f.q) setF({ ...f, q: '' }); });
@@ -481,12 +492,13 @@ async function viewMyTasks() {
 
 async function viewCase(pid, tab) {
     const d = await api('case', { params: { case: pid } });
+    if (d.me.role === 'external') return viewCaseShared(pid, tab, d);   // שותף ממשרד אחר ותמיכה: כרטיס משלהם (screens/shares.js)
     const c = d.case, canStatus = !!d.me.perms.edit;
     if (c.status === 'draft') { location.replace(`#/cases/${pid}/setup`); return; }
     // תיק סגור — קריאה בלבד עד פתיחה מחדש (השרת אוכף; כאן רק לא מציגים כפתורים שיידחו)
     if (c.status === 'closed') d.me.perms = { ...d.me.perms, edit: false, tasks: false, documents: false, members: false };
     const perms = d.me.perms;
-    const tabs = ['overview', 'facts', 'sources', 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
+    const tabs = ['overview', 'facts', 'sources', 'visits', ...(d.comps ? ['comps'] : []), 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
     const cur = tabs.includes(tab) ? tab : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
     const reload = () => viewCase(pid, cur);
@@ -494,7 +506,7 @@ async function viewCase(pid, tab) {
     const head = `<div class="summary"><div class="line"><b class="one">${esc(c.title || C.noTitle)}</b><span class="chip" dir="ltr">${esc(c.number)}</span></div>
         <div class="line muted">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : `<span class="chip bad">${C.noResponsible}</span>`}</div>
         <div class="chips">${canStatus ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
-        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : t === 'sources' && d.sources.attention.length ? d.sources.attention.length : undefined]), href(cur))}`;
+        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : t === 'sources' && d.sources.attention.length ? d.sources.attention.length : t === 'visits' && d.visits.open ? d.visits.open : t === 'comps' && d.comps.total ? d.comps.total : undefined]), href(cur))}`;
     let body = '', docs = null, rqs = null;
     if (cur === 'overview') {
         const openM = d.requirements.filter(r => r.mandatory && dOpen(r));
@@ -518,16 +530,23 @@ async function viewCase(pid, tab) {
             <h2 class="sec-title">📑 ${C.profileTitle}</h2>
             <div class="summary"><div class="line"><span>${d.profile.pid ? `<a href="#/profiles/${d.profile.pid}">${esc(d.profile.name)}</a>` : esc(d.profile.name)}</span><span class="chip">${esc(P.versionN(d.profile.version))}</span></div>
               <div class="line muted">${C.keyDate}: ${c.key_date ? esc(fmtDate(c.key_date)) : C.unknown} · ${C.propertyType}: ${c.property_type ? esc(P.propertyTypes[c.property_type]) : C.unknown}</div></div>
-            ${d.plan.skipped.length ? `<h2 class="sec-title">${C.skippedTitle}</h2><ul class="list">${d.plan.skipped.map(s => `<li class="card static"><div class="body"><div class="l1"><span>${esc(s.title)}</span></div><div class="l2 wrap">${esc(s.reason)}</div></div></li>`).join('')}</ul>` : ''}`;
+            ${d.plan.skipped.length ? `<h2 class="sec-title">${C.skippedTitle}</h2><ul class="list">${d.plan.skipped.map(s => `<li class="card static"><div class="body"><div class="l1"><span>${esc(s.title)}</span></div><div class="l2 wrap">${esc(s.reason)}</div></div></li>`).join('')}</ul>` : ''}
+            <div id="case-ai"></div>`;
     } else if (cur === 'facts') {
         docs = await factsTab(pid);
         body = docs.html;
     } else if (cur === 'sources') {
         docs = await sourcesTab(pid, reload);
         body = docs.html;
+    } else if (cur === 'visits') {
+        docs = await visitsTab(pid, reload);
+        body = docs.html;
+    } else if (cur === 'comps') {
+        docs = await compsTab(pid, reload);
+        body = docs.html;
     } else if (cur === 'parties') {
-        rqs = await api('case-requests', { params: { case: pid } });
-        body = partiesHtml(d, !!perms.edit) + requestsHtml(rqs, d) + membersHtml(d);
+        [rqs, docs] = await Promise.all([api('case-requests', { params: { case: pid } }), sharesSection(pid, reload)]);
+        body = partiesHtml(d, !!perms.edit) + requestsHtml(rqs, d) + membersHtml(d) + docs.html;
     } else if (cur === 'reqs') {
         docs = await docsTab(pid, d, reload);
         body = docs.html;
@@ -536,6 +555,7 @@ async function viewCase(pid, tab) {
         body = log.rows.length ? auditHtml(log.rows, r => esc((T.audit[r.action] || (() => r.action))(r)), r => esc(r.actor || C.system)) : `<p class="empty">${C.activityEmpty}</p>`;
     }
     App.main.innerHTML = head + body;
+    if (cur === 'overview') aiCaseSection(pid);   // בינה בתיק (11): "בלי בינה" ושימוש — נטען בנפרד, ואינו מעכב את המסך
     docs?.bind();
 
     $('#cstatus')?.addEventListener('click', () => {

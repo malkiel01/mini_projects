@@ -75,7 +75,7 @@
     const count = el('span', { class: 'muted small' });
     const SHOW = 200;
     const lv = () => levels.value.split(/[›>,|]/).map(x => x.trim()).filter(Boolean).slice(0, 8);
-    // רשימה גדולה (אלפי שורות): לא עורכים בטבלה — מחפשים בשרת, ומעדכנים בייבוא קובץ מחדש
+    // רשימה גדולה (אלפי שורות): לא עורכים בטבלה — מחפשים בשרת, ומוסיפים / מסירים שורה (list_rows_edit) או מייבאים קובץ מחדש
     const big = !!data.big;
     if (big) levels.disabled = true;
     let bigTimer = 0;
@@ -99,9 +99,33 @@
       count.textContent = `${data.row_count.toLocaleString('he-IL')} שורות` + (search.value.trim() ? ` · ${data.matches.toLocaleString('he-IL')} מתאימות` : '')
         + (data.matches > data.rows.length ? ` · מוצגות ${data.rows.length}` : '');
       grid.replaceChildren(el('table', { class: 'grid' },
-        el('thead', {}, el('tr', {}, L.map(n => el('th', {}, n)))),
-        el('tbody', {}, data.rows.map(r => el('tr', {}, L.map((n, j) => el('td', { 'data-label': n }, r[j] || '')))))));
+        el('thead', {}, el('tr', {}, L.map(n => el('th', {}, n)), el('th'))),
+        el('tbody', {}, data.rows.map(r => el('tr', {}, L.map((n, j) => el('td', { 'data-label': n }, r[j] || '')),
+          el('td', { class: 'row-del' }, el('button', { type: 'button', class: 'link small', title: 'הסרת השורה מהרשימה',
+            onclick: () => bigEdit({ del: [r] }, `להסיר מהרשימה את "${r.filter(Boolean).join(' › ')}"?`) }, '✕')))))));
     }
+    // רשימה גדולה: הוספה והסרה נשמרות מיד בשרת (בלי לשלוח את כל השורות לדפדפן ובחזרה)
+    async function bigEdit(change, ask) {
+      if (ask && !confirm(ask)) return;
+      try {
+        const r = await api('list_rows_edit', { id: l.id, ...change });
+        data.row_count = r.list.row_count;
+        const g = (await api('list_get', undefined, { id: l.id, q: search.value.trim() })).list;
+        data.rows = g.rows; data.matches = g.matches; data.values = g.values; data.values_more = g.values_more;
+        drawBig();
+        msg.replaceChildren(notice(r.added ? `נוספה שורה · ${r.list.row_count.toLocaleString('he-IL')} שורות` : `הוסרה שורה · ${r.list.row_count.toLocaleString('he-IL')} שורות`, 'ok'));
+        return true;
+      } catch (e) { msg.replaceChildren(notice(e.message, 'bad')); return false; }
+    }
+    const addInputs = big ? data.levels.map(n => el('input', { placeholder: n, 'aria-label': n, maxlength: 200 })) : [];
+    const addBox = big ? el('details', { class: 'fs-group' }, el('summary', {}, '+ הוספת שורה לרשימה'),
+      el('p', { class: 'hint' }, 'מסלול מלא, מהכללי לפרטי. שדה אחרון ריק — מותר (למשל בלי שורה).'),
+      el('div', { class: 'fields two' }, addInputs.map((inp, j) => el('label', { class: 'f' }, el('span', {}, data.levels[j]), inp))),
+      el('div', { class: 'row-btns' }, el('button', { type: 'button', class: 'small primary', onclick: async () => {
+        const row = addInputs.map(i => i.value.trim());
+        if (!row[0]) { msg.replaceChildren(notice(`חסר "${data.levels[0]}"`, 'bad')); return; }
+        if (await bigEdit({ add: [row] })) { addInputs.at(-1).value = ''; addInputs.at(-1).focus(); }   // השאר נשאר — להוספת כמה שורות באותו גוש
+      } }, 'הוספה'))) : null;
     levels.addEventListener('change', () => { drawGrid(); drawTr(); });
 
     // ── תרגומים: לכל ערך ברמה — איך הוא נכתב במסמך בשפה אחרת (בוחרים בעברית, מדפיסים באנגלית) ──
@@ -203,9 +227,9 @@
         big ? null : el('button', { type: 'button', class: 'small', onclick: () => { data.rows.push(lv().map(() => '')); search.value = ''; drawGrid();
           grid.querySelector('tbody tr:last-child input')?.focus(); } }, '+ שורה')),
       big ? el('p', { class: 'notice' }, `רשימה גדולה (${data.row_count.toLocaleString('he-IL')} שורות): בטופס האפשרויות נטענות מהשרת לפי מה שנבחר. ` +
-        'כאן — חיפוש ותצוגה; לשינוי השורות מעדכנים את הקובץ ומייבאים מחדש. שם ותרגומים — נשמרים מכאן.') : null,
+        'כאן — חיפוש, הוספה (למטה) והסרה (✕ בשורה) — נשמרות מיד. אפשר גם לייבא קובץ מעודכן במקום הכול. שם ותרגומים — נשמרים ב"שמירה".') : null,
       el('p', { class: 'hint' }, 'בקובץ: השורה הראשונה — שמות הרמות; כל שורה אחריה — מסלול. תא ריק = כמו בשורה שמעליו (כמו שכותבים היררכיה באקסל).'),
-      msg, el('div', { class: 'row-btns' }, search, count), grid,
+      msg, el('div', { class: 'row-btns' }, search, count), grid, addBox,
       el('details', { class: 'fs-group tr-group' }, el('summary', {}, '🌐 תרגומים — הערך במסמך בשפה אחרת'),
         el('p', { class: 'hint' }, 'בטופס בוחרים בעברית; בשדה שהוגדר לו "🌐 שפה במסמך" — נכתב במסמך התרגום מכאן. ערך בלי תרגום נכתב כמו שהוא. ' +
           'מקובץ: עמודה באנגלית ליד כל עמודה בעברית ("בית עלמין, Cemetery, גוש, Block…"), או כולן בסוף באותו סדר; לשפה אחרת — "בית עלמין (fr)".'),

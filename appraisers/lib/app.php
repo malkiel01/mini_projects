@@ -39,6 +39,45 @@
  *                  {check} · source-check-cost {check, cost_amount, cost_note?} · case-planning {case} · planning-item {item}
  *                  · planning-add {case, kind, title, …} · planning-update {item, …בלי kind} · planning-applicability {item,
  *                  applicability, note} · planning-delete {item, reason} · planning-task {item, detail?} · sys-sources · sys-source-save
+ * ביקור (13):       case-visits {case} · visit {visit} · my-visits · visit-plan {case, visitor, scheduled_at?, access_contact?, access_note?}
+ *                  · visit-update {visit, rev, …} · visit-start {visit, rev} · visit-cancel {visit, rev, reason} · visit-answer {visit, field,
+ *                  row?, rev, value, unit?, area_kind?, obtained?, obtained_from?, note?, op?} · visit-row-add {visit, group} · visit-row-remove
+ *                  {visit, group, row} · visit-copy {visit, from} · visit-finish {visit, rev, result, note?, override_reason?, scheduled_at?}
+ *                  · visit-reopen {visit, rev, reason} · visit-photo {photo, thumb?} · visit-photo-upload (גוף גולמי; בכתובת: visit, field?, row?,
+ *                  name, key, caption?, place?, taken_at?, consent?, lat?, lng?) · visit-photo-update {photo, rev, caption?, place?, usage?,
+ *                  for_report?, confirm_rights?} · visit-photo-order {visit, order[]} · visit-photo-delete {photo, rev} · office-visit-geo {on}
+ * עסקאות (15):     case-comps {case} · comp {comp} · comp-set {set} · comp-search-add {case, source? | source_text?, criteria{}, result_count?,
+ *                  limitations?} · comp-search-update {search, rev, …} · comp-add {case, search?, values{}, note?} · comp-correct {comp, rev,
+ *                  changes{}, reason} · comp-status {comp, rev, status, reason?} · comp-weight {comp, rev, weight} · comp-note {comp, rev, note}
+ *                  · comp-delete {comp, rev, reason} · comp-adj-save {comp, rev, adj?, label, kind, value, sign, basis?, applies_to?, reason}
+ *                  · comp-adj-delete {comp, rev, adj} · comp-adj-order {comp, rev, order[]} · comp-set-save {case | set, rev?, name?, unit_basis,
+ *                  area_kind?, method, rounding, subject_area_fact?, recheck?} · comp-set-conclude {set, rev, value, reason} · comp-set-delete {set, rev}
+ *                  · comp-import-upload (גוף גולמי, XLSX; בכתובת: case, name, key) · comp-import-preview {case, file | text, has_header?,
+ *                  mapping?, date_order?, defaults?} · comp-import {…אותו תוכן…, search, rights: true}
+ *                  · comp-weight {set, comp, rev, weight} · comp-set-member {set, comp, rev, member, reason?} (16: שיוך ומשקל לכל קבוצה)
+ * חלופות (16):     case-valuation {case} · sheet {sheet} · sheet-templates · alt-save {case | alt, rev?, name, key_date?, state_kind, state_note?}
+ *                  · alt-primary {alt, rev} · alt-delete {alt, rev, reason} · alt-conclude {alt, rev, value, reason} · alt-recheck {alt, rev}
+ *                  · assumption-save {case | alt | assumption, rev?, text, kind, basis?, fact?, file?, approval?} · assumption-delete {assumption, rev}
+ *                  · approach-save {alt | approach, rev?, kind, title?, reasoning, comp_set?, sheet?, weight?} · approach-result {approach, rev,
+ *                  source, value?, reason?} · approach-delete {approach, rev} · sheet-save {case | sheet, rev?, title, rounding}
+ *                  · sheet-row-save {sheet, rev, key?, kind, label, value?, unit?, time_unit?, origin?, source_note?, fact?, file?, formula?, reasoning?}
+ *                  · sheet-row-delete {sheet, rev, key} · sheet-row-order {sheet, rev, order[]} · sheet-delete {sheet, rev} · sheet-recheck {sheet, rev}
+ *                  · sheet-template-save {sheet, name, scope} · sheet-template-use {case, template, title?} · sheet-template-delete {template}
+ *                  · renovation-add {case, kind, amount?, item_date?, provider?, scope_note?, file?, fact?, supersedes?} · renovation-delete {item, reason}
+ * בינה (11):       sys-ai · sys-ai-provider-save {provider, status?, privacy_note?, privacy_url?, privacy_checked_at?, material?} · sys-ai-model-save
+ *                  {provider, model_id, label, capabilities{}, price_in?, price_out?, price_checked_at?, context_tokens, max_output_tokens, status?}
+ *                  · sys-ai-fx-set {rate} · sys-ai-connection-save {connection?, provider, label, key?, default_model?} · sys-ai-connection-test
+ *                  {connection} · sys-ai-connection-revoke {connection} · sys-ai-assign-save {connection, scope, target, models[], default_model?}
+ *                  · sys-ai-assign-delete {scope, target} · sys-ai-quota-save {quota? | track, scope, target, office?, period; limit_money?,
+ *                  limit_tokens?, hard} · sys-ai-quota-delete {quota} · office-ai · office-ai-policy {enabled?, text_version, providers{},
+ *                  prefer_managed?} · office-ai-connection-… (אותם שדות) · office-ai-quota-save / -delete · my-ai · ai-quota-request {quota}
+ *                  · case-ai {case} · case-ai-set {case, no_ai}. הפעלת מודל — רק דרך ai_run() בקוד (lib/ai.php).
+ * חילוץ (12):      file-ai {file} · file-ai-run {file, what: classify | fields | summary, key} · file-ai-suggestion {file, do: accept | reject,
+ *                  requirement?, relation?} · file-ai-summary-reviewed {file} · file-ai-reject-all {file, reason} · case-ai-auto-set {case,
+ *                  auto_classify?, auto_extract?}. **אין פעולה שמאשרת כמה הצעות יחד** — אישור נתון הוא fact-state, אחד-אחד.
+ * שיתוף (05):      case-shares {case} · share-preview {case, kind: cross_office | support, email?, scope: all | items, items[{type, pid?}], perms{download?,
+ *                  see_internal?, see_draft?}, days, reason?} · share-create {…אותו תוכן…, preview} · share-revoke {share, reason?} · my-shares
+ *                  · share-respond {share, accept} · sys-support. לשותף: cases?tab=shared, docs-search?shared=1, וכל פעולה שהכלל שלה 'case'.
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -77,6 +116,14 @@ require_once __DIR__ . '/reminders.php';
 require_once __DIR__ . '/inbound.php';
 require_once __DIR__ . '/facts.php';
 require_once __DIR__ . '/sources.php';
+require_once __DIR__ . '/visits.php';
+require_once __DIR__ . '/visit_photos.php';
+require_once __DIR__ . '/comps.php';
+require_once __DIR__ . '/comp_import.php';
+require_once __DIR__ . '/valuation.php';
+require_once __DIR__ . '/ai.php';
+require_once __DIR__ . '/ai_admin.php';
+require_once __DIR__ . '/extract.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -153,6 +200,8 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
     devloop_log_user(['id' => (int)$user['id'], 'username' => $user['name']]);
 
     $p = $read ? $get : $in;
+    $GLOBALS['apr_action'] = $action;        // apr_case_get מכיר שיתוף רק בפעולה שהכלל שלה 'case' (lib/shares.php)
+    unset($GLOBALS['apr_support_case'], $GLOBALS['apr_support_logged']);
     apr_authorize($ctx, $action, $p);
     if ($method !== ($read ? 'GET' : 'POST')) apr_fail('method');
     // שגיאת JavaScript מהדפדפן רק נרשמת, ועלולה לקרות לפני ש-me נטען — בלי CSRF
@@ -160,6 +209,15 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
 
     apr_confirm_check($ctx, $action, $p);   // פעולה רגישה בלי אישור חוזר — 403 confirm_required
 
+    $out = apr_route($action, $ctx, $p, $get, $in, $env);
+    apr_share_seen_flush();                  // בקשה של התמיכה בתיק משותף נרשמת ביומן של המשרד לפני שהתשובה יוצאת (05-B5)
+    return $out;
+}
+
+/** הפעולה עצמה — אחרי הזיהוי, ההרשאה, ה-CSRF והאישור החוזר. */
+function apr_route(string $action, array $ctx, array $p, array $get, array $in, array $env): mixed
+{
+    $user = $ctx['user'];
     return match ($action) {
         'me'                 => apr_me($ctx),
         'logout'             => apr_logout($ctx),
@@ -238,6 +296,12 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'case-conflicts' => apr_case_conflicts($ctx, $p),
         'conflict' => apr_conflict_view($ctx, $p),
         'file-facts' => apr_file_facts($ctx, $p),
+        'file-ai' => apr_file_ai_view($ctx, $p),
+        'file-ai-run' => apr_file_ai_run($ctx, $p),
+        'file-ai-suggestion' => apr_file_ai_suggestion($ctx, $p),
+        'file-ai-summary-reviewed' => apr_file_ai_summary_reviewed($ctx, $p),
+        'file-ai-reject-all' => apr_file_ai_reject_all($ctx, $p),
+        'case-ai-auto-set' => apr_case_ai_auto_set($ctx, $p),
         'fact-add' => apr_fact_add($ctx, $p),
         'fact-correct' => apr_fact_correct($ctx, $p),
         'fact-state' => apr_fact_state($ctx, $p),
@@ -266,6 +330,95 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'planning-applicability' => apr_planning_applicability($ctx, $p),
         'planning-delete' => apr_planning_delete($ctx, $p),
         'planning-task' => apr_planning_task($ctx, $p),
+        // ביקור (13)
+        'case-visits' => apr_case_visits($ctx, $p),
+        'visit' => apr_visit_view($ctx, $p),
+        'my-visits' => apr_my_visits($ctx),
+        'visit-plan' => apr_visit_plan($ctx, $p),
+        'visit-update' => apr_visit_update($ctx, $p),
+        'visit-start' => apr_visit_start($ctx, $p),
+        'visit-cancel' => apr_visit_cancel($ctx, $p),
+        'visit-answer' => apr_visit_answer($ctx, $p),
+        'visit-row-add' => apr_visit_row_add($ctx, $p),
+        'visit-row-remove' => apr_visit_row_remove($ctx, $p),
+        'visit-copy' => apr_visit_copy($ctx, $p),
+        'visit-finish' => apr_visit_finish($ctx, $p),
+        'visit-reopen' => apr_visit_reopen($ctx, $p),
+        'visit-photo' => apr_visit_photo_serve($ctx, $p),
+        'visit-photo-upload' => apr_visit_photo_upload($ctx, $p, $env),
+        'visit-photo-update' => apr_visit_photo_update($ctx, $p),
+        'visit-photo-order' => apr_visit_photo_order($ctx, $p),
+        'visit-photo-delete' => apr_visit_photo_delete($ctx, $p),
+        'office-visit-geo' => apr_office_visit_geo($ctx, $p),
+        // עסקאות השוואה ומנוע החישוב (15)
+        'case-comps' => apr_case_comps($ctx, $p),
+        'comp' => apr_comp_view($ctx, $p),
+        'comp-set' => apr_comp_set_view($ctx, $p),
+        'comp-search-add' => apr_comp_search_add($ctx, $p),
+        'comp-search-update' => apr_comp_search_update($ctx, $p),
+        'comp-add' => apr_comp_add($ctx, $p),
+        'comp-correct' => apr_comp_correct($ctx, $p),
+        'comp-status' => apr_comp_status($ctx, $p),
+        'comp-weight' => apr_comp_weight($ctx, $p),
+        'comp-note' => apr_comp_note($ctx, $p),
+        'comp-delete' => apr_comp_delete($ctx, $p),
+        'comp-adj-save' => apr_comp_adj_save($ctx, $p),
+        'comp-adj-delete' => apr_comp_adj_delete($ctx, $p),
+        'comp-adj-order' => apr_comp_adj_order($ctx, $p),
+        'comp-set-save' => apr_comp_set_save($ctx, $p),
+        'comp-set-conclude' => apr_comp_set_conclude($ctx, $p),
+        'comp-set-delete' => apr_comp_set_delete($ctx, $p),
+        'comp-import-upload' => apr_comp_import_upload($ctx, $p, $env),
+        'comp-import-preview' => apr_comp_import_preview($ctx, $p),
+        'comp-import' => apr_comp_import($ctx, $p),
+        'comp-set-member' => apr_comp_set_member($ctx, $p),
+        'case-valuation' => apr_case_valuation($ctx, $p),
+        'sheet' => apr_sheet_view($ctx, $p),
+        'sheet-templates' => apr_sheet_templates($ctx),
+        'alt-save' => apr_alt_save($ctx, $p),
+        'alt-primary' => apr_alt_primary($ctx, $p),
+        'alt-delete' => apr_alt_delete($ctx, $p),
+        'alt-conclude' => apr_alt_conclude($ctx, $p),
+        'alt-recheck' => apr_alt_recheck($ctx, $p),
+        'assumption-save' => apr_assumption_save($ctx, $p),
+        'assumption-delete' => apr_assumption_delete($ctx, $p),
+        'approach-save' => apr_approach_save($ctx, $p),
+        'approach-result' => apr_approach_result($ctx, $p),
+        'approach-delete' => apr_approach_delete($ctx, $p),
+        'sheet-save' => apr_sheet_save($ctx, $p),
+        'sheet-row-save' => apr_sheet_row_save($ctx, $p),
+        'sheet-row-delete' => apr_sheet_row_delete($ctx, $p),
+        'sheet-row-order' => apr_sheet_row_order($ctx, $p),
+        'sheet-delete' => apr_sheet_delete($ctx, $p),
+        'sheet-recheck' => apr_sheet_recheck($ctx, $p),
+        'sheet-template-save' => apr_sheet_template_save($ctx, $p),
+        'sheet-template-use' => apr_sheet_template_use($ctx, $p),
+        'sheet-template-delete' => apr_sheet_template_delete($ctx, $p),
+        'renovation-add' => apr_renovation_add($ctx, $p),
+        'renovation-delete' => apr_renovation_delete($ctx, $p),
+        // בינה (11) — ניהול ותצוגה בלבד; שום פעולה כאן אינה מפעילה מודל
+        'sys-ai' => apr_sys_ai(),
+        'sys-ai-provider-save' => apr_sys_ai_provider_save($p),
+        'sys-ai-model-save' => apr_sys_ai_model_save($p),
+        'sys-ai-fx-set' => apr_sys_ai_fx_set($ctx, $p),
+        'sys-ai-connection-save' => apr_ai_conn_save(null, (int)$user['id'], $p),
+        'sys-ai-connection-test' => apr_ai_conn_test_action(null, $p),
+        'sys-ai-connection-revoke' => apr_ai_conn_revoke(null, $p),
+        'sys-ai-assign-save' => apr_sys_ai_assign_save($ctx, $p),
+        'sys-ai-assign-delete' => apr_sys_ai_assign_delete($p),
+        'sys-ai-quota-save' => apr_ai_quota_save(null, (int)$user['id'], $p),
+        'sys-ai-quota-delete' => apr_ai_quota_delete(null, $p),
+        'office-ai' => apr_office_ai($ctx),
+        'office-ai-policy' => apr_office_ai_policy($ctx, $p),
+        'office-ai-connection-save' => apr_ai_conn_save(apr_office_id($ctx), (int)$user['id'], $p),
+        'office-ai-connection-test' => apr_ai_conn_test_action(apr_office_id($ctx), $p),
+        'office-ai-connection-revoke' => apr_ai_conn_revoke(apr_office_id($ctx), $p),
+        'office-ai-quota-save' => apr_ai_quota_save(apr_office_id($ctx), (int)$user['id'], $p),
+        'office-ai-quota-delete' => apr_ai_quota_delete(apr_office_id($ctx), $p),
+        'my-ai' => apr_my_ai($ctx),
+        'ai-quota-request' => apr_ai_quota_request($ctx, $p),
+        'case-ai' => apr_case_ai($ctx, $p),
+        'case-ai-set' => apr_case_ai_set($ctx, $p),
         'file-assign' => apr_file_assign($ctx, $p),
         'file-update' => apr_file_update($ctx, $p),
         'file-delete' => apr_file_delete($ctx, $p),
@@ -299,6 +452,14 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'sys-inbox-dismiss' => apr_sys_inbox_dismiss($ctx, $p),
         'sys-inbox-route' => apr_sys_inbox_route($p),
         'sys-inbox-reply' => apr_sys_inbox_reply($p),
+        // שיתוף (05)
+        'case-shares' => apr_case_shares($ctx, $p),
+        'share-preview' => apr_share_preview($ctx, $p),
+        'share-create' => apr_share_create($ctx, $p),
+        'share-revoke' => apr_share_revoke($ctx, $p),
+        'my-shares' => apr_my_shares($ctx),
+        'share-respond' => apr_share_respond($ctx, $p),
+        'sys-support' => apr_sys_support(),
         'office-cases' => apr_office_cases($ctx),
         'office-case-transfer' => apr_office_case_transfer($ctx, $p),
 
@@ -366,5 +527,5 @@ function apr_error_response(Throwable $e, string $action): array
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
     return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
-        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []) + ($e instanceof AprFactChanged ? ['current' => $e->current] : []), 'req' => apr_req_id()]];
+        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []) + ($e instanceof AprFactChanged ? ['current' => $e->current] : []) + ($e instanceof AprVisitError ? $e->extra : []), 'req' => apr_req_id()]];
 }

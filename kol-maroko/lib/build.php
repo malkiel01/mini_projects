@@ -380,7 +380,7 @@ function build_kd_version(string $js): ?string
     return preg_match("~version:\s*'([\d.]+)'~", $js, $m) ? $m[1] : null;
 }
 
-/** מצב js/kol-data.js בפרויקט מול הזרע: קיים? איזו גרסה? תומך בכתיבה מראש? */
+/** מצב js/kol-data.js בפרויקט מול הזרע: קיים? איזו גרסה? תומך בכתיבה מראש? ישן מהזרע? */
 function build_kd_state(): array
 {
     $seed = (string)file_get_contents(BUILD_SEED_KD);
@@ -390,6 +390,8 @@ function build_kd_state(): array
         'present' => $mine !== null, 'id' => $r ? (int)$r['id'] : null, 'rev' => $r ? (int)$r['rev'] : null,
         'version' => $mine === null ? null : build_kd_version($mine), 'seed_version' => build_kd_version($seed),
         'prerender' => $mine !== null && (bool)preg_match('/\bprerender\s*:\s*true\b/', $mine), 'same' => $mine === $seed,
+        // S1: גרסה ישנה מהזרע — גם כשהיא כבר יודעת לכתוב מראש (1.5.0 → 1.5.1, תיקון החיפוש בלי ניקוד). בלי זה הכפתור לא מופיע.
+        'older' => $mine !== null && $mine !== $seed && version_compare((string)build_kd_version($mine), (string)build_kd_version($seed), '<'),
     ];
 }
 

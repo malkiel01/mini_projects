@@ -78,6 +78,27 @@
       + '  <p class="' + c + '__empty" data-kol-empty="' + k + '">אין תוצאות</p>\n  <button type="button" class="' + c + '__more" data-kol-more="' + k + '">טען עוד</button>\n</section>';
   }
 
+  /** S2: בלוק סינון מעוצב — HTML רגיל בעמוד (כל כיתוב הוא טקסט באלמנט; הבעלים עורך או מוחק). kind: topics | letters. */
+  function filterBlock(name, key, kind) {
+    const letters = kind === 'letters', n = esc(name), k = esc(key);
+    return '<div class="kol-filter kol-filter--' + (letters ? 'letters' : 'topics') + '" data-kol-filter="' + n + ':' + k + '" data-kol-active-class="is-active" role="group" aria-label="' + (letters ? 'סינון לפי אות' : 'סינון לפי נושא') + '">\n'
+      + '  <button type="button" class="kol-filter__btn is-active" data-kol-filter-value="">הכול</button>\n'
+      + '  <template><button type="button" class="kol-filter__btn"><span data-kol-text="label"></span> <span class="kol-filter__count" data-kol-text="count"></span></button></template>\n'
+      + '</div>';
+  }
+  /** ה-CSS של בלוק הסינון: טלפון קודם — האותיות בשורה אחת עם גלילה אופקית; ממסך רחב — נשברות לשורות. */
+  function filterCss() {
+    return '\n/* סינון לפי נושאים / לפי א-ב — נוסף מהעורך החזותי (kol-data.js 1.6.0). הכול כאן שלכם: אפשר לשנות ולמחוק */\n'
+      + '.kol-filter { display: flex; flex-wrap: wrap; gap: .4rem; margin: .75rem 0 0; }\n'
+      + '.kol-filter__btn { flex: 0 0 auto; min-height: 40px; min-width: 40px; padding: .35rem .85rem; border: 1px solid #d9d2c0; border-radius: 999px; background: #fff; color: inherit; font: inherit; line-height: 1.2; cursor: pointer; }\n'
+      + '.kol-filter__btn.is-active { background: var(--ka-navy, #1f2a44); border-color: var(--ka-navy, #1f2a44); color: #fff; }\n'
+      + '.kol-filter__btn:focus-visible { outline: 2px solid var(--ka-navy, #1f2a44); outline-offset: 2px; }\n'
+      + '.kol-filter__count { opacity: .65; font-size: .8em; }\n'
+      + '.kol-filter--letters { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: thin; padding-bottom: .4rem; }\n'
+      + '.kol-filter--letters .kol-filter__btn { scroll-snap-align: start; padding: .35rem .6rem; font-weight: 600; }\n'
+      + '@media (min-width: 720px) {\n  .kol-filter--letters { flex-wrap: wrap; overflow-x: visible; padding-bottom: 0; }\n}\n';
+  }
+
   class Data {
     /** opt: { canvas, lv, K, X, build, writeOps, act, multi, html() (המסמך), note, sheet, undo, canWrite, api, pagePath, docOf, select, content, libHost, drawAll, styler, write } */
     constructor(opt) {
@@ -264,7 +285,59 @@
       kids.push(this.row('פריסת כרטיסים', lay('רשת', [['display', 'grid'], ['grid-template-columns', 'repeat(auto-fill, minmax(240px, 1fr))'], ['gap', '16px']]),
         lay('רשימה', [['display', 'flex'], ['flex-direction', 'column'], ['gap', '12px']]), lay('עמודות', [['display', 'block'], ['columns', '3 240px'], ['column-gap', '16px']])),
         h('p', { class: 'hint' }, 'עמודות, רווח, יישור — בלשונית "📐 מתקדם", כמו בכל רובריקה.'));
+      kids.push(this.row('סינון', ...this.filterButtons(name)), h('p', { class: 'hint' }, 'נוסף בלוק HTML רגיל ליד החיפוש, עם CSS בקובץ העיצוב של העמוד — אפשר לערוך, להזיז ולמחוק. Ctrl+Z מבטל.'));
       return this.group('📊 נתונים · הרשימה ' + name, ...kids);
+    }
+    filterButtons(name) {
+      return [['topics', '➕ סינון לפי נושאים'], ['letters', '➕ סינון לפי א-ב']].map(([kind, label]) => h('button', { type: 'button', class: 'btn sm', 'data-w': true, 'data-dp-add-filter': kind, onclick: () => this.addFilter(kind, name) }, label));
+    }
+    /** מפתח הסינון: נושאים — topics (או שדה הבחירה הראשון); א-ב — "word@letter" (או שדה הטקסט הראשון). */
+    filterKeyFor(name, kind) {
+      const fs = this.fieldsOf(name) || [], L = this.lv.lists.find(x => x.name === name), labels = L && L.ds && L.ds.state ? L.ds.state.labels : {};
+      if (kind === 'letters') { const f = fs.find(x => x.key === 'word') || fs.find(x => x.type === 'text' && x.published !== false); return (f ? f.key : 'word') + '@letter'; }
+      if (labels.topics || fs.some(x => x.key === 'topics')) return 'topics';
+      const ch = fs.find(x => x.type === 'choice' || x.type === 'topics'); return ch ? ch.key : null;
+    }
+    /**
+     * S2 "➕ סינון לפי נושאים / לפי א-ב": בלוק סינון ליד החיפוש של הרשימה (אחרי סינון קיים / אחרי החיפוש / לפני הרשימה),
+     * וה-CSS שלו בסוף קובץ העיצוב של העמוד — עסקה אחת (Ctrl+Z אחד, בהיסטוריה). כבר יש סינון כזה — לא משכפלים: מסמנים אותו.
+     */
+    addFilter(kind, name, at) {
+      if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true), false;
+      const c = this.c, K2 = K(), X = this.X; if (!c.m || !c.m.root) return false;
+      name = name || (this.lv.lists.some(L => L.name === 'words') ? 'words' : this.primary()) || 'words';
+      const key = this.filterKeyFor(name, kind), what = kind === 'letters' ? 'סינון לפי א-ב' : 'סינון לפי נושאים';
+      if (!key) return this.note('לרשימה ' + name + ' אין שדה נושאים או שדה בחירה — מוסיפים אחד ב-📚 נתונים', true), false;
+      const all = []; K2.walk(c.m.root, n => { for (let p = n.parent; p; p = p.parent) if (p.tag === 'template') return; const a = K2.attrOf(n, 'data-kol-filter'); if (a && a.value.split(':')[0] === name) all.push({ n, key: a.value.split(':').slice(1).join(':') }); });
+      const same = all.find(x => kind === 'letters' ? /@letter$/.test(x.key) : x.key === key);
+      if (same) { c.select(same.n); c.reveal(same.n); this.note('כבר יש בעמוד ' + what + ' — סימנתי אותו. אפשר לעצב, להזיז או למחוק אותו'); return false; }
+      let par, idx;
+      if (at && at.par) { par = at.par; idx = at.ref ? par.kids.indexOf(at.ref) : par.kids.length; }
+      else {
+        const find = attr => { let hit = null; K2.walk(c.m.root, n => { if (hit) return; for (let p = n.parent; p; p = p.parent) if (p.tag === 'template') return; const a = K2.attrOf(n, attr); if (a && a.value === name) hit = n; }); return hit; };
+        const kolIn = n => n.attrs.some(a => a.name.startsWith('data-kol-')) || n.kids.some(kolIn);
+        let anchor = all.length ? all[all.length - 1].n : null, before = null;
+        if (!anchor) {
+          const search = find('data-kol-search');
+          if (search) {
+            anchor = search;
+            const w = search.parent;   // עטיפה קטנה של שדה החיפוש (שדה + סמל) — אחריה, לא בתוכה
+            if (w && /^(div|span|label)$/.test(w.tag) && w.kids.length <= 3 && w.kids.every(k => k === search || !kolIn(k))) anchor = w;
+          } else before = find('data-kol-list');
+        }
+        if (anchor && anchor.parent) { par = anchor.parent; idx = par.kids.indexOf(anchor) + 1; }
+        else if (before && before.parent) { par = before.parent; idx = par.kids.indexOf(before); }
+        else { par = this.build && this.build.body ? this.build.body() : null; if (par) idx = par.kids.length; }
+      }
+      if (!par) return this.note('לא נמצא מקום בעמוד — בוחרים אלמנט וגוררים את הסינון', true), false;
+      const html = filterBlock(name, key, kind), P = K2.pathOf(par);
+      let res; try { res = X.insert(c.m, par, idx, html); } catch (e) { this.note(e.message, true); return false; }
+      const ops = [{ html: true, patches: res.patches }], cssPath = this.pagePath(), doc = cssPath && this.docOf(cssPath);
+      if (doc && !doc.text().includes('.kol-filter {')) { const t = doc.text(); ops.push({ doc, patches: [{ from: t.length, to: t.length, text: (t.endsWith('\n') || !t ? '' : '\n') + filterCss() }] }); }
+      if (!this.multi('הוספה · ' + what, ops)) return false;
+      const fresh = K2.byPath(c.m, P.concat(idx)); if (fresh) { c.select(fresh); c.reveal(fresh); }
+      this.note('נוסף ' + what + (doc ? ' — העיצוב: ' + cssPath + ' (.kol-filter)' : ' — לעמוד אין קובץ CSS מקושר, ולכן הבלוק בלי עיצוב') + '. באתר זה עובד מ-kol-data.js 1.6.0', false, { label: 'בטל', run: this.undo });
+      return true;
     }
     layout(n, sets, kind) {
       const t = this.styler.targets(n)[0]; if (!t) return this.note('אין יעד לעיצוב', true);
@@ -326,6 +399,9 @@
         out.push(h('h4', { class: 'dp-h' }, '📊 השדות של ' + name), h('p', { class: 'hint' }, 'גוררים אל הכרטיס — נוצר אלמנט קשור; על אלמנט קיים — קושרת אותו.'),
           h('div', { class: 'ed-lib-grid', role: 'list', 'aria-label': 'השדות', 'data-dp-fields': name }, fs.map(f => this.libBtn({ id: 'field-' + f.key, icon: ICON[f.type] || '•', label: f.label, title: TYPE[f.type] ? TYPE[f.type] + ' · ' : '', field: f.key, ftype: f.type, internal: f.published === false, html: fieldHtml(f) }))));
         const L = this.lv.lists.find(x => x.name === name), filterF = L && L.ds && L.ds.state && L.ds.state.labels.topics ? 'topics' : (this.fieldsOf(name).find(f => f.type === 'choice') || {}).key;
+        out.push(h('h4', { class: 'dp-h' }, '🔤 סינון לעמוד'), h('div', { class: 'ed-lib-grid', role: 'list', 'aria-label': 'סינון לעמוד' },
+          this.libBtn({ id: 'kl-add-topics', icon: '➕', label: 'סינון לפי נושאים', title: 'בלוק מעוצב ליד החיפוש · ', run: t => this.addFilter('topics', name, t) }),
+          this.libBtn({ id: 'kl-add-letters', icon: '➕', label: 'סינון לפי א-ב', title: 'בלוק מעוצב ליד החיפוש · ', run: t => this.addFilter('letters', name, t) })));
         out.push(h('h4', { class: 'dp-h' }, '📋 רכיבי רשימה'), h('div', { class: 'ed-lib-grid', role: 'list', 'aria-label': 'רכיבי רשימה' }, aroundItems(name, filterF).map(it => this.libBtn(it))));
       }
       out.push(h('div', { class: 'ed-lib-grid', role: 'list', 'aria-label': 'רשימה' }, this.libBtn({ id: 'kl-list', icon: '📋', label: 'רשימה (מקור נתונים)', run: () => this.addList() })));
@@ -410,5 +486,5 @@
       + '.' + c + '__item { padding: 12px 16px; border: 1px solid #e3e3ea; border-radius: 10px; }\n.' + c + '__item h3 { margin: 0 0 4px; }\n.' + c + '__item img { max-width: 100%; border-radius: 8px; }\n.' + c + '__more { margin-top: 12px; }\n';
   }
 
-  window.KolDataPanel = { Data, parseCond, makeCond, fieldHtml, aroundItems, listSnippet };
+  window.KolDataPanel = { Data, parseCond, makeCond, fieldHtml, aroundItems, listSnippet, filterBlock, filterCss };
 })();

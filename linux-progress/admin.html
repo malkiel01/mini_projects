@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>הגדרות — ללימוד סייבר התקפי</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <main class="wrap">
+    <h1>הגדרות</h1>
+    <p class="summary">הסוד נשמר בשרת בלבד. הוא לא נשאר בדפדפן, ולא מוצג אחרי השמירה.</p>
+    <form id="token-form" autocomplete="off">
+      <label for="token">סוד לקריאה מהריפו</label>
+      <input id="token" name="token" type="password" autocomplete="off" spellcheck="false" required>
+      <button type="submit">שמור</button>
+    </form>
+    <p class="state" id="save-msg" hidden></p>
+    <p class="summary"><a href="index.html">חזרה להתקדמות</a></p>
+  </main>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>

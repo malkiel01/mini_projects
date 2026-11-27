@@ -32,8 +32,9 @@ async function viewOffice(tab) {
     const o = myOffice();
     setHead(T.officeTitle, o.name);
     const d = await api('office', { params: { office: o.pid } });
-    const tabs = d.can_manage ? tabsHtml([['#/office', T.tabTeam, d.members.length], ['#/office/channels', T.ch.officeTab], ['#/office/log', T.tabLog]], tab === 'log' ? '#/office/log' : tab === 'channels' ? '#/office/channels' : '#/office') : '';
+    const tabs = d.can_manage ? tabsHtml([['#/office', T.tabTeam, d.members.length], ['#/office/channels', T.ch.officeTab], ['#/office/ai', T.ai.officeTab], ['#/office/log', T.tabLog]], tab === 'log' ? '#/office/log' : tab === 'ai' ? '#/office/ai' : tab === 'channels' ? '#/office/channels' : '#/office') : '';
     if (tab === 'channels' && d.can_manage) return viewOfficeChannels(tabs);
+    if (tab === 'ai' && d.can_manage) return viewOfficeAi(tabs);
     if (tab === 'log' && d.can_manage) {
         const log = await api('office-audit', { params: { office: o.pid } });
         App.main.innerHTML = tabs + auditHtml(log.rows, r => esc((T.audit[r.action] || (() => r.action))(r)),
@@ -44,7 +45,8 @@ async function viewOffice(tab) {
     App.main.innerHTML = `${tabs}
         <div class="summary"><div class="line"><b class="one">${esc(d.office.name)}</b>
           ${admin ? `<button class="icon-btn" id="rename" aria-label="${T.renameOffice}" style="margin-inline-start:auto">✏️</button>` : ''}</div></div>
-        ${admin ? `<label class="switch"><input type="checkbox" id="potp"${d.office.portal_always_otp ? ' checked' : ''}><span>${T.rq.alwaysOtpSetting}</span></label>` : ''}
+        ${admin ? `<label class="switch"><input type="checkbox" id="potp"${d.office.portal_always_otp ? ' checked' : ''}><span>${T.rq.alwaysOtpSetting}</span></label>
+          <label class="switch"><input type="checkbox" id="vgeo"${d.office.visit_geo ? ' checked' : ''}><span>${T.v.geoSetting}</span></label>` : ''}
         <div class="toolbar"><p class="hint one" style="flex:1;margin:0">${admin ? T.teamHintAdmin : T.teamHint}</p>
           ${admin ? `<button class="btn primary" id="invite"><span aria-hidden="true">+</span> ${T.invite}</button>` : ''}</div>
         <ul class="list">${d.members.map(m => `<li class="card${admin ? '' : ' static'}" ${admin ? `tabindex="0" role="button" data-member="${m.pid}"` : ''}>
@@ -92,6 +94,9 @@ async function viewOffice(tab) {
         if (!confirm(T.revokeAsk(b.dataset.email))) return;
         try { await api('invite-revoke', { body: body({ invite: b.dataset.revoke }) }); toast(T.revoked); viewOffice(); } catch (x) { toastError(x); }
     }));
+    $('#vgeo')?.addEventListener('change', async e => {
+        try { await api('office-visit-geo', { body: { on: e.target.checked } }); toast(T.v.settingSaved); } catch (x) { e.target.checked = !e.target.checked; toastError(x); }
+    });
     $('#potp')?.addEventListener('change', async e => {
         try { await api('office-portal-otp', { body: { on: e.target.checked } }); toast(T.rq.alwaysOtpSaved); } catch (x) { e.target.checked = !e.target.checked; toastError(x); }
     });

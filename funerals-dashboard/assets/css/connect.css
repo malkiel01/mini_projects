@@ -1,0 +1,33 @@
+/* מסך "חיבור ל-ChatGPT" — רק מה שאין ב-app.css, מהמשתנים בלבד */
+.copy-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: var(--s3); }
+.copy-tiles .tile { flex-direction: column; justify-content: center; gap: 2px; font: inherit; color: inherit; background: var(--surface); cursor: pointer; text-align: center; }
+.copy-tiles .tile .one { max-inline-size: 100%; font-size: .85rem; }
+.copy-tiles .tile:disabled { opacity: .45; }
+.fresh { display: grid; gap: var(--s2); margin-top: var(--s2); padding: var(--s2); border: 1px solid color-mix(in srgb, var(--star) 45%, transparent);
+    background: color-mix(in srgb, var(--star) 10%, var(--surface)); border-radius: var(--r); }
+.fresh code { display: block; overflow-wrap: anywhere; font: .85rem/1.35 var(--font-mono); padding: var(--s2);
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); user-select: all; }
+.steps summary { cursor: pointer; margin: 0; list-style-position: inside; }
+.steps ol { padding-inline-start: 1.3em; display: grid; gap: 4px; font-size: .9rem; }
+.card.tok { cursor: default; }
+.card.tok.off { opacity: .6; }
+
+/* פרוסה 08 (P1): שלושה מסלולים — פרויקט ChatGPT ראשון, Plugin "בקרוב", ומה שישן בקפל "מתקדם" */
+.route h3 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font-size: 1rem; font-weight: 600; }
+.route .hint { margin: 0; }
+.route > .btn { justify-self: start; }
+.main-route { border-color: var(--brand); }
+.route-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s3); font-size: .9rem; counter-reset: step; }
+.route-steps li { display: grid; gap: var(--s2); position: relative; padding-inline-start: 2em; counter-increment: step; }
+.route-steps li::before { content: counter(step); position: absolute; inset-inline-start: 0; top: 0; display: grid; place-items: center;
+    inline-size: 1.5em; block-size: 1.5em; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 600; font-size: .85rem; }
+a.btn { text-decoration: none; }
+.route-steps li > .btn { justify-self: start; }
+.route-steps .row-btns input { flex: 1; }
+.route-steps .row-btns .btn { flex: none; }
+.route.soon { opacity: .75; }
+.gone { padding: 0 var(--s1); }
+#advanced[open] { gap: var(--s2); }
+/* 09 — הכתובת של שרת ה-MCP */
+.mcp-url { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+.mcp-url code { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; padding: var(--s2); background: var(--brand-soft); border-radius: var(--r); font-size: .85rem; }

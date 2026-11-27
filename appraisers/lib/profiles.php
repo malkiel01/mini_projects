@@ -110,7 +110,10 @@ function apr_profile_lists(): array
 {
     return ['purposes' => APR_PURPOSES, 'property_types' => APR_PROPERTY_TYPES, 'priorities' => APR_PRIORITIES, 'party_kinds' => APR_PARTY_KINDS,
         'due_modes' => APR_DUE_MODES, 'assignees' => APR_ASSIGNEES, 'ops' => APR_COND_OPS, 'limits' => APR_PROFILE_LIMITS,
-        'doc_types' => apr_rows('SELECT key, name, description FROM doc_types WHERE hidden = 0 ORDER BY sort, name')];
+        'doc_types' => apr_rows('SELECT key, name, description FROM doc_types WHERE hidden = 0 ORDER BY sort, name'),
+        // לבונה טופס הביקור (13): לאיזה מאפיין שדה יכול להציע ערך
+        'attributes' => apr_rows("SELECT key, label, value_type, unit_kind, choices FROM attributes WHERE status = 'active' ORDER BY sort, label"),
+        'visit_field_types' => APR_VISIT_FIELD_TYPES];
 }
 
 /**

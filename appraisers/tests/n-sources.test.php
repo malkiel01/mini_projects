@@ -596,10 +596,12 @@ apr_migrate($v9, $m9);
 $v9->exec('PRAGMA foreign_keys = OFF');
 $v9->exec('ATTACH ' . $v9->quote("$dir/app.sqlite") . ' AS live');
 $tables = array_column($v9->query("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'")->fetchAll(), 'name');
-foreach ($tables as $t) { $v9->exec("DELETE FROM main.\"$t\""); $v9->exec("INSERT INTO main.\"$t\" SELECT * FROM live.\"$t\""); }
+foreach ($tables as $t) { $v9->exec("DELETE FROM main.\"$t\""); $v9->exec("INSERT INTO main.\"$t\" (" . t_cols($v9, $t) . ") SELECT " . t_cols($v9, $t) . " FROM live.\"$t\""); }
 $v9->exec('DETACH live');
 $v9->exec('PRAGMA foreign_keys = ON');
-$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT * FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
+// העמודות כפי שהן לפני המיגרציה: מיגרציה מאוחרת שמוסיפה עמודה (014 ל-facts) אינה משנה את מה שהיה בשורה
+$colsBefore = array_combine($tables, array_map(fn($t) => t_cols($v9, $t), $tables));
+$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT {$colsBefore[$t]} FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
 $d9 = $dump($v9);
 $rows9 = array_sum(array_map(fn($t) => (int)$v9->query("SELECT COUNT(*) FROM \"$t\"")->fetchColumn(), $tables));
 $had = [in_array('sources', $tables, true), (int)$v9->query('SELECT COUNT(*) FROM facts')->fetchColumn() > 0, (int)$v9->query('SELECT COUNT(*) FROM cases')->fetchColumn() > 3];
@@ -616,7 +618,7 @@ eq([apr_schema_version($v9), $had, $rows9 > 100, $dump($v9) === $d9, $shape($v9)
     $v9->query("SELECT name || '|' || license FROM sources WHERE key = 'xplan'")->fetchColumn(), $v9->query('SELECT key, pid FROM sources ORDER BY key')->fetchAll() === $pids,
     (int)$v9->query('SELECT (SELECT COUNT(*) FROM source_checks) + (SELECT COUNT(*) FROM planning_items)')->fetchColumn(), count($v9->query('PRAGMA foreign_key_check')->fetchAll()),
     trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/00[1-9]_*.sql 2>/dev/null'))],
-    [10, [false, true, true], true, true, true, 13, true, 'שם שהמנהל שינה|{"store":"no"}', true, 0, 0, ''],
+    [apr_schema_expected(), [false, true, true], true, true, true, 13, true, 'שם שהמנהל שינה|{"store":"no"}', true, 0, 0, ''],
     'מיגרציה 010 על מסד v9 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא, המבנה זהה למסד חדש, הקטלוג נזרע (13) — וזריעה חוזרת אינה מכפילה ואינה דורסת שינוי של המנהל; 001–009 לא נגעו');
 $v9 = null;
 $rm = function (string $d) use (&$rm) { foreach (array_diff(scandir($d) ?: [], ['.', '..']) as $f) is_dir("$d/$f") ? $rm("$d/$f") : @unlink("$d/$f"); @rmdir($d); };

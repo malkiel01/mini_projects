@@ -1,0 +1,1315 @@
+[
+    {
+        "id": "fd_b54c8da7ba366af8038a3924",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 1",
+        "date": "2026-10-01",
+        "time": "09:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 1.pdf",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "grave_purchase": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "missing",
+                "value": "",
+                "source": "קובץ סרוק 1.pdf",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_6dc377f46849e1ae4f100017",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 2",
+        "date": "2026-10-02",
+        "time": "10:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "verified",
+                "value": "V21",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "document_present",
+                "value": "",
+                "source": "קובץ סרוק 2.pdf",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "hall_service": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "reported",
+                "value": "",
+                "source": "קובץ סרוק 2.pdf",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_a458783b7b46c196e96ba384",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 3",
+        "date": "2026-10-03",
+        "time": "",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": {
+            "license_document": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "missing",
+                "value": "",
+                "source": "קובץ סרוק 3.pdf",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "payment_evidence": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "verified",
+                "value": "V35",
+                "source": "קובץ סרוק 3.pdf",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_031e8cfcc584082abc8c74da",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 4",
+        "date": "2026-10-04",
+        "time": "12:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה.",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "reported",
+                "value": "",
+                "source": "קובץ סרוק 4.pdf",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "verified",
+                "value": "V42",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "identity_source": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "unreadable",
+                "value": "",
+                "source": "קובץ סרוק 4.pdf",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 4.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_b16a925d47aabe14eac55b55",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 5",
+        "date": "2026-10-05",
+        "time": "13:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "https://www.dropbox.com/scl/fo/x5",
+        "documents": [],
+        "checks": {
+            "license_number": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "identity_document": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "unknown",
+                "value": "",
+                "source": "קובץ סרוק 5.pdf",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "verified",
+                "value": "V56",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "document_present",
+                "value": "",
+                "source": "קובץ סרוק 5.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "national_insurance": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_42e4de77c022e0ca6d3038a4",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 6",
+        "date": "2026-10-06",
+        "time": "",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": {
+            "license_document": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "license_number": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 6.pdf",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "verified",
+                "value": "V63",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "missing",
+                "value": "",
+                "source": "קובץ סרוק 6.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "partner_identity": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_a1624a4b683922459c8e2457",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 7",
+        "date": "2026-10-07",
+        "time": "15:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "verified",
+                "value": "V70",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "reported",
+                "value": "",
+                "source": "עדכון ידני",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "reported",
+                "value": "",
+                "source": "קובץ סרוק 7.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "grave_purchase": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "verified",
+                "value": "V77",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": [
+            "notes"
+        ]
+    },
+    {
+        "id": "fd_09d390c5f041cd365b367e87",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 8",
+        "date": "2026-10-08",
+        "time": "16:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה.",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "missing",
+                "value": "",
+                "source": "קובץ סרוק 8.pdf",
+                "note": ""
+            },
+            "license_number": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "verified",
+                "value": "V84",
+                "source": "קובץ סרוק 8.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "hall_service": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "unknown",
+                "value": "",
+                "source": "קובץ סרוק 8.pdf",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_a711fcecdce3863f86878c2f",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 9",
+        "date": "2026-10-09",
+        "time": "",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": {
+            "license_document": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "unreadable",
+                "value": "",
+                "source": "קובץ סרוק 9.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "payment_evidence": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 9.pdf",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "verified",
+                "value": "V98",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_1798223ac4c51dd541c4faca",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 10",
+        "date": "2026-10-10",
+        "time": "08:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "https://www.dropbox.com/scl/fo/x10",
+        "documents": [],
+        "checks": {
+            "license_number": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "unknown",
+                "value": "",
+                "source": "קובץ סרוק 10.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "identity_source": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "document_present",
+                "value": "",
+                "source": "קובץ סרוק 10.pdf",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_28c049bb52d40b885624bef1",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 11",
+        "date": "2026-10-11",
+        "time": "09:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 11.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "identity_document": {
+                "status": "verified",
+                "value": "V112",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "missing",
+                "value": "",
+                "source": "קובץ סרוק 11.pdf",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "national_insurance": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_f9caf396f77bea24817ba63d",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 12",
+        "date": "2026-10-12",
+        "time": "",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה.",
+        "folder_url": "",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": {
+            "license_document": {
+                "status": "document_present",
+                "value": "",
+                "source": "קובץ סרוק 12.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "license_number": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "reported",
+                "value": "",
+                "source": "קובץ סרוק 12.pdf",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "verified",
+                "value": "V126",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "partner_identity": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_fd531f0d9d05019de3895a85",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 13",
+        "date": "2026-10-13",
+        "time": "11:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "verified",
+                "value": "V133",
+                "source": "קובץ סרוק 13.pdf",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "grave_purchase": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_7746161d4219d29350839d11",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 14",
+        "date": "2026-10-14",
+        "time": "12:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "verified",
+                "value": "V140",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "unreadable",
+                "value": "",
+                "source": "קובץ סרוק 14.pdf",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "hall_service": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "verified",
+                "value": "V147",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": [
+            "notes"
+        ]
+    },
+    {
+        "id": "fd_507d2395c94f95b762def8fe",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 15",
+        "date": "2026-10-15",
+        "time": "",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "https://www.dropbox.com/scl/fo/x15",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": {
+            "license_number": {
+                "status": "unknown",
+                "value": "",
+                "source": "קובץ סרוק 15.pdf",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "payment_evidence": {
+                "status": "verified",
+                "value": "V154",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_af14bc1e193657c027936ab9",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 16",
+        "date": "2026-10-16",
+        "time": "14:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה.",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 16.pdf",
+                "note": ""
+            },
+            "license_number": {
+                "status": "verified",
+                "value": "V161",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "identity_source": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "verified",
+                "value": "V168",
+                "source": "קובץ סרוק 16.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_8a5cad2370a569418250acc1",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 17",
+        "date": "2026-10-17",
+        "time": "15:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "license_number": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "identity_document": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "verified",
+                "value": "V175",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "unreadable",
+                "value": "",
+                "source": "קובץ סרוק 17.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_aeccbfd6f01c52ea727d5a5a",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 18",
+        "date": "2026-10-18",
+        "time": "",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": {
+            "license_document": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "license_number": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "grave_purchase": {
+                "status": "unknown",
+                "value": "",
+                "source": "קובץ סרוק 18.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "national_insurance": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_9e55a8e89cb19861e00e6902",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 19",
+        "date": "2026-10-19",
+        "time": "17:30",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "hall_service": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "קובץ סרוק 19.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "partner_identity": {
+                "status": "document_present",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "unreadable",
+                "value": "",
+                "source": "",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_59dff0c42e15219ae9e2c96c",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 20",
+        "date": "2026-10-20",
+        "time": "08:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה. הערת תיק ארוכה.",
+        "folder_url": "https://www.dropbox.com/scl/fo/x20",
+        "documents": [],
+        "checks": {
+            "license_number": {
+                "status": "reported",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_document": {
+                "status": "not_applicable",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "identity_source": {
+                "status": "verified",
+                "value": "V203",
+                "source": "",
+                "note": ""
+            },
+            "payment_evidence": {
+                "status": "document_present",
+                "value": "",
+                "source": "קובץ סרוק 20.pdf",
+                "note": "הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן. הערה ארוכה מאוד מהייבוא הישן."
+            },
+            "grave_purchase": {
+                "status": "missing",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "partner_identity": {
+                "status": "unknown",
+                "value": "",
+                "source": "",
+                "note": ""
+            },
+            "national_insurance": {
+                "status": "reported",
+                "value": "",
+                "source": "קובץ סרוק 20.pdf",
+                "note": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    },
+    {
+        "id": "fd_01122da2d9f626aaebc8d5d6",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 21",
+        "date": "2026-10-21",
+        "time": "",
+        "origin": "בית הלוויות",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [
+            {
+                "label": "רישיון.pdf",
+                "url": "",
+                "kind": "license"
+            }
+        ],
+        "checks": [],
+        "payments": [],
+        "manual_fields": [
+            "notes"
+        ]
+    },
+    {
+        "id": "fd_0e85b6db0af242d97c134c27",
+        "month": "2026-10",
+        "name": "נפטר לדוגמה 22",
+        "date": "2026-10-22",
+        "time": "10:30",
+        "origin": "",
+        "team": "",
+        "grave": "",
+        "notes": "",
+        "folder_url": "",
+        "documents": [],
+        "checks": {
+            "license_document": {
+                "status": "missing",
+                "value": ""
+            },
+            "license_number": {
+                "status": "unknown",
+                "value": ""
+            },
+            "identity_document": {
+                "status": "reported",
+                "value": ""
+            },
+            "payment_evidence": {
+                "status": "verified",
+                "value": "V224"
+            },
+            "hall_service": {
+                "status": "document_present",
+                "value": ""
+            },
+            "grave_purchase": {
+                "status": "unreadable",
+                "value": ""
+            },
+            "partner_identity": {
+                "status": "missing",
+                "value": ""
+            }
+        },
+        "payments": [],
+        "manual_fields": []
+    }
+]

@@ -133,8 +133,11 @@
       start({ prerender: prer.checked, include_config: conf.checked, exclude: ex.value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean) });
     };
     var kd = d.kd;
-    var kdBox = kd && kd.present && !kd.prerender
-      ? h('div', { class: 'warnbox' }, h('b', {}, 'js/kol-data.js בפרויקט — גרסה ' + (kd.version || '?')), ' אינו יודע להמשיך מרשימה כתובה מראש, ולכן אין כתיבה מראש (גוגל ומי שאין לו JS לא יראו את המילים). ',
+    // מופיע כשהקובץ בפרויקט אינו יודע לכתוב מראש, או כשהוא פשוט ישן מהגרסה שבכלי (S1: 1.5.0 → 1.5.1, חיפוש בלי ניקוד)
+    var kdBox = kd && kd.present && (!kd.prerender || kd.older)
+      ? h('div', { class: 'warnbox' }, h('b', {}, 'js/kol-data.js בפרויקט — גרסה ' + (kd.version || '?')),
+        !kd.prerender ? ' אינו יודע להמשיך מרשימה כתובה מראש, ולכן אין כתיבה מראש (גוגל ומי שאין לו JS לא יראו את המילים). '
+          : ' — יש גרסה חדשה יותר (' + kd.seed_version + '), עם תיקונים שעוד לא בעמוד שלכם. ',
         d.is_owner ? h('button', { type: 'button', class: 'btn', onclick: function () { kdSheet(kd, function () { draw(box, host, role); }); } }, '🔄 עדכן את kol-data.js לגרסה ' + kd.seed_version)
           : h('span', { class: 'muted' }, 'העדכון — בידי הבעלים.'))
       : null;

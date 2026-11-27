@@ -291,20 +291,20 @@ test('M5 ייצוא CSV: BOM, השדות, והגנה מ-formula injection', func
     eq("'\tx", forms_csv_cell("\tx"));
 });
 
-test('M5 הרשאות: כל פעולה מול כל תפקיד (קריאה/סימון/ייצוא — עורך; מחיקה — מפרסם; מגבלות ומייל — המפתח)', function () {
+test('M5 הרשאות: כל פעולה מול כל תפקיד (קריאה/סימון/ייצוא — עורך; מחיקה — מפרסם; המייל — בעל העמוד; מגבלות — המפתח)', function () {
     $mat = [
-        ['GET', 'inbox', [], ['editor' => 200, 'publisher' => 200, 'owner' => 200]],
+        ['GET', 'inbox', [], ['editor' => 200, 'publisher' => 200, 'page' => 200, 'owner' => 200]],
         ['GET', 'inbox_csv', [], ['editor' => 200, 'publisher' => 200, 'owner' => 200]],
         ['POST', 'inbox_mark', ['id' => 1, 'read' => true], ['editor' => 200, 'publisher' => 200, 'owner' => 200]],
         ['POST', 'inbox_delete', ['id' => 999999], ['editor' => 403, 'publisher' => 200, 'owner' => 200]],
         ['POST', 'inbox_purge', ['before' => '2000-01-01', 'preview' => true], ['editor' => 403, 'publisher' => 200, 'owner' => 200]],
-        ['GET', 'forms_settings', [], ['editor' => 200, 'publisher' => 200, 'owner' => 200]],
-        ['POST', 'forms_settings', ['to' => []], ['editor' => 403, 'publisher' => 200, 'owner' => 200]],
-        ['POST', 'forms_settings', ['limits' => ['ip_n' => 5]], ['editor' => 403, 'publisher' => 403, 'owner' => 200]],
+        ['GET', 'forms_settings', [], ['editor' => 200, 'publisher' => 200, 'page' => 200, 'owner' => 200]],
+        ['POST', 'forms_settings', ['to' => []], ['editor' => 403, 'publisher' => 403, 'page' => 200, 'owner' => 200]],
+        ['POST', 'forms_settings', ['limits' => ['ip_n' => 5]], ['editor' => 403, 'publisher' => 403, 'page' => 403, 'owner' => 200]],
         ['POST', 'mail_test', ['from' => 'a@b.test', 'to' => 'c@d.test'], ['editor' => 403, 'publisher' => 403]],
         ['GET', 'dev-forms', [], ['editor' => 403, 'publisher' => 403, 'owner' => 200]],
     ];
-    $users = ['editor' => U_EDITOR, 'publisher' => U_PUBLISHER, 'owner' => U_OWNER];
+    $users = ['editor' => U_EDITOR, 'publisher' => U_PUBLISHER, 'page' => U_PAGE, 'owner' => U_OWNER];
     foreach ($mat as [$m, $a, $body, $want]) {
         foreach ($want as $role => $code) {
             $r = $m === 'POST' ? http('POST', "/api.php?action=$a", ['user' => $users[$role], 'json' => $body]) : http('GET', "/api.php?action=$a", ['user' => $users[$role]]);
@@ -315,61 +315,129 @@ test('M5 הרשאות: כל פעולה מול כל תפקיד (קריאה/סימ
     }
     eq(403, http('POST', '/api.php?action=inbox_mark', ['user' => U_EDITOR, 'json' => ['id' => 1, 'read' => true], 'csrf' => false])['status'], 'בלי CSRF — נחסם');
     eq(400, m1_post('forms_settings', ['limits' => ['ip_n' => 0]], U_OWNER)['status'], 'מגבלה מחוץ לטווח');
-    eq(400, m1_post('forms_settings', ['to' => ['stranger@evil.test']], U_PUBLISHER)['status'], 'נמען שאינו חבר');
+    // S3: כל כתובת — לא רק חברי האפליקציה; עד 5; בלי שבירת שורה
+    $r = m1_post('forms_settings', ['to' => ['Stranger@Elsewhere.test']], U_PAGE);
+    eq(200, $r['status'], $r['body']);
+    eq(['stranger@elsewhere.test'], $r['json']['settings']['to'], 'כתובת שאינה של חבר — מתקבלת');
+    ok($r['json']['settings']['can_mail'] && isset($r['json']['settings']['diag']), 'בעל העמוד רואה את המייל ואת האבחון');
+    eq(400, m1_post('forms_settings', ['to' => ["a@b.test\r\nBcc: x@evil.test"]], U_PAGE)['status'], 'CRLF בנמען');
+    eq(400, m1_post('forms_settings', ['to' => "a@b.test\nBcc: x@evil.test"], U_PAGE)['status'], 'CRLF בנמען (מחרוזת)');
+    eq(400, m1_post('forms_settings', ['to' => ['1@a.test', '2@a.test', '3@a.test', '4@a.test', '5@a.test', '6@a.test']], U_PAGE)['status'], 'יותר מ-5');
+    eq(400, m1_post('forms_settings', ['from' => "a@b.test\nBcc: x@evil.test"], U_PAGE)['status'], 'CRLF בשולח');
+    $pub = http('GET', '/api.php?action=inbox', ['user' => U_PUBLISHER])['json']['settings'];
+    ok(!$pub['can_mail'] && $pub['candidates'] === [], 'מפרסם — בלי עריכת המייל');
     setting_set('forms_limits', '{}');
+    setting_set('forms_mail', '{}');
 });
 
-test('M5 מייל: בדיקה קודם (ברירת מחדל כבוי); תקציר בלי תוכן; לכל היותר אחד ל-15 דקות; 🧪 — לא; 3 כישלונות ← כבוי', function () {
+test('S3 מייל: לכל פנייה עם התוכן; כל כתובת; שולח noreply@השרת; Reply-To רק אם תקין; 🧪 — לא; קצב; 3 כישלונות ← כבוי; אבחון', function () {
     m5_live();
     $file = dirname(KOL_DATA_DIR) . '/mail.log';
     putenv("KOL_TEST_MAIL=$file");
+    $mails = function () use ($file): array { return array_map(fn($l) => json_decode($l, true), is_file($file) ? file($file, FILE_IGNORE_NEW_LINES) : []); };
     try {
         setting_set('forms_mail', '{}');
-        eq(false, forms_mail_state()['on'], 'ברירת המחדל — כבוי');
-        $own = ['sub' => U_OWNER['sub'], 'name' => U_OWNER['name'], 'email' => U_OWNER['email'], 'role' => 'site_owner'];
-        $code = throws(fn() => forms_settings($own, ['mail_on' => true], true), 'הדלקה בלי מייל בדיקה');
-        eq(400, $code);
-        throws(fn() => forms_mail_test($own, ['from' => "a@b.test\r\nBcc: x@evil.test", 'to' => 'c@d.test']), 'CRLF בשולח');
-        throws(fn() => forms_mail_test($own, ['from' => 'a@b.test', 'to' => "c@d.test\nBcc: x@evil.test"]), 'CRLF בנמען');
-        $t = forms_mail_test($own, ['from' => 'kol@example.test', 'to' => 'owner@example.test']);
-        ok($t['test']['ok'], 'מייל בדיקה — true');
-        forms_settings($own, ['to' => ['editor@example.test']], true);
-        forms_settings($own, ['mail_on' => true], true);
-        ok(forms_mail_state()['on']);
         @unlink($file);
-        m5_recv(['message' => 'סוד-פנייה-שלא-במייל', 'email' => 'visitor@x.test']);
-        m5_recv(['message' => 'שנייה']);
-        m5_recv(['message' => 'בדיקה'], null, true);
-        $mails = array_map(fn($l) => json_decode($l, true), file($file, FILE_IGNORE_NEW_LINES) ?: []);
-        eq(1, count($mails), 'מייל אחד (צבירה)');
-        eq(['editor@example.test'], $mails[0]['to']);
-        ok(str_contains($mails[0]['body'], '1 פניות חדשות בטופס "feedback"'), $mails[0]['body']);
-        ok(!str_contains($mails[0]['body'], 'סוד-פנייה') && !str_contains($mails[0]['body'], 'visitor@'), 'בלי תוכן הפנייה');
-        ok(!preg_match('/\r|\n/', $mails[0]['headers'] === '' ? '' : str_replace("\r\n", '', $mails[0]['headers'])), 'כותרות קבועות');
-        // חלון 15 דקות: השנייה ממתינה
+        eq(false, forms_mail_state()['on'], 'ברירת המחדל — כבוי');
+        $page = ['sub' => U_PAGE['sub'], 'name' => U_PAGE['name'], 'email' => U_PAGE['email'], 'role' => 'page_owner'];
+        $pub = ['sub' => U_PUBLISHER['sub'], 'name' => U_PUBLISHER['name'], 'email' => U_PUBLISHER['email'], 'role' => 'publisher'];
+        eq(403, throws(fn() => forms_settings($pub, ['mail_on' => true], false)), 'מפרסם אינו מדליק');
+        eq(400, throws(fn() => forms_settings($page, ['mail_on' => true], false)), 'הדלקה בלי נמען');
+        // השולח: ברירת מחדל noreply@<השרת>, וגם כשולח המעטפה
+        $pubS = forms_mail_public($page);
+        eq('noreply@mbe-plus.com', $pubS['from_effective']);
+        $t = forms_mail_test($page, ['to' => 'owner@gmail.test']);
+        ok($t['test']['ok'], 'מייל בדיקה — true');
+        $m = $mails()[0];
+        eq(['owner@gmail.test'], $m['to']);
+        ok(str_starts_with($m['headers'], "From: noreply@mbe-plus.com\r\n"), $m['headers']);
+        eq('-fnoreply@mbe-plus.com', $m['envelope'], 'שולח המעטפה במתחם השרת');
+        eq(true, array_column($t['settings']['diag'], 'ok', 'id')['test'], 'האבחון: הבדיקה הצליחה');
+        // שולח מחוץ למתחם — נשלח, בלי -f, והאבחון מזהיר
+        $t = forms_mail_test($page, ['to' => 'owner@gmail.test', 'from' => 'me@gmail.test']);
+        eq('', $mails()[1]['envelope']);
+        eq(false, array_column($t['settings']['diag'], 'ok', 'id')['from'], 'האבחון: השולח מחוץ למתחם');
+        forms_settings($page, ['from' => ''], false);
+        throws(fn() => forms_mail_test($page, ['to' => "c@d.test\nBcc: x@evil.test"]), 'CRLF בנמען הבדיקה');
+        // נמענים — כל כתובת, והדלקה
+        forms_settings($page, ['to' => "Owner@Gmail.test\nfriend@other.test", 'mail_on' => true], false);
         $s = forms_mail_state();
-        $s['last_sent'] = gmdate('Y-m-d\TH:i:s\Z', time() - 901);
-        forms_mail_save($s);
-        forms_mail_tick();
-        $mails = file($file, FILE_IGNORE_NEW_LINES);
-        eq(2, count($mails), 'אחרי 15 דקות — התקציר של מה שהצטבר');
-        ok(str_contains(json_decode($mails[1], true)['body'], '1 פניות חדשות'), 'רק השנייה — בלי פניית הבדיקה');
+        ok($s['on']);
+        eq(['owner@gmail.test', 'friend@other.test'], $s['to']);
+        @unlink($file);
+        // פנייה על מילה ← מייל אחד, עם התוכן
+        db()->prepare('INSERT INTO words (word, meaning, updated_at) VALUES (?, ?, ?)')->execute(['שלום-s3', 'בדיקה', now_iso()]);
+        $wid = (int)db()->lastInsertId();
+        m5_recv(['word_id' => (string)$wid, 'name' => 'דוד', 'email' => 'Visitor@X.test', 'message' => "נא לתקן את הניקוד\nשורה שנייה"]);
+        $all = $mails();
+        eq(1, count($all), 'מייל אחד, מיד');
+        $m = $all[0];
+        eq(['owner@gmail.test', 'friend@other.test'], $m['to']);
+        ok(str_contains($m['subject'], 'שלום-s3'), $m['subject']);
+        foreach (['המילה: שלום-s3', 'שם: דוד', 'מייל: Visitor@X.test', "ההערה:\nנא לתקן את הניקוד\nשורה שנייה", 'לתיבה: '] as $want) ok(str_contains($m['body'], $want), "בגוף: $want\n" . $m['body']);
+        ok(str_contains($m['headers'], "\r\nReply-To: visitor@x.test\r\n"), 'Reply-To לגולש');
+        // מייל עם שבירת שורה — אינו נכנס לכותרת
+        m5_recv(['name' => "x\r\nBcc: a@evil.test", 'email' => "evil@x.test\r\nBcc: a@evil.test", 'message' => 'ניסיון הזרקה']);
+        $m = $mails()[1];
+        ok(!str_contains($m['headers'], 'Reply-To') && !str_contains($m['headers'], 'Bcc') && !str_contains($m['headers'], 'evil'), $m['headers']);
+        eq(4, substr_count($m['headers'], "\r\n"), 'כותרות קבועות: From, Auto-Submitted, MIME, Content-Type, CTE');
+        // 🧪 — לא
+        m5_recv(['message' => 'בדיקה'], null, true);
+        eq(2, count($mails()), 'פניית בדיקה — בלי מייל');
+        // קצב: אחרי 12 בשעה — מצטבר למייל אחד
+        $s = forms_mail_state(); $s['sent'] = array_fill(0, FORMS_MAIL_HOUR, time()); forms_mail_save($s);
+        m5_recv(['message' => 'ראשונה-בתור']);
+        m5_recv(['message' => 'שנייה-בתור']);
+        eq(2, count($mails()), 'מעל התקרה — ממתין');
+        $s = forms_mail_state(); $s['sent'] = [time() - 3601]; forms_mail_save($s);
+        inbox_list($page, ['count' => 1]);                        // פתיחת התיבה מריצה את התור
+        $m = $mails()[2];
+        ok(str_contains($m['subject'], '2 פניות חדשות') && str_contains($m['body'], 'ראשונה-בתור') && str_contains($m['body'], 'שנייה-בתור'), $m['body']);
+        ok(!str_contains($m['headers'], 'Reply-To'), 'כמה פניות — בלי Reply-To');
+        eq(3, count($mails()), 'מייל אחד לשתיהן');
+        eq(true, array_column(forms_diag(forms_mail_state()), 'ok', 'id')['sent']);
         // כישלונות
         putenv('KOL_TEST_MAIL_FAIL=1');
         for ($i = 0; $i < 3; $i++) {
             m5_recv(['message' => "כישלון $i"]);
-            $s = forms_mail_state(); $s['last_sent'] = gmdate('Y-m-d\TH:i:s\Z', time() - 901); forms_mail_save($s);
-            forms_mail_tick();
+            $s = forms_mail_state(); if ($s['last_error']) { $s['last_error']['at'] = gmdate('Y-m-d\TH:i:s\Z', time() - FORMS_MAIL_RETRY - 1); forms_mail_save($s); }
         }
         $s = forms_mail_state();
         ok(!$s['on'] && $s['auto_off'] && $s['fails'] >= 3, 'כבוי אוטומטית אחרי 3');
-        ok((int)db()->query("SELECT COUNT(*) FROM notices WHERE kind = 'mail'")->fetchColumn() >= 1, 'הודעה למפתח');
+        ok((int)db()->query("SELECT COUNT(*) FROM notices WHERE kind = 'mail'")->fetchColumn() >= 1, 'הודעה');
         ok((int)db()->query("SELECT COUNT(*) FROM dev_log WHERE event = 'form.mail_failed'")->fetchColumn() >= 3, 'נרשם ב-devlog');
+        $d = array_column(forms_diag($s), null, 'id');
+        eq(false, $d['mail_on']['ok']);
+        ok(str_contains($d['mail_on']['text'], 'כובה אוטומטית'), $d['mail_on']['text']);
+        eq(false, $d['sent']['ok']);
+        ok(str_contains($d['sent']['text'], 'mail() החזיר false'), $d['sent']['text']);
         ok(forms_unread() > 0, 'המונה בסטודיו ממשיך');
+        // הדלקה מחדש מאפסת את הכישלונות ואינה שולחת את מה שהצטבר
+        putenv('KOL_TEST_MAIL_FAIL');
+        @unlink($file);
+        forms_settings($page, ['mail_on' => true], false);
+        forms_mail_tick();
+        eq(0, count($mails()), 'אחרי הדלקה — רק פניות חדשות');
+        eq(0, forms_mail_state()['fails']);
     } finally {
         putenv('KOL_TEST_MAIL'); putenv('KOL_TEST_MAIL_FAIL');
         setting_set('forms_mail', '{}');
     }
+});
+
+test('S3 אבחון: טופס שאינו רשום בגרסה שבאתר ← ❌ בשורה הראשונה', function () {
+    $keep = db()->query('SELECT id, sent_at FROM pkg_builds WHERE sent_at IS NOT NULL')->fetchAll();
+    db()->exec('UPDATE pkg_builds SET sent_at = NULL');
+    try {
+        $d = array_column(forms_diag(forms_mail_state()), null, 'id');
+        eq(false, $d['page']['ok']);
+        ok(str_contains($d['page']['text'], 'לבנות ולשלוח'), $d['page']['text']);
+        eq(false, $d['mail_on']['ok']);
+    } finally {
+        $u = db()->prepare('UPDATE pkg_builds SET sent_at = ? WHERE id = ?');
+        foreach ($keep as $r) $u->execute([$r['sent_at'], $r['id']]);
+    }
+    ok(array_column(forms_diag(forms_mail_state()), 'ok', 'id')['page']);
 });
 
 test('M5 מסך המפתח: פניות היום / 7 ימים, דחיות לפי סיבה, המייל, המגבלות', function () {
@@ -383,4 +451,15 @@ test('M5 מסך המפתח: פניות היום / 7 ימים, דחיות לפי 
     ok(str_ends_with($d['endpoint'], '/form.php'));
     $svc = array_column(dev_services(), null, 'id')['forms_mail'];
     ok(str_contains($svc['result'], 'כבוי') || str_contains($svc['result'], 'כובה'), $svc['result']);
+});
+
+test('S3 בדיקת התקינות (__health__) — עונה invalid בלי לגעת בקצב ובדחיות', function () {
+    $hits = (int)db()->query('SELECT COUNT(*) FROM form_hits')->fetchColumn();
+    $rej = m5_rej('invalid');
+    for ($i = 0; $i < 8; $i++) eq([400, ['ok' => false, 'reason' => 'invalid']], forms_receive(['_form' => '__health__', '_t' => '9999'], [], 40, '10.9.9.9', false));
+    eq($hits, (int)db()->query('SELECT COUNT(*) FROM form_hits')->fetchColumn(), 'לא נספר בקצב');
+    eq($rej, m5_rej('invalid'), 'לא נספר בדחיות');
+    $r = m5_post_form(http_build_query(['_form' => '__health__', '_t' => '9999']));
+    eq(400, $r['status']);
+    eq('*', $r['headers']['access-control-allow-origin'] ?? null, 'CORS');
 });

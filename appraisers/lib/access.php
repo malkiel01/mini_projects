@@ -17,6 +17,7 @@ const APR_ROLES = ['appraiser', 'trainee', 'staff'];
 
 /**
  * מי רשאי: public (בלי משתמש) · token (אסימון DevLoop) · user (כל משתמש פעיל) · member (חבר פעיל במשרד פעיל) ·
+ * case (קריאה בתיק: חבר משרד פעיל, או מי שיש לו שיתוף פעיל — ההכרעה לתיק עצמו ב-apr_case_get; פרוסה 05) ·
  * admin (is_admin במשרד) · sysadmin · developer.
  */
 const APR_ACCESS = [
@@ -54,15 +55,15 @@ const APR_ACCESS = [
 
     // תיקים (04): חבר פעיל במשרד; ההרשאה לכל תיק — שורה ב-case_members (apr_case_get)
     'case-options' => 'member', 'case-create' => 'member', 'case-update' => 'member', 'case-plan' => 'member',
-    'case-start' => 'member', 'case-status' => 'member', 'case-delete' => 'member', 'case' => 'member',
-    'cases' => 'member', 'case-activity' => 'member', 'case-member-add' => 'member', 'case-member-update' => 'member',
+    'case-start' => 'member', 'case-status' => 'member', 'case-delete' => 'member', 'case' => 'case',
+    'cases' => 'case', 'case-activity' => 'member', 'case-member-add' => 'member', 'case-member-update' => 'member',
     'case-member-remove' => 'member', 'case-profile-diff' => 'member', 'case-profile-apply' => 'member', 'case-identifier-add' => 'member',
     'case-identifier-update' => 'member', 'case-identifier-remove' => 'member', 'case-identifiers-conflict' => 'member', 'contacts' => 'member',
     'contact-save' => 'member', 'contact-delete' => 'member', 'case-party-add' => 'member', 'case-party-update' => 'member',
     'case-party-remove' => 'member', 'task-create' => 'member', 'task-update' => 'member', 'my-tasks' => 'member',
     'requirement-add' => 'member', 'requirement-update' => 'member',
     // מסמכים (06): ההרשאה לכל פעולה — documents / review_docs בתיק (lib/documents.php)
-    'case-docs' => 'member', 'file' => 'member', 'file-thumb' => 'member', 'docs-search' => 'member', 'docs-pending' => 'member',
+    'case-docs' => 'case', 'file' => 'case', 'file-thumb' => 'case', 'docs-search' => 'case', 'docs-pending' => 'member',
     'file-upload' => 'member', 'file-assign' => 'member', 'file-update' => 'member', 'file-delete' => 'member', 'file-review' => 'member',
     'requirement-status' => 'member', 'requirement-order' => 'member', 'requirement-split' => 'member',
     // בקשות (07): view בתיק לצפייה; contact ליצירה, שליחה, שליחה מחדש וביטול (lib/requests.php)
@@ -78,17 +79,55 @@ const APR_ACCESS = [
     'sys-inbox-reply' => 'sysadmin',
 
     // נתונים וסתירות (10): view לצפייה; edit / documents להזנה ולתיקון; review_docs + שמאי בתיק לאימות, לדחייה ולהכרעה (lib/facts.php)
-    'case-facts' => 'member', 'fact' => 'member', 'case-conflicts' => 'member', 'conflict' => 'member', 'file-facts' => 'member',
+    'case-facts' => 'case', 'fact' => 'case', 'case-conflicts' => 'member', 'conflict' => 'member', 'file-facts' => 'case',
     'fact-add' => 'member', 'fact-correct' => 'member', 'fact-state' => 'member', 'fact-delete' => 'member',
     'conflict-resolve' => 'member', 'conflict-dismiss' => 'member',
     'sys-attributes' => 'sysadmin', 'sys-attribute-save' => 'sysadmin',
 
     // מקורות, בדיקות, תכנון והיתרים (09): view לצפייה; sources לרישום; sources + שמאי בתיק לאימות, לתחולה ולאישור (lib/sources.php)
     'sources' => 'user', 'sys-sources' => 'sysadmin', 'sys-source-save' => 'sysadmin',
-    'case-sources' => 'member', 'case-source' => 'member', 'source-check' => 'member', 'source-check-plan' => 'member', 'source-file-upload' => 'member',
+    'case-sources' => 'case', 'case-source' => 'case', 'source-check' => 'case', 'source-check-plan' => 'member', 'source-file-upload' => 'member',
     'source-check-record' => 'member', 'source-check-approve' => 'member', 'source-check-verify' => 'member', 'source-check-cost' => 'member',
     'case-planning' => 'member', 'planning-item' => 'member', 'planning-add' => 'member', 'planning-update' => 'member',
     'planning-applicability' => 'member', 'planning-delete' => 'member', 'planning-task' => 'member',
+
+    // ביקור (13): view לצפייה; edit לתיאום; visit + המבקר או האחראי למילוי, לצילום ולסיום (lib/visits.php). תמונה — לפי הרשאת השימוש שלה
+    'case-visits' => 'case', 'visit' => 'case', 'my-visits' => 'member', 'visit-plan' => 'member', 'visit-update' => 'member', 'visit-start' => 'member',
+    'visit-cancel' => 'member', 'visit-answer' => 'member', 'visit-row-add' => 'member', 'visit-row-remove' => 'member', 'visit-copy' => 'member',
+    'visit-finish' => 'member', 'visit-reopen' => 'member', 'visit-photo' => 'case', 'visit-photo-upload' => 'member', 'visit-photo-update' => 'member',
+    'visit-photo-order' => 'member', 'visit-photo-delete' => 'member', 'office-visit-geo' => 'admin',
+
+    // עסקאות השוואה (15): view לצפייה; edit לחיפוש, להזנה, לייבוא ולתיקון; edit + שמאי בתיק לבחירה, להתאמות, למשקולות ולמסקנה (lib/comps.php)
+    'case-comps' => 'case', 'comp' => 'case', 'comp-set' => 'case', 'comp-search-add' => 'member', 'comp-search-update' => 'member', 'comp-add' => 'member',
+    'comp-correct' => 'member', 'comp-status' => 'member', 'comp-weight' => 'member', 'comp-note' => 'member', 'comp-delete' => 'member', 'comp-adj-save' => 'member',
+    'comp-adj-delete' => 'member', 'comp-adj-order' => 'member', 'comp-set-save' => 'member', 'comp-set-conclude' => 'member', 'comp-set-delete' => 'member',
+    'comp-import-upload' => 'member', 'comp-import-preview' => 'member', 'comp-import' => 'member', 'comp-set-member' => 'member',
+
+    // חלופות שווי וגישות שומה (16): view לצפייה (שותף — רק עם see_internal ו"עסקאות וחישובים" בהיקף: case-valuation ו-sheet בלבד);
+    // edit לפריטי רכישה ושיפוץ ולשורות קלט; edit + שמאי בתיק לחלופות, להנחות, לגישות, לנוסחאות, למשקולות ולמסקנות (lib/valuation.php)
+    'case-valuation' => 'case', 'sheet' => 'case', 'sheet-templates' => 'member',
+    'alt-save' => 'member', 'alt-primary' => 'member', 'alt-delete' => 'member', 'alt-conclude' => 'member', 'alt-recheck' => 'member',
+    'assumption-save' => 'member', 'assumption-delete' => 'member',
+    'approach-save' => 'member', 'approach-result' => 'member', 'approach-delete' => 'member',
+    'sheet-save' => 'member', 'sheet-row-save' => 'member', 'sheet-row-delete' => 'member', 'sheet-row-order' => 'member', 'sheet-delete' => 'member', 'sheet-recheck' => 'member',
+    'sheet-template-save' => 'member', 'sheet-template-use' => 'member', 'sheet-template-delete' => 'member',
+    'renovation-add' => 'member', 'renovation-delete' => 'member',
+
+    // בינה (11): הקטלוג, חיבורי המערכת, ההקצאות ומכסות המערכת — מנהל המערכת; המדיניות, החיבור האישי ומכסות הרשות — מנהל המשרד;
+    // "הבינה שלי" — כל חבר; "בלי בינה" בתיק — השמאי האחראי (lib/ai_admin.php). אין פעולה ציבורית, ואין פעולה שמפעילה מודל.
+    'sys-ai' => 'sysadmin', 'sys-ai-provider-save' => 'sysadmin', 'sys-ai-model-save' => 'sysadmin', 'sys-ai-fx-set' => 'sysadmin',
+    'sys-ai-connection-save' => 'sysadmin', 'sys-ai-connection-test' => 'sysadmin', 'sys-ai-connection-revoke' => 'sysadmin',
+    'sys-ai-assign-save' => 'sysadmin', 'sys-ai-assign-delete' => 'sysadmin', 'sys-ai-quota-save' => 'sysadmin', 'sys-ai-quota-delete' => 'sysadmin',
+    'office-ai' => 'admin', 'office-ai-policy' => 'admin', 'office-ai-connection-save' => 'admin', 'office-ai-connection-test' => 'admin',
+    'office-ai-connection-revoke' => 'admin', 'office-ai-quota-save' => 'admin', 'office-ai-quota-delete' => 'admin',
+    'my-ai' => 'member', 'ai-quota-request' => 'member', 'case-ai' => 'member', 'case-ai-set' => 'member',
+    // חילוץ וסיווג בבינה (12): ההרשאה בתיק נבדקת בכל פעולה (lib/extract.php)
+    'file-ai' => 'member', 'file-ai-run' => 'member', 'file-ai-suggestion' => 'member', 'file-ai-summary-reviewed' => 'member', 'file-ai-reject-all' => 'member', 'case-ai-auto-set' => 'member',
+
+    // שיתוף (05): הניהול — משתתף פנימי עם members בתיק (lib/shares.php); התגובה להזמנה — המוזמן עצמו; התמיכה רק רואה מה ששותף איתה.
+    // **הכלל 'case'** (למעלה) מסמן פעולת קריאה שפתוחה גם לשיתוף: רק בה apr_case_get מכיר שותף ממשרד אחר ותמיכה. כל פעולה אחרת — 404 לשותף.
+    'case-shares' => 'member', 'share-preview' => 'member', 'share-create' => 'member', 'share-revoke' => 'member',
+    'my-shares' => 'user', 'share-respond' => 'user', 'sys-support' => 'sysadmin',
 
     'office'              => 'member',
     'office-leave'        => 'member',
@@ -127,7 +166,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-valuation', 'sheet', 'sheet-templates', 'case-shares', 'my-shares', 'sys-support', 'file-ai', 'sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
@@ -197,6 +236,13 @@ function apr_authorize(array $ctx, string $action, array $in = []): void
             return;
         case 'sysadmin':
             if (!(int)$u['is_sysadmin']) apr_fail('not_found');
+            return;
+        case 'case':
+            // מי שיש לו שיתוף פעיל (או שהוא מנהל מערכת — אולי שותף איתו תיק) אינו נדרש למשרד פעיל משלו: השיתוף הוא לאדם (05 §8.1).
+            // זה עוד לא היתר לשום תיק — apr_case_get מכריע, ובלי שיתוף פעיל לתיק הזה התשובה 404.
+            if (($in['office'] ?? null) !== null && ($in['office'] ?? '') !== '') { apr_office($ctx, $in['office']); return; }    // לשונית שנושאת משרד — נבדקת כמו תמיד
+            if ((int)$u['is_sysadmin'] || apr_val("SELECT 1 FROM case_shares WHERE user_id = ? AND kind = 'cross_office' AND revoked_at IS NULL AND invite_status = 'active' LIMIT 1", [$u['id']])) return;
+            apr_office($ctx, $in['office'] ?? null);
             return;
         case 'member':
         case 'admin':

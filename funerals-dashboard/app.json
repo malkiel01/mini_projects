@@ -1,0 +1,28 @@
+{
+  "id": "funerals-dashboard",
+  "name": "ניהול לוויות חברה קדישא",
+  "icon": "🕯️",
+  "description": "ניהול תיקי לוויות: מה חסר בכל תיק, מסמכים ותשלומים, וקבצים מ-Dropbox",
+  "category": "daily",
+  "entry": "index.html",
+  "version": "1.0.0",
+  "restricted": true,
+  "gate": true,
+  "public": [
+    "ingest.php",
+    "dropbox-webhook.php",
+    "ext.php",
+    "openapi.json",
+    "sw.js",
+    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach",
+    "mcp",
+    "mcp.php",
+    ".well-known/oauth-protected-resource",
+    ".well-known/oauth-authorization-server",
+    ".well-known/openid-configuration",
+    "oauth/metadata.php",
+    "oauth/register.php",
+    "oauth/token.php",
+    "oauth/revoke.php"
+  ]
+}
