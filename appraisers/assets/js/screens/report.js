@@ -174,7 +174,7 @@ function rEditMode(body) {
     R.sec = s.pid;
     const can = rCanEdit(), judge = can && x.perms.judge, aiOpen = rAiOpen(s);
     const nav = `<nav class="rnav" aria-label="${esc(RT.sections)}">${x.sections.map(q => `<button type="button" data-rsec="${esc(q.pid)}"${q.pid === s.pid ? ' aria-current="true"' : ''}><span dir="auto">${esc(q.title)}</span>${q.mandatory ? '<i aria-hidden="true">*</i>' : ''} <small>${rSecMark(q)}</small></button>`).join('')}</nav>`;
-    const chips = `${s.mandatory ? rChip(RT.mandatory, 'warn') : ''}${rChip(RT.secStates[s.state] || s.state)}${s.origin === 'ai' ? rChip(s.ai_reviewed ? RT.aiReviewed(s.ai_reviewed_by) : RT.aiUnreviewed, s.ai_reviewed ? 'ok' : 'bad') : ''}${s.user_edited ? rChip(RT.userEdited, 'info') : ''}`;
+    const chips = `${s.mandatory ? rChip(RT.mandatory, 'warn') : ''}${s.state ? rChip(RT.secStates[s.state] || s.state) : ''}${s.origin === 'ai' ? rChip(s.ai_reviewed ? RT.aiReviewed(s.ai_reviewed_by) : RT.aiUnreviewed, s.ai_reviewed ? 'ok' : 'bad') : ''}${s.user_edited ? rChip(RT.userEdited, 'info') : ''}`;
     const p = s.proposal;
     const mine = s.lines || [], theirs = p ? p.lines : [];
     const side = (title, lines, other, cls) => `<div class="panel"><b>${esc(title)}</b><ul class="diff">${lines.length ? lines.map(l => `<li dir="auto"${other.includes(l) ? '' : ` class="${cls}"`}>${esc(l)}</li>`).join('') : `<li class="muted">${esc(RT.secStates.empty)}</li>`}</ul></div>`;
@@ -201,9 +201,10 @@ function rEditMode(body) {
     rBindVersionActions();
     $('#r-edit')?.addEventListener('click', () => rEditorOpen(s, null));
     $$('[data-rai]').forEach(b => b.addEventListener('click', async () => {
+        if (s.user_edited && !confirm(RT.aiReplaceAsk)) return;
         b.disabled = true;
         toast(RT.aiWorking);
-        try { const r = await api('report-section-ai', { body: { section: s.pid, rev: s.rev } }); toast(r.state === 'done' ? RT.aiDone : RT.aiNotDone(RT.aiWaits[r.reason] || r.reason || ''), r.state !== 'done'); } catch (e) { toastError(e); }
+        try { const r = await api('report-section-ai', { body: { section: s.pid, rev: s.rev, replace: !!s.user_edited } }); toast(r.state === 'done' ? (r.as_proposal ? RT.aiAsProposal : RT.aiDone) : RT.aiNotDone(RT.aiWaits[r.reason] || r.reason || ''), r.state !== 'done'); } catch (e) { toastError(e); }
         rReload();
     }));
     $('#r-reviewed')?.addEventListener('click', () => { if (confirm(RT.markReviewedAsk)) rAct('report-section-reviewed', { section: s.pid, rev: s.rev }); });
@@ -511,7 +512,7 @@ function rCommentsMode(body) {
 // ── עורך הפרופיל ← "דוח" (אפיון §4) ────────────────────────────
 
 const R_AI_KEYS = ['property', 'area_desc', 'visit', 'planning'];    // הרשימה הסגורה — השרת אוכף (APR_REPORT_AI_KEYS)
-const R_LOCKED = ['no_approver', 'mandatory_empty', 'ai_unreviewed', 'image_not_report'];
+const R_LOCKED = ['no_approver', 'mandatory_empty', 'ai_unreviewed', 'image_not_report', 'ai_stale', 'data_new'];
 
 function peReport(body) {
     const B = RT.b, r = PE.content.report;

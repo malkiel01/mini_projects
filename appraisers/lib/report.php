@@ -23,7 +23,14 @@ function apr_report_case(array $ctx, mixed $casePid, string $need = 'view'): arr
 {
     $c = apr_case_get($ctx, $casePid, ['view' => 'view', 'edit' => 'edit', 'judge' => 'edit', 'approve' => 'approve_report'][$need]);
     if ($need === 'judge' && !apr_comp_can_judge($ctx, $c)) apr_fail('forbidden');
+    if ($need === 'approve' && !apr_report_is_appraiser($ctx, $c)) apr_fail('forbidden');       // approve_report לבדו אינו מספיק: מאשר רק שמאי בתיק
     return $c;
+}
+
+/** שמאי בתיק: שמאי במשרד, שהוא האחראי או שותף בתיק — אותו תנאי כמו הממצא no_approver. */
+function apr_report_is_appraiser(array $ctx, array $c): bool
+{
+    return in_array($c['my_role'] ?? null, ['responsible', 'partner'], true) && ($ctx['office']['role'] ?? '') === 'appraiser';
 }
 
 /** האם המבקש רואה את הגרסה הזו: משתתף פנימי — תמיד; שותף — טיוטה רק עם see_draft בהיקף, מאושרת גם בשיתוף של כל התיק. */
@@ -104,7 +111,7 @@ function apr_report_section_out(array $ctx, array $c, array $v, array $s, bool $
 {
     $o = ['pid' => $s['pid'], 'key' => $s['key'], 'title' => $s['title'], 'mandatory' => (int)$s['mandatory'] === 1, 'build' => $s['build'], 'origin' => $s['origin'], 'state' => $s['state'],
         'ai_reviewed' => (int)$s['ai_reviewed'] === 1, 'blocks' => $s['view']];
-    if (!$internal) return $o;
+    if (!$internal) return apr_report_partner_section($o);
     $p = $s['pending'];
     $pview = $p ? apr_report_resolve($ctx, $c, json_decode($p['content'], true) ?: [], apr_report_tpl($v)) : null;
     return $o + ['rev' => (int)$s['rev'], 'ai_allowed' => (int)$s['ai_allowed'] === 1, 'ai_wait' => $s['ai_wait'], 'ai_reviewed_by' => $s['reviewed_name'], 'ai_reviewed_at' => $s['ai_reviewed_at'],
@@ -136,17 +143,30 @@ function apr_case_report_summary(array $c): ?array
     return ['versions' => count($rows), 'state' => $rows[0]['state'] ?? null];
 }
 
-function apr_report_version_head(array $v): array
+function apr_report_version_head(array $v, bool $internal = true): array
 {
-    return ['pid' => $v['pid'], 'number' => (int)$v['number'], 'state' => $v['state'], 'origin' => $v['origin'], 'rev' => (int)$v['rev'], 'created_by' => $v['created_name'], 'created_at' => $v['created_at'],
+    $h = ['pid' => $v['pid'], 'number' => (int)$v['number'], 'state' => $v['state'], 'origin' => $v['origin'], 'rev' => (int)$v['rev'], 'created_by' => $v['created_name'], 'created_at' => $v['created_at'],
         'submitted_by' => $v['submitted_name'], 'submitted_at' => $v['submitted_at'], 'approved_by' => $v['approved_name'], 'approved_at' => $v['approved_at'],
         'reopen_reason' => $v['reopen_reason'], 'stale_after_approval' => (int)$v['stale_after_approval'] === 1, 'content_hash' => $v['content_hash']];
+    // שותף ממשרד אחר: בלי הנימוק הפנימי לפתיחת הגרסה, בלי rev ובלי שמות העובדים
+    return $internal ? $h : array_diff_key($h, ['reopen_reason' => 1, 'rev' => 1, 'stale_after_approval' => 1, 'created_by' => 1, 'submitted_by' => 1, 'submitted_at' => 1]);
+}
+
+/**
+ * פרק כפי ששותף ממשרד אחר מקבל אותו: התוכן בלבד. בלי מקור הפרק וסימוני הבינה, ובלי מזהים פנימיים של נתון, עסקה או בדיקת מקור
+ * (src, fact, refs), ובלי סימוני העריכה (was / changed / ai / num_unknown).
+ */
+function apr_report_partner_section(array $s): array
+{
+    $s = array_diff_key($s, ['origin' => 1, 'ai_reviewed' => 1, 'sources' => 1, 'rev' => 1, 'state' => 1, 'build' => 1]);
+    $s['blocks'] = array_map(fn($b) => array_diff_key($b, ['src' => 1, 'fact' => 1, 'refs' => 1, 'was' => 1, 'changed' => 1, 'ai' => 1, 'num_unknown' => 1]), $s['blocks'] ?? []);
+    return $s;
 }
 
 function apr_report_perms(array $ctx, array $c): array
 {
     $open = $c['status'] !== 'closed' && $c['share'] === null;
-    return ['edit' => $open && !empty($c['perms']['edit']), 'judge' => $open && apr_comp_can_judge($ctx, $c), 'approve' => $open && !empty($c['perms']['approve_report'])];
+    return ['edit' => $open && !empty($c['perms']['edit']), 'judge' => $open && apr_comp_can_judge($ctx, $c), 'approve' => $open && !empty($c['perms']['approve_report']) && apr_report_is_appraiser($ctx, $c)];
 }
 
 // ── יצירת טיוטה (§6) ──────────────────────────────────────────
@@ -169,12 +189,11 @@ function apr_report_create(array $ctx, array $c, ?int $uid, string $origin, ?arr
     $sort = 0;
     if ($from) {
         foreach (apr_rows('SELECT * FROM report_sections WHERE version_id = ? AND deleted_at IS NULL ORDER BY sort, id', [$from['id']]) as $s) {
-            $blocks = json_decode($s['content'], true) ?: [];
-            $built = $s['build'] === 'data' ? apr_report_build($c, $s['key'], $tpl) : null;
             apr_insert('report_sections', ['pid' => apr_pid(), 'version_id' => $vid, 'key' => $s['key'], 'title' => $s['title'], 'sort' => ++$sort, 'mandatory' => $s['mandatory'], 'build' => $s['build'],
                 'ai_allowed' => $s['ai_allowed'], 'content' => $s['content'], 'origin' => $s['origin'], 'ai_run_id' => $s['ai_run_id'], 'ai_reviewed' => $s['ai_reviewed'], 'ai_reviewed_by' => $s['ai_reviewed_by'],
                 'ai_reviewed_at' => $s['ai_reviewed_at'], 'user_edited' => $s['user_edited'], 'state' => $s['state'], 'sources' => $s['sources'],
-                'auto_hash' => $built ? apr_report_hash($built['blocks']) . ':' . apr_report_data_hash($ctx, $c, $built['blocks'], $tpl) : null, 'updated_by' => $uid, 'updated_at' => $now]);
+                // ה-hash של הגרסה הקודמת, לא של הרגע: התוכן מועתק כפי שאושר, ומה שהשתנה בנתונים מאז יעלה ברענון הראשון — עדכון, הצעה או ממצא
+                'auto_hash' => $s['auto_hash'], 'ai_input_hash' => $s['ai_input_hash'], 'updated_by' => $uid, 'updated_at' => $now]);
         }
     } else {
         foreach ($tpl['sections'] as $t) {
@@ -188,6 +207,17 @@ function apr_report_create(array $ctx, array $c, ?int $uid, string $origin, ?arr
     apr_exec('UPDATE reports SET current_version_id = ? WHERE id = ?', [$vid, $rid]);
     apr_case_audit($c, 'report.draft_create', 'report_version', $pid, ['number' => (int)apr_val('SELECT number FROM report_versions WHERE id = ?', [$vid]), 'origin' => $origin, 'from' => $from['pid'] ?? null], $reason, $uid, $uid === null ? 'system' : 'user');
     return apr_row('SELECT * FROM report_versions WHERE id = ?', [$vid]);
+}
+
+/**
+ * האם התוכן הזה כבר הוצע לפרק — בגרסה הזו **או בגרסה קודמת של אותו דוח** (אותו מפתח פרק): הצעה שהוכרעה אינה חוזרת, גם לא אחרי "גרסה חדשה".
+ * $any — גם הצעה לאותו מבנה שנוצרה בגלל טקסט בינה ישן (המפתח שלה "<מבנה>#<קלט>").
+ */
+function apr_report_proposed(array $s, string $hash, bool $any = false): bool
+{
+    return (bool)apr_val('SELECT 1 FROM section_proposals p JOIN report_sections s2 ON s2.id = p.section_id JOIN report_versions v2 ON v2.id = s2.version_id
+        WHERE s2.key = ? AND v2.report_id = (SELECT report_id FROM report_versions WHERE id = ?) AND (p.content_hash = ?' . ($any ? ' OR p.content_hash LIKE ?' : '') . ')',
+        [$s['key'], $s['version_id'], $hash, ...($any ? [$hash . '#%'] : [])]);
 }
 
 /**
@@ -206,13 +236,25 @@ function apr_report_refresh(array $ctx, array $c, array $v, ?int $uid): array
             $built = apr_report_build($c, $s['key'], $tpl);
             $struct = apr_report_hash($built['blocks']);
             $hash = $struct . ':' . apr_report_data_hash($ctx, $c, $built['blocks'], $tpl);
+            // טקסט בינה שנכתב על נתונים שהשתנו מאז (B3): הסקירה מתבטלת, ונוצרת הצעה לבנות את הפרק מהנתונים של הרגע. הבקרה חוסמת עד סקירה / ניסוח מחדש
+            if ($s['origin'] === 'ai' && ($ih = apr_report_ai_input($ctx, $c, $s, $tpl)['hash']) !== $s['ai_input_hash']) {
+                if ((int)$s['ai_reviewed'] === 1) apr_report_update('report_sections', $s, (int)$s['rev'], ['ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null] + ['state' => 'drafted',
+                    'changed_note' => 'נתוני התיק השתנו אחרי שהטקסט נוסח בבינה — נדרשת סקירה מחדש'], $s['updated_by'] === null ? null : (int)$s['updated_by']);
+                if (!apr_report_proposed($s, $struct . '#' . $ih)) {
+                    apr_exec("UPDATE section_proposals SET state = 'rejected', decided_at = ? WHERE section_id = ? AND state = 'pending'", [apr_now(), $s['id']]);
+                    apr_insert('section_proposals', ['pid' => apr_pid(), 'section_id' => $s['id'], 'content' => json_encode($built['blocks'], JSON_UNESCAPED_UNICODE), 'content_hash' => $struct . '#' . $ih,
+                        'origin' => 'auto', 'reason' => 'נתוני התיק השתנו אחרי שהטקסט נוסח בבינה', 'created_at' => apr_now()]);
+                    $n['proposed']++;
+                }
+                continue;
+            }
             if ($hash === $s['auto_hash']) continue;
             if ((int)$s['user_edited'] === 0 && $s['origin'] !== 'ai') {
                 apr_report_update('report_sections', $s, (int)$s['rev'], ['content' => json_encode($built['blocks'], JSON_UNESCAPED_UNICODE), 'sources' => json_encode($built['sources'], JSON_UNESCAPED_UNICODE),
                     'auto_hash' => $hash, 'state' => $built['blocks'] ? 'drafted' : 'empty', 'changed_note' => 'נתוני התיק השתנו — הפרק נבנה מחדש'], $s['updated_by'] === null ? null : (int)$s['updated_by']);
                 $n['updated']++;
             } elseif ($struct !== explode(':', (string)$s['auto_hash'])[0] && $struct !== apr_report_hash(json_decode($s['content'], true) ?: [])
-                && !apr_val('SELECT 1 FROM section_proposals WHERE section_id = ? AND content_hash = ?', [$s['id'], $struct])) {
+                && !apr_report_proposed($s, $struct, true)) {
                 apr_exec("UPDATE section_proposals SET state = 'rejected', decided_at = ? WHERE section_id = ? AND state = 'pending'", [apr_now(), $s['id']]);     // הצעה ישנה שלא הוכרעה מוחלפת בעדכנית
                 apr_insert('section_proposals', ['pid' => apr_pid(), 'section_id' => $s['id'], 'content' => json_encode($built['blocks'], JSON_UNESCAPED_UNICODE), 'content_hash' => $struct,
                     'origin' => 'auto', 'reason' => 'נתוני התיק השתנו מאז שהפרק נערך', 'created_at' => apr_now()]);
@@ -241,21 +283,36 @@ function apr_report_ai_all(?array $ctx, array $c, array $v): void
 }
 
 /**
- * כותב לפרק את תוצאת הניסוח: טקסט הבינה (מסומן, לא נסקר) ואחריו הטבלאות, התמונות **והחוסרים** של הפרק — ניסוח בבינה אינו מעלים
- * "לא ידוע" מהבקרה; או "ממתין" עם הסיבה.
+ * כותב לפרק את תוצאת הניסוח: טקסט הבינה (מסומן, לא נסקר), אחריו הנתונים שלא נשלחו למודל (כהפניות), הטבלאות, התמונות **והחוסרים** של
+ * הפרק — ניסוח בבינה אינו מעלים "לא ידוע" מהבקרה; או "ממתין" עם הסיבה.
+ *
+ * $s — השורה **כפי שהייתה לפני הקריאה לספק**. אם הפרק השתנה בינתיים (מישהו שמר בזמן שהספק ענה) — הטקסט **אינו נכתב לפרק**: הוא נשמר
+ * כהצעה (origin = ai), והעריכה של האדם נשארת (B2) — ואז מוחזר true. עם הטקסט נשמר hash של נתוני הקלט — כך יודעים אחר כך שהטקסט נכתב לפני שינוי בנתונים (B3).
  */
-function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid): void
+function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid): bool
 {
-    $s = apr_row('SELECT * FROM report_sections WHERE id = ?', [$s['id']]);
+    $before = (int)$s['rev'];
+    $s = apr_row('SELECT s.*, v.state AS version_state FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE s.id = ?', [$s['id']]);
+    if (!$s || $s['deleted_at'] !== null || $s['version_state'] !== 'draft') return false;
+    $moved = (int)$s['rev'] !== $before;
     if ($r['state'] !== 'done') {
-        if ($r['reason'] !== 'no_data' && $r['reason'] !== 'not_allowed') apr_report_update('report_sections', $s, (int)$s['rev'], ['ai_wait' => $r['reason']], $uid);
-        return;
+        if (!$moved && $r['reason'] !== 'no_data' && $r['reason'] !== 'not_allowed') apr_report_update('report_sections', $s, (int)$s['rev'], ['ai_wait' => $r['reason']], $uid);
+        return false;
     }
     $keep = array_values(array_filter(apr_report_build($c, $s['key'], $tpl)['blocks'], fn($b) => in_array($b['type'], ['data_table', 'image', 'note_missing'], true)));
-    apr_report_update('report_sections', $s, (int)$s['rev'], ['content' => json_encode([...$r['blocks'], ...$keep], JSON_UNESCAPED_UNICODE), 'origin' => 'ai', 'ai_run_id' => $r['run'], 'ai_reviewed' => 0,
+    $content = json_encode([...$r['blocks'], ...($r['kept'] ?? []), ...$keep], JSON_UNESCAPED_UNICODE);
+    $meta = ['key' => $s['key'], 'blocks' => count($r['blocks']), 'dropped' => $r['dropped'] ?? 0, 'num_unknown' => count(array_filter($r['blocks'], fn($b) => !empty($b['num_unknown'])))];
+    if ($moved) {
+        apr_exec("UPDATE section_proposals SET state = 'rejected', decided_at = ? WHERE section_id = ? AND state = 'pending'", [apr_now(), $s['id']]);
+        apr_insert('section_proposals', ['pid' => apr_pid(), 'section_id' => $s['id'], 'content' => $content, 'content_hash' => apr_report_hash($content), 'origin' => 'ai', 'ai_run_id' => $r['run'],
+            'ai_input_hash' => $r['hash'] ?? null, 'reason' => 'הפרק נערך בזמן שהבינה ניסחה אותו — הניסוח נשמר כהצעה, והעריכה נשארה', 'created_at' => apr_now()]);
+        apr_case_audit($c, 'report.section_ai_proposal', 'report_section', $s['pid'], $meta, null, $uid, $uid === null ? 'system' : 'user');
+        return true;
+    }
+    apr_report_update('report_sections', $s, $before, ['content' => $content, 'origin' => 'ai', 'ai_run_id' => $r['run'], 'ai_input_hash' => $r['hash'] ?? null, 'ai_reviewed' => 0,
         'ai_reviewed_by' => null, 'ai_reviewed_at' => null, 'ai_wait' => null, 'state' => 'drafted', 'user_edited' => 0], $uid);
-    apr_case_audit($c, 'report.section_ai', 'report_section', $s['pid'], ['key' => $s['key'], 'blocks' => count($r['blocks']), 'dropped' => $r['dropped'] ?? 0,
-        'num_unknown' => count(array_filter($r['blocks'], fn($b) => !empty($b['num_unknown'])))], null, $uid, $uid === null ? 'system' : 'user');
+    apr_case_audit($c, 'report.section_ai', 'report_section', $s['pid'], $meta, null, $uid, $uid === null ? 'system' : 'user');
+    return false;
 }
 
 /** הטריגר: ביקור הושלם (נקרא מ-apr_visit_finish, בתוך הטרנזקציה שלו). טיוטה ראשונה — פעם אחת לתיק (17-A6); ביקור נוסף — רענון והצעות. */
@@ -300,7 +357,7 @@ function apr_case_report(array $ctx, array $q): array
         $levels = array_count_values(array_column(apr_report_findings($c, $open, apr_report_sections($ctx, $c, $open)), 'level'));
         $check = ['version' => $open['pid'], 'number' => (int)$open['number'], 'state' => $open['state'], 'block' => $levels['block'] ?? 0, 'warn' => $levels['warn'] ?? 0];
     }
-    return ['case' => apr_comp_case_head($c), 'perms' => apr_report_perms($ctx, $c), 'versions' => array_map('apr_report_version_head', $rows),
+    return ['case' => apr_comp_case_head($c), 'perms' => apr_report_perms($ctx, $c), 'versions' => array_map(fn($v) => apr_report_version_head($v, $internal), $rows),
         'trigger' => $internal ? apr_report_profile($c)['trigger'] : null, 'check' => $check,
         // "יצירת הטיוטה מתעכבת: <סיבה>" (§6.3) — המשימה נכשלה או ממתינה לטיפול
         'draft_job' => $job && !$rows && in_array($job['status'], ['failed', 'needs_action'], true) ? ['status' => $job['status'], 'error' => $job['last_error']] : null,
@@ -326,7 +383,7 @@ function apr_report_version(array $ctx, array $q): array
             $v = apr_report_version_row($c, $v['pid']);
         }
         $snap = json_decode((string)$v['snapshot'], true) ?: [];
-        return $base + ['version' => apr_report_version_head($v), 'frozen' => true, 'sections' => array_map(fn($s) => $internal ? ['sources' => apr_report_sources_out($c, $s['sources'] ?? [])] + $s : array_diff_key($s, ['sources' => 1]), $snap['sections'] ?? []),
+        return $base + ['version' => apr_report_version_head($v, $internal), 'frozen' => true, 'sections' => array_map(fn($s) => $internal ? ['sources' => apr_report_sources_out($c, $s['sources'] ?? [])] + $s : apr_report_partner_section($s), $snap['sections'] ?? []),
             'findings' => $internal ? ($snap['findings'] ?? []) : [], 'comments' => $internal ? apr_report_comments($v) : [], 'approval' => $internal ? ['by' => $snap['approved_by'] ?? null, 'at' => $v['approved_at']] : null];
     }
     if ($internal && !empty($c['perms']['edit'])) {
@@ -334,7 +391,7 @@ function apr_report_version(array $ctx, array $q): array
         $v = apr_report_version_row($c, $v['pid']);
     }
     $sections = apr_report_sections($ctx, $c, $v);
-    return $base + ['version' => apr_report_version_head($v), 'frozen' => false, 'sections' => array_map(fn($s) => apr_report_section_out($ctx, $c, $v, $s, $internal), $sections),
+    return $base + ['version' => apr_report_version_head($v, $internal), 'frozen' => false, 'sections' => array_map(fn($s) => apr_report_section_out($ctx, $c, $v, $s, $internal), $sections),
         'findings' => $internal ? apr_report_findings_out($c, $v, $sections) : [], 'comments' => $internal ? apr_report_comments($v) : [],
         'lists' => $internal ? ['tables' => APR_REPORT_TABLE_LABELS, 'attributes' => array_map(fn($a) => ['key' => $a['key'], 'label' => $a['label']], array_values(array_filter(apr_attrs_all(), fn($a) => $a['status'] === 'active'))),
             'photos' => array_map(fn($p) => ['pid' => $p['pid'], 'caption' => $p['caption']], apr_rows("SELECT p.pid, p.caption FROM visit_photos p JOIN visits vv ON vv.id = p.visit_id WHERE vv.case_id = ? AND p.deleted_at IS NULL AND p.usage = 'report' ORDER BY p.id", [$c['id']]))] : null];
@@ -359,7 +416,11 @@ function apr_report_live_hash(array $ctx, array $c, array $v): string
 {
     $tpl = apr_report_tpl($v);
     $all = [];
-    foreach (apr_rows('SELECT key, content FROM report_sections WHERE version_id = ? AND deleted_at IS NULL ORDER BY sort, id', [$v['id']]) as $s) $all[$s['key']] = apr_report_resolve($ctx, $c, json_decode($s['content'], true) ?: [], $tpl, false);
+    foreach (apr_rows('SELECT key, title, content, origin FROM report_sections WHERE version_id = ? AND deleted_at IS NULL ORDER BY sort, id', [$v['id']]) as $s) {
+        $all[$s['key']] = apr_report_resolve($ctx, $c, json_decode($s['content'], true) ?: [], $tpl, false);
+        // פרק בינה הוא טקסט, לא הפניות: הנתונים שעליהם נכתב נכנסים ל-hash בנפרד — אחרת שינוי בהם אחרי האישור לא היה מדליק "נתונים השתנו" (17-C6)
+        if ($s['origin'] === 'ai') $all[$s['key'] . '#ai'] = apr_report_ai_input($ctx, $c, $s, $tpl)['hash'];
+    }
     return apr_report_hash($all);
 }
 
@@ -426,15 +487,28 @@ function apr_report_section_save(array $ctx, array $in): array
         foreach ($blocks as &$b) if ($b['type'] === 'fact') $b['was'] = apr_report_fact_stamp($facts[$b['attr']]['value'] ?? null);
         unset($b);
         $title = array_key_exists('title', $in) ? (apr_clean_text($in['title'], 120) ?? apr_fail('report_block')) : $s['title'];
-        $ai = (bool)array_filter($blocks, fn($b) => !empty($b['ai']));
         $json = json_encode($blocks, JSON_UNESCAPED_UNICODE);
         if ($json === $s['content'] && $title === $s['title']) apr_fail('nothing_to_change');
-        apr_report_update('report_sections', $s, $rev, ['content' => $json, 'title' => $title, 'user_edited' => 1, 'state' => $blocks ? 'edited' : 'empty', 'changed_note' => null, 'origin' => $ai ? 'ai' : 'manual']
-            + ($ai ? [] : ['ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null]), (int)$ctx['user']['id']);
+        apr_report_update('report_sections', $s, $rev, ['content' => $json, 'title' => $title, 'user_edited' => 1, 'state' => $blocks ? 'edited' : 'empty', 'changed_note' => null]
+            + apr_report_origin_after($ctx, $c, $s, $blocks, $json), (int)$ctx['user']['id']);
         apr_case_audit($c, 'report.section_save', 'report_section', $s['pid'], ['key' => $s['key'], 'version' => (int)$v['number'], 'blocks' => count($blocks)]);
         apr_case_touch($c);
         return ['section' => $s['pid'], 'rev' => $rev + 1];
     });
+}
+
+/**
+ * מה קורה לסימון הבינה כשאדם שומר תוכן לפרק (🟡3). הסימון של פסקה נקבע בשרת: פסקה שהטקסט שלה זהה לטקסט בינה שהיה בפרק — עדיין בינה,
+ * מה שלא יישלח מהמסך. הסימון של הפרק יורד רק ב-report-section-reviewed, או כש**שמאי בתיק** שינה בפועל את כל טקסט הבינה. מי שאינו שמאי
+ * אינו מוריד אותו: הפרק נשאר "בינה", וסקירה שכבר נעשתה מתבטלת כשהתוכן השתנה.
+ */
+function apr_report_origin_after(array $ctx, array $c, array $s, array $blocks, string $json): array
+{
+    $reset = ['ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null];
+    if ($s['origin'] !== 'ai') return ['origin' => 'manual'] + $reset;
+    $ai = (bool)array_filter($blocks, fn($b) => !empty($b['ai']));
+    if (apr_comp_can_judge($ctx, $c)) return $ai ? ['origin' => 'ai'] : ['origin' => 'manual'] + $reset;
+    return ['origin' => 'ai'] + ($json !== $s['content'] ? $reset : []);
 }
 
 function apr_report_section_case(mixed $pid): ?string
@@ -492,7 +566,7 @@ function apr_report_rebuild(array $ctx, array $in): array
             $built = apr_report_build($c, $s['key'], $tpl);
             apr_report_update('report_sections', $s, (int)$s['rev'], ['content' => json_encode($built['blocks'], JSON_UNESCAPED_UNICODE), 'sources' => json_encode($built['sources'], JSON_UNESCAPED_UNICODE),
                 'auto_hash' => apr_report_hash($built['blocks']) . ':' . apr_report_data_hash($ctx, $c, $built['blocks'], $tpl), 'origin' => 'auto', 'user_edited' => 0, 'state' => $built['blocks'] ? 'drafted' : 'empty',
-                'ai_run_id' => null, 'ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null, 'changed_note' => null], (int)$ctx['user']['id']);
+                'ai_run_id' => null, 'ai_input_hash' => null, 'ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null, 'changed_note' => null], (int)$ctx['user']['id']);
             apr_exec("UPDATE section_proposals SET state = 'rejected', decided_by = ?, decided_at = ? WHERE section_id = ? AND state = 'pending'", [(int)$ctx['user']['id'], apr_now(), $s['id']]);
             $done[] = $s['pid'];
         }
@@ -501,7 +575,10 @@ function apr_report_rebuild(array $ctx, array $in): array
     });
 }
 
-/** report-section-ai {section, rev} — "ניסוח עכשיו": מנסח פרק אחד בבינה. רק פרק שהתבנית מתירה, ורק דרך השער. הטקסט מסומן וממתין לסקירה. */
+/**
+ * report-section-ai {section, rev, replace?} — "ניסוח עכשיו": מנסח פרק אחד בבינה. רק פרק שהתבנית מתירה, ורק דרך השער. הטקסט מסומן וממתין
+ * לסקירה. פרק שנערך בידי אדם מנוסח מחדש רק עם replace: true מפורש (המסך שואל) — אחרת 409, ואין קריאה לספק.
+ */
 function apr_report_section_ai(array $ctx, array $in): array
 {
     $c = apr_report_case($ctx, apr_report_section_case($in['section'] ?? null), 'edit');
@@ -510,12 +587,13 @@ function apr_report_section_ai(array $ctx, array $in): array
     $v = apr_report_draft($c, apr_val('SELECT pid FROM report_versions WHERE id = ?', [$s['version_id']]));
     if ((int)$s['ai_allowed'] !== 1 || in_array($s['key'], APR_REPORT_NO_AI, true) || !in_array($s['key'], APR_REPORT_AI_KEYS, true)) apr_fail('report_no_ai');
     if ((int)$s['rev'] !== $rev) throw new AprVisitError('report_changed', ['by' => null]);
+    if ((int)$s['user_edited'] === 1 && ($in['replace'] ?? false) !== true) apr_fail('report_replace');
     if (!apr_limit('ai-report:u' . $ctx['user']['id'], ...APR_REPORT_RATE_AI)) apr_fail('ai_rate');
     $tpl = apr_report_tpl($v);
     $r = apr_report_ai_section($ctx, $c, $s, $tpl, 'rd:' . $s['pid'] . ':' . $s['rev']);
-    apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, (int)$ctx['user']['id']));
+    $asProposal = apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, (int)$ctx['user']['id']));
     apr_case_touch($c);
-    return ['state' => $r['state'], 'reason' => $r['reason'], 'rev' => (int)apr_val('SELECT rev FROM report_sections WHERE id = ?', [$s['id']])];
+    return ['state' => $r['state'], 'reason' => $r['reason'], 'as_proposal' => $asProposal, 'rev' => (int)apr_val('SELECT rev FROM report_sections WHERE id = ?', [$s['id']])];
 }
 
 /** report-section-reviewed {section, rev} — שמאי בתיק מסמן שסקר את טקסט הבינה. בלי זה אין אישור (ממצא חוסם). */
@@ -525,9 +603,10 @@ function apr_report_section_reviewed(array $ctx, array $in): array
     $rev = apr_report_rev($in['rev'] ?? null);
     return apr_tx(function () use ($ctx, $c, $in, $rev) {
         $s = apr_report_section_row($c, $in['section'] ?? null);
-        apr_report_draft($c, apr_val('SELECT pid FROM report_versions WHERE id = ?', [$s['version_id']]));
+        $v = apr_report_draft($c, apr_val('SELECT pid FROM report_versions WHERE id = ?', [$s['version_id']]));
         if ($s['origin'] !== 'ai' || (int)$s['ai_reviewed'] === 1) apr_fail('nothing_to_change');
-        apr_report_update('report_sections', $s, $rev, ['ai_reviewed' => 1, 'ai_reviewed_by' => (int)$ctx['user']['id'], 'ai_reviewed_at' => apr_now(), 'state' => 'reviewed'], (int)$ctx['user']['id']);
+        // הסקירה היא מול הנתונים של הרגע: מעכשיו הם הבסיס שממנו נמדד "הנתונים השתנו אחרי שהטקסט נכתב" (B3)
+        apr_report_update('report_sections', $s, $rev, ['ai_input_hash' => apr_report_ai_input($ctx, $c, $s, apr_report_tpl($v))['hash'], 'ai_reviewed' => 1, 'ai_reviewed_by' => (int)$ctx['user']['id'], 'ai_reviewed_at' => apr_now(), 'state' => 'reviewed'], (int)$ctx['user']['id']);
         apr_case_audit($c, 'report.section_reviewed', 'report_section', $s['pid'], ['key' => $s['key']]);
         return ['section' => $s['pid'], 'rev' => $rev + 1];
     });
@@ -547,15 +626,26 @@ function apr_report_proposal_decide(array $ctx, array $in): array
         if ($decision !== 'reject') {
             $tpl = apr_report_tpl($v);
             $proposed = json_decode($p['content'], true) ?: [];
-            $blocks = $decision === 'accept' ? $proposed : apr_report_blocks_in($c, $in['content'] ?? null, json_decode($s['content'], true) ?: []);
+            $fromAi = $p['origin'] === 'ai';
+            $blocks = $decision === 'accept' ? $proposed : apr_report_blocks_in($c, $in['content'] ?? null, [...(json_decode($s['content'], true) ?: []), ...($fromAi ? $proposed : [])]);
             if ($decision === 'merge') {
                 $facts = apr_report_facts($c);
                 foreach ($blocks as &$b) if ($b['type'] === 'fact') $b['was'] = apr_report_fact_stamp($facts[$b['attr']]['value'] ?? null);
                 unset($b);
             }
-            apr_report_update('report_sections', $s, (int)$s['rev'], ['content' => json_encode($blocks, JSON_UNESCAPED_UNICODE), 'user_edited' => $decision === 'merge' ? 1 : 0, 'origin' => $decision === 'merge' ? 'manual' : 'auto',
-                'state' => $decision === 'merge' ? 'edited' : 'drafted', 'auto_hash' => apr_report_hash($proposed) . ':' . apr_report_data_hash($ctx, $c, $proposed, $tpl), 'ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null,
-                'changed_note' => null], $uid);
+            $json = json_encode($blocks, JSON_UNESCAPED_UNICODE);
+            $reset = ['ai_reviewed' => 0, 'ai_reviewed_by' => null, 'ai_reviewed_at' => null];
+            $aiSet = ['origin' => 'ai', 'ai_run_id' => $p['ai_run_id'], 'ai_input_hash' => $p['ai_input_hash']] + $reset;
+            if ($decision === 'accept') {
+                // הצעה שמקורה בבינה (ניסוח שהגיע אחרי עריכה, B2) נכנסת כטקסט בינה שלא נסקר; הצעה מהנתונים — כפרק שנבנה מהנתונים
+                $set = $fromAi ? $aiSet : ['origin' => 'auto', 'ai_input_hash' => null, 'auto_hash' => apr_report_hash($proposed) . ':' . apr_report_data_hash($ctx, $c, $proposed, $tpl)] + $reset;
+            } else {
+                // מיזוג אינו מסיר את סימון הבינה (🟡3): אותו כלל כמו בשמירה. טקסט בינה שנכנס מההצעה — הפרק "בינה", לא נסקר
+                $took = $fromAi && array_filter($blocks, fn($b) => !empty($b['ai']));
+                $set = $took ? $aiSet : apr_report_origin_after($ctx, $c, $s, $blocks, $json);
+                if (!$fromAi) $set['auto_hash'] = apr_report_hash($proposed) . ':' . apr_report_data_hash($ctx, $c, $proposed, $tpl);
+            }
+            apr_report_update('report_sections', $s, (int)$s['rev'], ['content' => $json, 'user_edited' => $decision === 'merge' ? 1 : 0, 'state' => $decision === 'merge' ? 'edited' : 'drafted', 'changed_note' => null] + $set, $uid);
         }
         apr_exec('UPDATE section_proposals SET state = ?, decided_by = ?, decided_at = ? WHERE id = ?', [['accept' => 'accepted', 'reject' => 'rejected', 'merge' => 'merged'][$decision], $uid, apr_now(), $p['id']]);
         apr_case_audit($c, 'report.proposal_' . $decision, 'report_section', $s['pid'], ['key' => $s['key'], 'proposal' => $p['pid']]);
@@ -586,6 +676,7 @@ function apr_report_comment_resolve(array $ctx, array $in): array
     $k = apr_is_pid($in['comment'] ?? null) ? apr_row('SELECT k.*, v.pid AS version_pid FROM report_comments k JOIN report_versions v ON v.id = k.version_id WHERE k.pid = ?', [$in['comment']]) : null;
     $c = apr_report_case($ctx, $k ? apr_doc_case_pid('report_versions', $k['version_pid']) : null, 'edit');
     if ($k['resolved_at'] !== null) apr_fail('nothing_to_change');
+    if (!in_array(apr_report_version_row($c, $k['version_pid'])['state'], APR_REPORT_OPEN, true)) apr_fail('report_approved');       // גרסה שאושרה קפואה — גם ההערות שלה
     apr_exec('UPDATE report_comments SET resolved_at = ?, resolved_by = ? WHERE id = ?', [apr_now(), (int)$ctx['user']['id'], $k['id']]);
     apr_case_audit($c, 'report.comment_resolve', 'report_version', $k['version_pid'], ['comment' => $k['pid']]);
     return ['comment' => $k['pid']];

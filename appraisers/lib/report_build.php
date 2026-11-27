@@ -22,10 +22,10 @@ const APR_REPORT_TABLES = ['identifiers', 'documents', 'source_checks', 'comps',
 const APR_REPORT_SRC_TYPES = ['case', 'fact', 'file', 'source_check', 'visit', 'comp'];
 const APR_REPORT_MAX_BLOCKS = 200;
 const APR_REPORT_MAX_SECTIONS = 30;
-/** ממצאי הבקרה (§9): ברירת המחדל, והאם אפשר להוריד מ"חוסם" (ארבעת הראשונים — לא). */
+/** ממצאי הבקרה (§9): ברירת המחדל, והאם הממצא נעול כ"חוסם" (ארבעת הראשונים, ai_stale ו-data_new — נעולים). */
 const APR_REPORT_FINDINGS = [
     'no_approver' => ['block', true], 'mandatory_empty' => ['block', true], 'ai_unreviewed' => ['block', true], 'image_not_report' => ['block', true],
-    'ai_number' => ['block', false], 'proposal_pending' => ['block', false],
+    'ai_number' => ['block', false], 'proposal_pending' => ['block', false], 'ai_stale' => ['block', true], 'data_new' => ['block', true],
     'req_open' => ['warn', false], 'conflict_open' => ['warn', false], 'fact_unverified' => ['warn', false], 'source_unchecked' => ['warn', false], 'task_open' => ['warn', false],
     'small_sample' => ['warn', false], 'comp_missing' => ['warn', false], 'alt_no_key_date' => ['warn', false], 'alt_no_assumptions' => ['warn', false], 'note_missing' => ['warn', false],
     'alt_no_conclusion' => ['warn', false], 'fact_changed' => ['warn', false], 'doc_gone' => ['warn', false],
@@ -140,7 +140,7 @@ function apr_report_blocks_in(array $c, mixed $in, array $prev = []): array
             default => apr_fail('report_block'),
         };
         if ($o['type'] === 'p' && isset($flagged[$o['text']])) $o['num_unknown'] = $flagged[$o['text']];
-        if ($o['type'] === 'p' && ($b['ai'] ?? false) === true && in_array($o['text'], array_column(array_filter($prev, fn($x) => !empty($x['ai'])), 'text'), true)) $o['ai'] = true;
+        if ($o['type'] === 'p' && in_array($o['text'], array_column(array_filter($prev, fn($x) => !empty($x['ai'])), 'text'), true)) $o['ai'] = true;       // נקבע בשרת, לא לפי מה שהמסך שלח
         $out[] = $o + ($src !== null ? ['src' => $src] : []);
     }
     return $out;
@@ -243,7 +243,7 @@ function apr_report_table(array $ctx, array $c, string $table, array $tpl): arra
             break;
         case 'alternatives':
             $t['cols'] = ['חלופה', 'המועד הקובע', 'תיאור המצב', 'מסקנת השמאי (₪)'];
-            foreach (apr_rows('SELECT * FROM alternatives WHERE case_id = ? AND deleted_at IS NULL ORDER BY sort, id', [$c['id']]) as $a) $add([$a['name'], $a['key_date'], $a['state_note'], $a['conclusion_value'] === null ? null : apr_val_money($a['conclusion_value'])['nis']]);
+            foreach (apr_rows('SELECT * FROM alternatives WHERE case_id = ? AND deleted_at IS NULL ORDER BY sort, id', [$c['id']]) as $a) $add([$a['name'], $a['key_date'], $a['state_note'], $a['conclusion_value'] === null ? null : apr_comp_dec_out($a['conclusion_value'], 2)]);     // המחרוזת של המנוע (כמו במסך השומה) — הדוח אינו מעגל מחדש
             break;
         case 'approaches':
             $t['cols'] = ['חלופה', 'גישה', 'נימוק', 'תוצאה (₪)', 'משקל'];
@@ -396,9 +396,11 @@ function apr_report_findings(array $c, array $version, array $sections): array
     $tpl = json_decode((string)$version['template'], true) ?: apr_pc_report_default();
     $levels = ($tpl['findings'] ?? []) + array_map(fn($f) => $f[0], APR_REPORT_FINDINGS);
     $out = [];
+    // ממצא אחד לכל מפתח: שני "לא ידוע" זהים באותו פרק הם ממצא אחד, עם נימוק אחד (הנימוקים נשמרים לפי מפתח)
     $add = function (string $kind, string $id, string $text, ?string $section = null, ?array $link = null) use (&$out, $levels) {
-        $out[] = ['key' => $kind . ':' . $id, 'kind' => $kind, 'level' => APR_REPORT_FINDINGS[$kind][1] ? 'block' : $levels[$kind], 'text' => $text, 'section' => $section, 'link' => $link];
+        $out[$kind . ':' . $id] ??= ['key' => $kind . ':' . $id, 'kind' => $kind, 'level' => APR_REPORT_FINDINGS[$kind][1] ? 'block' : $levels[$kind], 'text' => $text, 'section' => $section, 'link' => $link];
     };
+    $nobody = ['user' => null, 'office' => null];
     // אין שמאי מורשה לאשר: משתתף פעיל בתיק עם approve_report, שהוא שמאי פעיל במשרד
     $approver = false;
     foreach (apr_rows("SELECT cm.perms FROM case_members cm JOIN memberships m ON m.user_id = cm.user_id AND m.office_id = ? AND m.deleted_at IS NULL AND m.status = 'active' AND m.role = 'appraiser'
@@ -412,6 +414,15 @@ function apr_report_findings(array $c, array $version, array $sections): array
         if ((int)$s['mandatory'] === 1 && !apr_report_has_content($blocks)) $add('mandatory_empty', $s['key'], 'פרק חובה ריק: ' . $s['title'], $s['pid']);
         if ($s['origin'] === 'ai' && (int)$s['ai_reviewed'] === 0) $add('ai_unreviewed', $s['key'], 'טקסט שנכתב בבינה ולא נסקר: ' . $s['title'], $s['pid']);
         if ($s['pending'] ?? false) $add('proposal_pending', $s['key'], 'הצעת עדכון שלא הוכרעה: ' . $s['title'], $s['pid']);
+        // B3: טקסט בינה הוא טקסט, לא הפניה — כשהנתונים שעליהם נכתב השתנו, המספר שבטקסט ישן. חוסם עד סקירה מחדש / ניסוח מחדש / בנייה מהנתונים
+        if ($s['origin'] === 'ai' && apr_report_ai_input($nobody, $c, $s, $tpl)['hash'] !== ($s['ai_input_hash'] ?? null)) $add('ai_stale', $s['key'], 'טקסט בינה נכתב לפני שינוי בנתונים: ' . $s['title'], $s['pid']);
+        // נתון שהגיע אחרי ההעברה לבדיקה (🟡5): בבדיקה הפרקים קפואים ואין רענון — מבנה הפרק שהנתונים מכתיבים עכשיו שונה ממה שבפרק
+        if ($version['state'] === 'in_review' && $s['build'] === 'data') {
+            $struct = apr_report_hash(apr_report_build($c, $s['key'], $tpl)['blocks']);
+            if ($struct !== explode(':', (string)$s['auto_hash'])[0] && $struct !== apr_report_hash($s['blocks']) && !apr_report_proposed($s, $struct, true)) {
+                $add('data_new', $s['key'], 'הגיע מידע חדש אחרי ההעברה לבדיקה — יש להחזיר לעריכה: ' . $s['title'], $s['pid']);
+            }
+        }
         foreach ($blocks as $i => $b) {
             if ($b['type'] === 'image' && $b['state'] !== 'ok') $add('image_not_report', $s['key'] . ':' . $b['photo'], $b['state'] === 'removed' ? 'תמונה שבדוח הוסרה' : 'תמונה בדוח בלי הרשאת שימוש "דוח"', $s['pid']);
             if ($b['type'] === 'p' && !empty($b['num_unknown'])) $add('ai_number', $s['key'] . ':' . substr(apr_report_hash($b['text']), 0, 12), 'מספר שלא נמצא בנתונים: ' . implode(', ', $b['num_unknown']), $s['pid']);
@@ -450,7 +461,7 @@ function apr_report_findings(array $c, array $version, array $sections): array
             FROM facts f LEFT JOIN files fl ON fl.id = f.source_file_id WHERE f.pid = ?", [$factPid]);
         if ($f && $f['source_file_id'] !== null && ($f['gone'] !== null || $f['review'] === 'returned')) $add('doc_gone', $factPid, ($f['gone'] !== null ? 'המסמך שהנתון נשען עליו נמחק: ' : 'המסמך שהנתון נשען עליו הוחזר להשלמה: ') . $label, null, ['type' => 'fact', 'pid' => $factPid, 'attr' => $attrKey]);
     }
-    return $out;
+    return array_values($out);
 }
 
 // ── ניסוח בבינה (§6.2–§6.4) ───────────────────────────────────
@@ -625,5 +636,5 @@ function apr_report_ai_section(?array $ctx, array $c, array $section, array $tpl
     if ($r['status'] === 'blocked') return ['state' => 'wait', 'reason' => in_array($r['block_reason'], APR_REPORT_AI_WAITS, true) ? $r['block_reason'] : 'failed', 'blocks' => [], 'run' => $run, 'dropped' => 0];
     $parsed = $r['status'] === 'done' && is_string($r['text'] ?? null) && ($r['stop_reason'] ?? 'end_turn') === 'end_turn' ? apr_report_ai_parse($r['text'], $in['items']) : null;
     if ($parsed === null || !$parsed['blocks']) return ['state' => 'wait', 'reason' => 'failed', 'blocks' => [], 'run' => $run, 'dropped' => $parsed['dropped'] ?? 0];
-    return ['state' => 'done', 'reason' => null, 'blocks' => $parsed['blocks'], 'run' => $run, 'dropped' => $parsed['dropped']];
+    return ['state' => 'done', 'reason' => null, 'blocks' => $parsed['blocks'], 'run' => $run, 'dropped' => $parsed['dropped'], 'kept' => $in['kept'], 'hash' => $in['hash']];
 }

@@ -1,7 +1,7 @@
 -- פרוסה 17 — הדוח: פרקים, טיוטה אוטומטית, בקרה ואישור (docs/spec/17-report.md §3).
 -- הדוח הוא תוכן ונתונים בתוך התיק. גרסה שאושרה אינה משתנה — לא בקוד ולא במסד: הטריגרים כאן הם הקו האחרון (17-C5).
 -- עמודות שאינן ב-§3 (מוסברות ב-README, "17 · סטיות"): report_versions.deleted_*, report_versions.data_hash, report_versions.reopen_reason,
--- report_sections.build / ai_allowed / auto_hash / ai_wait / deleted_*, section_proposals.rev.
+-- report_sections.build / ai_allowed / auto_hash / ai_input_hash / ai_wait / deleted_*, section_proposals.ai_run_id / ai_input_hash.
 
 CREATE TABLE reports (
     id                  INTEGER PRIMARY KEY,
@@ -95,6 +95,7 @@ CREATE TABLE report_sections (
     state           TEXT NOT NULL DEFAULT 'empty' CHECK (state IN ('empty', 'drafted', 'edited', 'reviewed')),
     sources         TEXT NOT NULL DEFAULT '[]',                               -- JSON: [{type, pid, label}]
     auto_hash       TEXT,                                                     -- hash של התוכן שנבנה מהנתונים בפעם האחרונה — כך מזהים "הגיע מידע חדש"
+    ai_input_hash   TEXT,                                                     -- hash של נתוני הקלט שנשלחו לבינה כשהטקסט נוסח (או נסקר): שונה מהנתונים של הרגע ← הטקסט ישן
     changed_note    TEXT,                                                     -- "עודכן: <מה השתנה>" לפרק שלא נערך
     rev             INTEGER NOT NULL DEFAULT 1,
     updated_by      INTEGER REFERENCES users (id),
@@ -125,6 +126,8 @@ CREATE TABLE section_proposals (
     content     TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     origin      TEXT NOT NULL CHECK (origin IN ('auto', 'ai')),
+    ai_run_id   INTEGER REFERENCES ai_runs (id),                              -- להצעה שמקורה בבינה: הריצה, ונתוני הקלט שלה
+    ai_input_hash TEXT,
     reason      TEXT NOT NULL,
     state       TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'accepted', 'rejected', 'merged')),
     created_at  TEXT NOT NULL,

@@ -481,12 +481,12 @@ $r = $tryApprove($VK); $blocked['mandatory_empty'] = [code($r), $errKinds($r)];
 $save($empty['pid'], $P_TEXT);
 $submit($VK);
 apr_exec("UPDATE memberships SET role = 'staff' WHERE user_id = (SELECT id FROM users WHERE email = 'avi@example.com')");     // האחראי כבר אינו שמאי במשרד
-$r = $approve($VK, $acksAll($VK)); $blocked['no_approver'] = [code($r), $errKinds($r)];
+$r = $approve($VK, $acksAll($VK)); $blocked['no_approver'] = [code($r), array_values(array_intersect(['no_approver'], $blocking($VK)))];     // 🟡2: מי שאינו שמאי אינו מאשר — והממצא מוצג בבקרה
 apr_exec("UPDATE memberships SET role = 'appraiser' WHERE user_id = (SELECT id FROM users WHERE email = 'avi@example.com')");
 $post('report-return', ['version' => $VK, 'rev' => $vvrev($VK)]);
 $aiS = $sec($ver($VK)[1], 'visit');
 $fake->next = fn() => reply(['blocks' => [['text' => 'לא נערך ביקור בנכס', 'src' => 'd1']]]);
-$post('report-section-ai', ['section' => $aiS['pid'], 'rev' => $aiS['rev']]);
+$post('report-section-ai', ['section' => $aiS['pid'], 'rev' => $aiS['rev'], 'replace' => true]);
 $r = $tryApprove($VK); $blocked['ai_unreviewed'] = [code($r), $errKinds($r)];
 $aiS = $sec($ver($VK)[1], 'visit');
 $rvw = $post('report-section-reviewed', ['section' => $aiS['pid'], 'rev' => $aiS['rev']]);
@@ -520,7 +520,7 @@ $r = $tryApprove($VK); $blocked['image_not_report'] = [code($r), $errKinds($r)];
 $imgState = $sec($ver($VK)[1], 'visit')['blocks'][1]['state'] ?? null;
 apr_exec("UPDATE visit_photos SET usage = 'report', rights_by = 1, rights_at = ?, rev = rev + 1 WHERE pid = ?", [apr_now(), $PH]);
 eq([$blocked, $rvw[0], $svImg[0], $imgState, $sec($ver($VK)[1], 'visit')['blocks'][1]['state'] ?? null, $blocking($VK), $versions($CK)[0]['state'], $versions($CK)[0]['approved_at']],
-    [['mandatory_empty' => ['report_blocked', ['mandatory_empty']], 'no_approver' => ['report_blocked', ['no_approver']], 'ai_unreviewed' => ['report_blocked', ['ai_unreviewed']], 'ai_number' => ['report_blocked', ['ai_number']],
+    [['mandatory_empty' => ['report_blocked', ['mandatory_empty']], 'no_approver' => ['forbidden', ['no_approver']], 'ai_unreviewed' => ['report_blocked', ['ai_unreviewed']], 'ai_number' => ['report_blocked', ['ai_number']],
         'proposal_pending' => ['report_blocked', ['proposal_pending']], 'image_not_report' => ['report_blocked', ['image_not_report']]], 200, 200, 'not_report', 'ok', [], 'draft', null],
     '17-C2 כל אחד מששת הממצאים החוסמים — פרק חובה ריק, אין שמאי מורשה, טקסט בינה שלא נסקר, מספר שלא נמצא בנתונים, הצעה שלא הוכרעה, תמונה בלי הרשאת "דוח" — דוחה את האישור, והתשובה נושאת את הממצא; כשכולם תוקנו — אין חוסם');
 $fake->next = $echo;
@@ -624,7 +624,7 @@ $pw = [code($save($s0['pid'] ?? '', $P_TEXT, $boaz, 1)), code($post('report-subm
     code($post('report-comment-add', ['version' => $VS2, 'text' => 'x'], $boaz)), code($post('report-draft-create', ['case' => $CS], $boaz)), code(call('GET', 'report-compare', [], $boaz, ['version' => $VS2, 'with' => $VS2]))];
 eq([[$acc1, $acc2, $acc3], $noDraft, $finalOnly, $pd[0], array_column($report($CS2, $boaz)[1]['versions'], 'state'), array_keys($s0), $pd[1]['findings'], $pd[1]['lists'] ?? null, $pw],
     [[200, 200, 200], [200, [], 404], [['approved', 'superseded'], 200, [], [], false, null, ['edit' => false, 'judge' => false, 'approve' => false]], 200, ['draft'],
-        ['pid', 'key', 'title', 'mandatory', 'build', 'origin', 'state', 'ai_reviewed', 'blocks'], [], null, array_fill(0, 6, 'not_found')],
+        ['pid', 'key', 'title', 'mandatory', 'blocks'], [], null, array_fill(0, 6, 'not_found')],
     '17-D3 שותף ממשרד אחר: בלי see_draft — הטיוטה אינה ברשימה ואינה נקראת (404), גרסה מאושרת כן (בלי בקרה, הערות ומקורות); עם see_draft — הטיוטה נקראת, הפרקים בלבד; כל פעולה משנה — 404');
 
 // ═══ מקרי קצה ═════════════════════════════════════════════════
@@ -698,6 +698,81 @@ eq([[$pvg[0], $mkg[0], $accg[0]], call('GET', 'case', [], $gil, ['case' => $CK])
     [$cpB('marked'), $cpB('omit')], code($post('report-version-new', ['case' => $CNV, 'reason' => 'אין מה לפתוח'])), str_contains($delMsg, 'report_versions: no delete')],
     [[200, 200, 200], 200, 404, 'not_found', ['block', 'block'], [true, false], 'report_state', true],
     'שותף בשיתוף פריטים אינו קורא גם גרסה שאושרה; ממצא נעול חוסם גם כשהתבנית אומרת "אזהרה"; include_unverified = omit; "גרסה חדשה" רק כשיש גרסה שאושרה; גרסה אינה נמחקת מהמסד (טריגר)');
+
+// ═══ סבב 2 ═══════════════════════════════════════════════════
+// B2: עריכה ידנית שנשמרה **בזמן** הקריאה לספק אינה נדרסת — הניסוח נשמר כהצעה (origin = ai), והפרק נשאר כפי שהאדם שמר אותו
+$CR = make_case($avi, $PM);
+$members($CR);
+$FR = $fact($CR, 'area', '85.5', ['unit' => 'sqm', 'area_kind' => 'registered'])[1]['fact']['pid'];
+$post('case-ai-set', ['case' => $CR, 'no_ai' => true]);
+$post('report-draft-create', ['case' => $CR]);
+$post('case-ai-set', ['case' => $CR, 'no_ai' => false]);
+$VR = $versions($CR)[0]['pid'];
+$fill($VR);
+$adR = $sec($ver($VR)[1], 'area_desc');
+$during = null;
+$fake->next = function () use (&$during, $save, $adR) {
+    $during = $save($adR['pid'], [['type' => 'p', 'text' => 'עריכה ידנית שנשמרה בזמן הקריאה לספק']]);
+    return reply(['blocks' => [['text' => 'שטח הדירה 85.5 מ"ר (רשום)', 'src' => 'd1']]]);
+};
+$aiR = $post('report-section-ai', ['section' => $adR['pid'], 'rev' => $adR['rev']]);
+$adR2 = $sec($ver($VR)[1], 'area_desc');
+$propRow = apr_row("SELECT p.* FROM section_proposals p JOIN report_sections s ON s.id = p.section_id WHERE s.pid = ? AND p.state = 'pending'", [$adR['pid']]);
+// "ניסוח עכשיו" על פרק שנערך ידנית: רק עם replace: true מפורש — ובלי זה אין קריאה לספק (🟡8)
+$callsR = count($fake->calls);
+$noReplace = code($post('report-section-ai', ['section' => $adR2['pid'], 'rev' => $adR2['rev']]));
+$callsR2 = count($fake->calls);
+$accR = $post('report-proposal-decide', ['proposal' => $adR2['proposal']['pid'] ?? '', 'decision' => 'accept']);
+$adR3 = $sec($ver($VR)[1], 'area_desc');
+eq([$during[0] ?? null, $aiR[1]['state'] ?? null, $aiR[1]['as_proposal'] ?? null, $adR2['blocks'][0]['text'] ?? null, $adR2['origin'], $adR2['user_edited'], $adR2['proposal']['origin'] ?? null, $propRow['ai_run_id'] !== null, $propRow['ai_input_hash'] !== null,
+    $noReplace, $callsR2 - $callsR, $accR[0], $adR3['origin'], $adR3['ai_reviewed'], $adR3['blocks'][0]['text'] ?? null, $adR3['blocks'][0]['ai'] ?? null, in_array('ai_unreviewed', $blocking($VR), true)],
+    [200, 'done', true, 'עריכה ידנית שנשמרה בזמן הקריאה לספק', 'manual', true, 'ai', true, true, 'report_replace', 0, 200, 'ai', false, 'שטח הדירה 85.5 מ"ר (רשום)', true, true],
+    'B2: שמירה ידנית מתוך הקריאה לספק ← הטקסט של האדם נשאר, והניסוח נשמר כהצעה שמקורה בבינה; קבלת ההצעה ← טקסט בינה שלא נסקר (חוסם); 🟡8: "ניסוח עכשיו" על פרק שנערך בלי replace ← 409 ובלי קריאה לספק');
+
+// B3: 85.5 ← טקסט בינה ← "נבדק" ← הנתון מתוקן ל-120 ← הסקירה מתבטלת, נוצרת הצעה, והבקרה חוסמת ("טקסט בינה נכתב לפני שינוי בנתונים") — האישור נדחה
+$rvR = $post('report-section-reviewed', ['section' => $adR3['pid'], 'rev' => $adR3['rev']]);
+$cleanR = $blocking($VR);
+$post('fact-correct', ['fact' => $FR, 'rev' => $frev($FR), 'value' => '120', 'correction_note' => 'מדידה חוזרת']);
+$adR4 = $sec($ver($VR)[1], 'area_desc');
+$blockR = $blocking($VR);
+$rejectAll($VR);
+$r = $tryApprove($VR);
+$blockR2 = [code($r), $errKinds($r)];
+// דחיית ההצעה אינה מנקה את הממצא; סקירה מחדש (מול הנתונים של הרגע) — כן. ואז שמירה חוזרת של אותו טקסט אינה מסירה את סימון הבינה (🟡3)
+$adR5 = $sec($ver($VR)[1], 'area_desc');
+$post('report-section-reviewed', ['section' => $adR5['pid'], 'rev' => $adR5['rev']]);
+$blockR3 = $blocking($VR);
+$adR6 = $sec($ver($VR)[1], 'area_desc');
+$strip = fn(array $bl) => array_map(fn($b) => array_intersect_key($b, ['type' => 1, 'text' => 1, 'attr' => 1, 'table' => 1, 'what' => 1, 'photo' => 1]), $bl);
+$reSave = $save($adR6['pid'], [...$strip($adR6['blocks']), ['type' => 'p', 'text' => 'תוספת של עובדת המשרד']], $tal);          // בלי ai: true, ובידי מי שאינה שמאית
+$adR7 = $sec($ver($VR)[1], 'area_desc');
+$aviSave = $save($adR7['pid'], [...$strip($adR7['blocks']), ['type' => 'p', 'text' => 'תוספת של השמאי']]);                      // שמאי, והטקסט של הבינה לא השתנה
+$adR8 = $sec($ver($VR)[1], 'area_desc');
+$aviEdit = $save($adR8['pid'], [['type' => 'p', 'text' => 'שטח הדירה 120 מ"ר (רשום) — נוסח מחדש בידי השמאי']]);                 // שמאי שינה בפועל את טקסט הבינה
+$adR9 = $sec($ver($VR)[1], 'area_desc');
+eq([$rvR[0], $cleanR, $adR4['ai_reviewed'], $adR4['proposal']['origin'] ?? null, $blockR, $blockR2, $blockR3,
+    [$reSave[0], $adR7['origin'], $adR7['ai_reviewed'], $adR7['blocks'][0]['ai'] ?? null], [$aviSave[0], $adR8['origin'], $adR8['blocks'][0]['ai'] ?? null], [$aviEdit[0], $adR9['origin']]],
+    [200, [], false, 'auto', ['ai_unreviewed', 'proposal_pending', 'ai_stale'], ['report_blocked', ['ai_unreviewed', 'ai_stale']], [],
+        [200, 'ai', false, true], [200, 'ai', true], [200, 'manual']],
+    'B3: נתון שהשתנה אחרי שטקסט הבינה נסקר ← הסקירה מתבטלת, נוצרת הצעת עדכון, והאישור נחסם ב-ai_stale גם אחרי דחיית ההצעה; סקירה מחדש מנקה. 🟡3: שמירה חוזרת של טקסט הבינה (בלי ai: true, בידי מי שאינה שמאית) משאירה את הפרק "בינה" ומבטלת את הסקירה; שמאי שלא שינה את טקסט הבינה — הסימון נשאר; שמאי ששינה אותו — יורד');
+
+// B3 + 17-C6: גרסה שאושרה עם פרק בינה — שינוי בנתון שעליו נכתב הטקסט מדליק "נתונים השתנו אחרי האישור"
+[$CS, $VS] = [make_case($avi, $PM), null];
+$FS = $fact($CS, 'area', '64', ['unit' => 'sqm', 'area_kind' => 'registered'])[1]['fact']['pid'];
+$fake->next = fn() => reply(['blocks' => [['text' => 'תיאור שנוסח בבינה, בלי מספרים', 'src' => 'd1']]]);
+$post('report-draft-create', ['case' => $CS]);
+$VS = $versions($CS)[0]['pid'];
+$fill($VS);
+foreach ($ver($VS)[1]['sections'] as $x) if ($x['origin'] === 'ai' && !$x['ai_reviewed']) $post('report-section-reviewed', ['section' => $x['pid'], 'rev' => $x['rev']]);
+$submit($VS);
+$okS = $approve($VS, $acksAll($VS));
+$staleS0 = $ver($VS)[1]['version']['stale_after_approval'] ?? null;
+$post('fact-correct', ['fact' => $FS, 'rev' => $frev($FS), 'value' => '66', 'correction_note' => 'תיקון אחרי האישור']);
+$viewS = $ver($VS)[1];
+eq([$okS[0], $sec($viewS, 'area_desc')['origin'], in_array('fact', $types($sec($viewS, 'area_desc')['blocks']), true), $staleS0, $viewS['version']['stale_after_approval'], $sec($viewS, 'area_desc')['blocks'][0]['text']],
+    [200, 'ai', false, false, true, 'תיאור שנוסח בבינה, בלי מספרים'],
+    'B3 / 17-C6: פרק בינה (בלי בלוק fact) בגרסה שאושרה — שינוי הנתון אחרי האישור מדליק stale_after_approval; הטקסט שאושר אינו משתנה');
+$fake->next = $echo;
 
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();

@@ -85,6 +85,7 @@ function shareSheet(pid, x, kind, cur, reload, keep) {
     $$('[name=scope]', dlg).forEach(r => r.addEventListener('change', () => { $('#sh-items', dlg).hidden = r.value !== 'items' || !r.checked; }));
 }
 
+const shHasDraft = p => Array.isArray(p) ? p.includes('see_draft') : !!(p && p.see_draft);
 function sharePreviewSheet(pid, x, kind, cur, reload, body, pv) {
     const s = pv.summary, r = s.recipient;
     const line = (k, html) => `<div class="line"><span class="muted">${esc(k)}</span><span>${html}</span></div>`;
@@ -97,7 +98,7 @@ function sharePreviewSheet(pid, x, kind, cur, reload, body, pv) {
           ${s.reason ? line(SH.reason, esc(s.reason)) : ''}</div>
         <p class="sec-title">🚫 ${esc(SH.pvHidden)}</p>
         <ul class="list">${s.hidden.map(k => `<li class="card static"><span class="use-ic" aria-hidden="true">▫️</span><div class="body"><div class="l1"><span>${esc(SH.hidden[k] || k)}</span></div></div></li>`).join('')}</ul>
-        ${s.future_items ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvFuture)}</p>` : ''}${s.update ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvUpdate)}</p>` : ''}
+        ${shHasDraft(s.perms) ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvDraftNote)}</p>` : ''}${s.future_items ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvFuture)}</p>` : ''}${s.update ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvUpdate)}</p>` : ''}
         <p class="hint">${esc(s.needs_accept ? SH.pvAccept : SH.pvSupport)}</p>
         <div class="row-btns"><button type="button" class="btn ghost" id="sh-back">${esc(SH.back)}</button></div>`, async () => {
         await api('share-create', { body: { ...body, preview: pv.preview } });

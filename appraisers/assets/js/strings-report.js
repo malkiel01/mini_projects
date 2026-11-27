@@ -17,7 +17,7 @@ T.r = {
     secStates: { empty: 'ריק', drafted: 'נבנה מהנתונים', edited: 'נערך', reviewed: 'נסקר' }, mandatory: 'חובה', userEdited: 'נערך ידנית',
     aiUnreviewed: 'נכתב בבינה — לא נסקר', aiReviewed: who => `נכתב בבינה — נסקר${who ? ' בידי ' + who : ''}`, aiMark: 'בינה',
     aiBanner: 'הטקסט המסומן נכתב בבינה מלאכותית ועדיין לא נסקר בידי שמאי. בלי סקירה אי אפשר לאשר את הדוח.',
-    aiWait: why => `ניסוח בבינה ממתין: ${why}`, aiNow: 'ניסוח עכשיו', aiWrite: 'ניסוח בבינה', aiWorking: 'מנסח…', aiDone: 'הפרק נוסח בבינה — ממתין לסקירה', aiNotDone: why => `הפרק לא נוסח: ${why}`,
+    aiWait: why => `ניסוח בבינה ממתין: ${why}`, aiNow: 'ניסוח עכשיו', aiWrite: 'ניסוח בבינה', aiWorking: 'מנסח…', aiDone: 'הפרק נוסח בבינה — ממתין לסקירה', aiAsProposal: 'הפרק נערך בינתיים — הניסוח נשמר כהצעה', aiReplaceAsk: 'הפרק נערך ידנית. ניסוח בבינה יחליף את העריכה. להמשיך?', aiNotDone: why => `הפרק לא נוסח: ${why}`,
     aiWaits: { policy: 'הבינה כבויה למשרד', case_no_ai: 'התיק סומן "בלי בינה"', no_connection: 'אין חיבור לספק', quota: 'המכסה נגמרה', no_assignment: 'אין הקצאה', model_not_allowed: 'אין מודל זמין', failed: 'הניסוח נכשל', no_data: 'אין בפרק נתונים לניסוח', not_allowed: 'הפרק אינו מנוסח בבינה' },
     markReviewed: 'סקרתי את הטקסט', markReviewedAsk: 'לסמן שסקרתם את הטקסט שנכתב בבינה, ושהוא נכון?', numUnknown: nums => `מספר שלא נמצא בנתונים: ${nums}`,
     changedNote: what => `עודכן: ${what}`, unknown: 'לא ידוע', notVerified: 'לא אומת', valueChanged: was => `הערך השתנה: היה ${was}`,
@@ -49,7 +49,7 @@ T.r = {
         sections: 'הפרקים', title: 'כותרת', mandatory: 'חובה', build: 'נבנה', builds: { data: 'מנתוני התיק', manual: 'נכתב ידנית' }, ai: 'מותר לנסח בבינה', aiNever: 'הפרק הזה אינו מנוסח בבינה',
         add: 'הוספת פרק', remove: 'הסרת הפרק', unverified: 'נתון שלא אומת', unverifiedModes: { marked: 'נכנס לדוח, מסומן "לא אומת"', omit: 'אינו נכנס לדוח' }, excluded: 'לכלול בדוח גם עסקאות שהוצאו מהחישוב',
         findings: 'ממצאי הבקרה', findingsHint: 'מה חוסם אישור, ומה רק מזהיר. ארבעת הראשונים תמיד חוסמים.', levels: { block: 'חוסם', warn: 'אזהרה' }, locked: 'תמיד חוסם',
-        kinds: { no_approver: 'אין שמאי מורשה לאשר בתיק', mandatory_empty: 'פרק חובה ריק', ai_unreviewed: 'טקסט בינה שלא נסקר', image_not_report: 'תמונה בדוח בלי הרשאת שימוש "לדוח"', ai_number: 'מספר בטקסט בינה שלא נמצא בנתונים',
+        kinds: { no_approver: 'אין שמאי מורשה לאשר בתיק', mandatory_empty: 'פרק חובה ריק', ai_unreviewed: 'טקסט בינה שלא נסקר', image_not_report: 'תמונה בדוח בלי הרשאת שימוש "לדוח"', ai_number: 'מספר בטקסט בינה שלא נמצא בנתונים', ai_stale: 'טקסט בינה נכתב לפני שינוי בנתונים', data_new: 'מידע חדש אחרי ההעברה לבדיקה',
             proposal_pending: 'הצעת עדכון שלא הוכרעה', req_open: 'דרישת חובה שלא הושלמה', conflict_open: 'סתירה פתוחה', fact_unverified: 'נתון בדוח שלא אומת', source_unchecked: 'מקור שלא נבדק או לא היה זמין', task_open: 'משימה פתוחה בתיק',
             small_sample: 'מדגם קטן של עסקאות', comp_missing: 'עסקה נבחרת עם נתונים חסרים', alt_no_key_date: 'חלופה בלי מועד קובע', alt_no_assumptions: 'חלופת "לאחר עבודות" בלי הנחות', note_missing: 'חוסר ("לא ידוע") בפרק',
             alt_no_conclusion: 'חלופה בלי מסקנה', fact_changed: 'נתון שהשתנה מאז עריכת הפרק', doc_gone: 'מסמך שנתון נשען עליו נמחק או הוחזר' },
@@ -61,7 +61,7 @@ T.sh.tabs.report = 'הדוח';
 T.sensitive['report-approve'] = 'אישור הדוח: הגרסה ננעלת, נשמר צילום של הנתונים, ומצב התיק משתנה ל"מאושר". אין ביטול אישור.';
 Object.assign(T.auditIcon, { report_version: '📘', report_section: '📘' });
 Object.assign(T.audit, {
-    'report.draft_create': r => `נוצרה טיוטת דוח — גרסה ${r.meta.number ?? ''}`, 'report.section_ai': () => 'פרק בדוח נוסח בבינה — ממתין לסקירה', 'report.stale': () => 'נתונים השתנו אחרי אישור הדוח',
+    'report.draft_create': r => `נוצרה טיוטת דוח — גרסה ${r.meta.number ?? ''}`, 'report.section_ai': () => 'פרק בדוח נוסח בבינה — ממתין לסקירה', 'report.section_ai_proposal': () => 'הפרק נערך בזמן הניסוח בבינה — הניסוח נשמר כהצעה', 'report.stale': () => 'נתונים השתנו אחרי אישור הדוח',
     'report.section_save': () => 'פרק בדוח נערך', 'report.section_add': r => `נוסף פרק לדוח: ${r.meta.title || ''}`, 'report.section_delete': r => `הוסר פרק מהדוח: ${r.meta.title || ''}${r.meta.mandatory ? ' (פרק חובה)' : ''}`,
     'report.rebuild': r => `פרקים בדוח נבנו מחדש (${r.meta.sections ?? ''})`, 'report.section_reviewed': () => 'טקסט בינה בדוח סומן כנסקר', 'report.proposal_accept': () => 'הצעת עדכון לפרק התקבלה',
     'report.proposal_reject': () => 'הצעת עדכון לפרק נדחתה', 'report.proposal_merge': () => 'הצעת עדכון לפרק מוזגה', 'report.comment': () => 'נוספה הערה לדוח', 'report.comment_resolve': () => 'הערה בדוח סומנה כטופלה',
