@@ -10,9 +10,9 @@
     "slice": "L6",
     "branch": "claude/trading-strategies-learning-l6"
   },
-  "control": "session_018g4NYF5q8516Ujytkda2JF",
+  "control": "session_018g4NYGEqPs8ogBvoTvv8GP",
   "tasks": null,
-  "clock": "trig_01Qfe8vGQMoxE3CTn5Jo9VRJ (דקה 28, נוצר בידי מנהל הצוותים (5))",
+  "clock": "trig_017Gc4m5uC5UZoHqs2LdGNgg (דקה 28, בקרה 12)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -159,6 +159,11 @@
       "session": "session_018g4NYFkoRSgSNeEbLjxxZ2",
       "name": "בקרה (10)",
       "done": "#1727–#1734; מסירה ב-379K"
+    },
+    {
+      "session": "session_018g4NYF5q8516Ujytkda2JF",
+      "name": "בקרה (11)",
+      "done": "#1735–#1737; הושהתה 17.11; בארכיון"
     }
   ],
   "code_delete": {
