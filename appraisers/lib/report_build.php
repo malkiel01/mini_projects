@@ -162,7 +162,7 @@ function apr_report_table_in(mixed $rows): array
 /**
  * הערך המוסכם של כל מאפיין — אותו כלל כמו במסך הנתונים (12): יש נתון פעיל (לא נדחה, עם ערך), וכל הפעילים שקולים. מחזיר
  * [key => ['attr', 'fact' (השורה), 'value' (apr_fact_value_out), 'verified']] רק למאפיינים שיש להם ערך מוסכם. מאפיין רב-ערכים נכנס עם
- * כל ערכיו הפעילים (מופרדים ב-"; "), 'fact' הוא הראשון שבהם, ו-'verified' — רק כשכולם אומתו.
+ * כל ערכיו הפעילים (מופרדים ב-"; "), 'fact' הוא הראשון שבהם, ו-'verified' — רק כשכולם אומתו. 'free' — הערך הוא טקסט שאדם הקליד.
  */
 function apr_report_facts(array $c): array
 {
@@ -178,18 +178,26 @@ function apr_report_facts(array $c): array
             $val['text'] = $val['bool'] !== null ? ($val['bool'] ? 'כן' : 'לא') : ($val['num'] ?? $val['text'] ?? $val['date']);
             return $val;
         };
+        // האם הערך המוצג הוא **טקסט שאדם הקליד** — ולכן אינו נשלח לבינה (apr_report_ai_input): כל מה שאינו מספר / סכום / כן-לא (value_num), תאריך
+        // תקין, או אחת מהאפשרויות הסגורות של מאפיין "בחירה". יחידה שאינה מהרשימה הסגורה — גם היא טקסט. סוג מאפיין שיתווסף — טקסט, עד שיוגדר אחרת
+        $free = function (array $f) use ($a): bool {
+            if ($f['unit'] !== null && !isset(APR_REPORT_UNIT_LABELS[$f['unit']])) return true;
+            if ($f['value_num'] !== null) return false;
+            if ($f['value_text'] === null) return preg_match('/^\d{4}-\d{2}-\d{2}\z/', (string)$f['value_date']) !== 1;
+            return $a['value_type'] !== 'choice' || !in_array($f['value_text'], array_column(json_decode((string)($a['choices'] ?? ''), true) ?: [], 'key'), true);
+        };
         // מאפיין רב-ערכים (בעלים רשומים, הערות ושעבודים, הצמדות …): כל הערכים הפעילים, כערך אחד לקריאה — אין בו "ערך מוסכם" אחד, ואין בו סתירה
         if ((int)$a['multi']) {
             $parts = array_values(array_unique(array_filter(array_map(fn($f) => apr_report_fact_stamp($one($f)), $active), fn($x) => $x !== null && $x !== '')));
             if (!$parts) continue;
             $out[$a['key']] = ['attr' => $a, 'fact' => $active[0], 'value' => ['text' => implode('; ', $parts), 'unit' => null, 'area_kind' => null] + array_fill_keys(array_keys($one($active[0])), null),
-                'verified' => !array_filter($active, fn($f) => $f['state'] !== 'verified')];
+                'verified' => !array_filter($active, fn($f) => $f['state'] !== 'verified'), 'free' => (bool)array_filter($active, $free)];
             continue;
         }
         $keys = array_unique(array_map(fn($f) => json_encode([$f['area_kind'], apr_fact_norm($f, $a)]), $active));
         if (count($keys) !== 1 || apr_fact_norm($active[0], $a)[0] === null) continue;
         $best = array_values(array_filter($active, fn($f) => $f['state'] === 'verified'))[0] ?? $active[0];
-        $out[$a['key']] = ['attr' => $a, 'fact' => $best, 'value' => $one($best), 'verified' => $best['state'] === 'verified'];
+        $out[$a['key']] = ['attr' => $a, 'fact' => $best, 'value' => $one($best), 'verified' => $best['state'] === 'verified', 'free' => $free($best)];
     }
     return $out;
 }
@@ -320,7 +328,8 @@ function apr_report_build(array $c, string $key, array $tpl): array
     if ($key === 'visit') {
         $visits = apr_rows("SELECT v.*, u.name AS visitor FROM visits v LEFT JOIN users u ON u.id = v.visitor_user_id WHERE v.case_id = ? AND v.status = 'completed' ORDER BY v.completed_at, v.id", [$c['id']]);
         foreach ($visits as $v) {
-            $blocks[] = ['type' => 'p', 'text' => 'ביקור בנכס נערך ביום ' . substr((string)$v['completed_at'], 0, 10) . ($v['visitor'] && empty($tpl['for_ai']) ? ', בידי ' . $v['visitor'] : '') . '.', 'src' => ['type' => 'visit', 'pid' => $v['pid']]];
+            $blocks[] = ['type' => 'p', 'text' => 'ביקור בנכס נערך ביום ' . substr((string)$v['completed_at'], 0, 10) . ($v['visitor'] && empty($tpl['for_ai']) ? ', בידי ' . $v['visitor'] : '') . '.', 'src' => ['type' => 'visit', 'pid' => $v['pid']]]
+                + (empty($tpl['for_ai']) ? [] : ['safe' => true]);       // בקלט לבינה: מועד בלבד — פסקה שמותר לשלוח (apr_report_ai_input)
             $sources[] = ['type' => 'visit', 'pid' => $v['pid'], 'label' => 'ביקור ' . (int)$v['seq']];
         }
         if (!$visits) $missing('לא נערך ביקור בנכס');
@@ -491,48 +500,58 @@ function apr_report_numbers(string $text): array
     return array_values(array_unique($out));
 }
 
-/** קבוצות המאפיינים שבהן ערך של טקסט חופשי הוא בדרך כלל שם של אדם (בעלים, שוכר, קונה, מוכר) — ערך כזה אינו נשלח למודל כלל. */
-const APR_REPORT_AI_NO_FREE_TEXT = ['rights', 'rent', 'deal'];
+/**
+ * העמודות של כל טבלה שמותר לשלוח לבינה, לפי מיקום — רק עמודות **מובנות**: סוג / מצב מרשימה סגורה, תאריך, גוש-חלקה וכתובת מובנית, שם מקור
+ * מהקטלוג. עמודת טקסט חופשי (ממצא, נימוק, תיאור, נוסח) אינה כאן; וטבלה שאינה כאן אינה נשלחת כלל — מה שלא הותר במפורש, לא יוצא.
+ */
+const APR_REPORT_AI_TABLE_COLS = ['identifiers' => [0, 1], 'source_checks' => [0, 1, 2]];
 
 /**
- * מה שנשלח למודל על פרק אחד: הכותרת, והנתונים של **הפרק הזה בלבד** כפריטים ממוספרים (d1, d2 …) — ערכים, יחידות, והמקור של כל אחד.
- * מחזיר ['items' => [id => ['text', 'src' | null]], 'message' => הטקסט שנשלח, 'omitted', 'kept' => בלוקי fact שלא נשלחו (נשארים בפרק כהפניה),
- * 'hash' => מה שמזהה את נתוני הקלט (B3)]. אין כאן מסמכים, פרקים אחרים, שמות או שווי.
+ * מה שנשלח למודל על פרק אחד: כותרת קבועה לפי מפתח הפרק, והנתונים של **הפרק הזה בלבד** כפריטים ממוספרים (d1, d2 …) — ערכים, יחידות, והמקור
+ * של כל אחד. מחזיר ['items' => [id => ['text', 'src' | null]], 'message' => הטקסט שנשלח, 'omitted', 'kept' => בלוקי fact שלא נשלחו (נשארים
+ * בפרק כהפניה), 'hash' => מה שמזהה את נתוני הקלט (B3)]. אין כאן מסמכים, פרקים אחרים, שמות או שווי.
  *
- * **הסינון (apr_report_ai_scrub) הוא רשת ביטחון, לא המנגנון.** מה שאינו נדרש לניסוח אינו נכנס לקלט מלכתחילה: שם המבקר, הטקסט החופשי
- * של מזהה "אחר", כיתובי תמונות, וערכי טקסט חופשי בקבוצות הזכויות / השכירות / העסקה (APR_REPORT_AI_NO_FREE_TEXT).
+ * **טקסט חופשי שאדם הקליד אינו נשלח — בשום קבוצה ובשום מסלול** (הכרעת הבקרה, סבב 3). שם של צד שלישי אינו "גורם בתיק", ושום סינון לא יתפוס
+ * אותו; לכן הכלל הוא מבני, לא רשימה של מה לחסום:
+ *  · נתון נשלח רק כשהערך המוצג **מובנה** (מספר / סכום, תאריך, כן-לא, אחת מהאפשרויות של "בחירה") — apr_report_facts()['free']. כל השאר נשאר
+ *    בפרק כהפניה (kept), ומוצג בדוח כרגיל.
+ *  · מטבלה נשלחות רק העמודות המובנות (APR_REPORT_AI_TABLE_COLS); הטבלה המלאה נשארת בפרק.
+ *  · פסקה שהבונה מרכיב נשלחת רק כשסומנה safe (מורכבת מנתון מובנה בלבד); הכותרת — הקבועה של המפתח, לא זו שנשמרה בפרק (אותה אדם יכול לערוך).
+ *  · פרק שאינו ברשימה הסגורה אינו מרכיב קלט כלל.
+ * apr_report_ai_scrub נשאר **רשת ביטחון** מעל כל אלה (כתובת מובנית ושמות מהקטלוג עדיין עוברים דרכו).
  */
 function apr_report_ai_input(array $ctx, array $c, array $section, array $tpl): array
 {
-    $tpl['for_ai'] = true;
-    $built = apr_report_resolve($ctx, $c, apr_report_build($c, $section['key'], $tpl)['blocks'], $tpl);
     $items = [];
     $kept = [];
-    $pii = apr_report_ai_pii($c);
     $omitted = 0;
+    if (!in_array($section['key'], APR_REPORT_AI_KEYS, true)) return ['items' => [], 'omitted' => 0, 'kept' => [], 'message' => '', 'hash' => apr_report_hash([])];
+    $tpl['for_ai'] = true;
+    $built = apr_report_resolve($ctx, $c, apr_report_build($c, $section['key'], $tpl)['blocks'], $tpl);
+    $facts = apr_report_facts($c);
+    $pii = apr_report_ai_pii($c);
     $put = function (string $text, ?array $src) use (&$items, &$omitted, $pii): bool {
         $text = apr_report_ai_scrub($text, $pii);
         if ($text === null) { $omitted++; return false; }
         $items['d' . (count($items) + 1)] = ['text' => $text, 'src' => $src];
         return true;
     };
-    $attrs = null;
     foreach ($built as $b) {
-        if ($b['type'] === 'p') $put($b['text'], $b['src'] ?? null);
+        if ($b['type'] === 'p' && !empty($b['safe'])) $put($b['text'], $b['src'] ?? null);
         if ($b['type'] === 'note_missing') $put('לא ידוע: ' . $b['what'], null);
         if ($b['type'] === 'fact') {
-            $attrs ??= array_column(apr_attrs_all(), null, 'key');
-            $a = $attrs[$b['attr']] ?? null;
-            $free = $a === null || ($a['value_type'] === 'text' && in_array($a['grp'], APR_REPORT_AI_NO_FREE_TEXT, true));
+            $free = $facts[$b['attr']]['free'] ?? true;
             $sent = !$free && $put($b['label'] . ': ' . ($b['value'] === null ? 'לא ידוע' : apr_report_fact_stamp($b['value'])) . ($b['verified'] === false ? ' (לא אומת)' : ''), $b['fact'] === null ? null : ['type' => 'fact', 'pid' => $b['fact']]);
             if ($free) $omitted++;
             if (!$sent) $kept[] = ['type' => 'fact', 'attr' => $b['attr']];
         }
-        if ($b['type'] === 'data_table') foreach ($b['rows'] as $i => $row) $put($b['label'] . ' — ' . implode(' · ', array_map(fn($col, $x) => "$col: $x", $b['cols'], $row)), $b['refs'][$i]);
+        if ($b['type'] === 'data_table' && ($cols = APR_REPORT_AI_TABLE_COLS[$b['table']] ?? [])) {
+            foreach ($b['rows'] as $i => $row) $put($b['label'] . ' — ' . implode(' · ', array_map(fn($j) => $b['cols'][$j] . ': ' . ($row[$j] ?? '—'), $cols)), $b['refs'][$i]);
+        }
     }
     $lines = array_map(fn($id, $it) => "$id. " . $it['text'], array_keys($items), $items);
-    $message = "כותרת הפרק: " . (apr_report_ai_scrub($section['title'], $pii) ?? 'פרק בדוח') . "\n\nהנתונים:\n" . implode("\n", $lines);
-    return ['items' => $items, 'omitted' => $omitted, 'kept' => $kept, 'message' => $message, 'hash' => apr_report_hash(array_column($items, 'text'))];
+    $title = array_column(apr_pc_report_default()['sections'], 'title', 'key')[$section['key']] ?? 'פרק בדוח';
+    return ['items' => $items, 'omitted' => $omitted, 'kept' => $kept, 'message' => "כותרת הפרק: $title\n\nהנתונים:\n" . implode("\n", $lines), 'hash' => apr_report_hash(array_column($items, 'text'))];
 }
 
 /**
@@ -572,7 +591,7 @@ function apr_report_ai_word(string $norm, string $token, bool $prefix): bool
 /**
  * פריט בדרך למודל: null ← הפריט **מושמט**. מושמט כל פריט שיש בו: **אסימון כלשהו** (מילה שלמה) משם או מארגון של גורם בתיק — גם חלק מהשם,
  * גם ברווח כפול, במקף או בניקוד; מייל או טלפון שמורים של גורם; משהו שנראה כמו מייל (גם "[at]"), טלפון (גם בנקודות, גם ‎+972) או ת"ז
- * (8–9 ספרות, גם עם מקף לפני ספרת הביקורת). שם של עובד משרד **נמחק** מהטקסט כמילה שלמה ("תל אביב" אינו נפגע מחבר צוות בשם "אבי"), והפריט נשאר.
+ * (8–9 ספרות, גם ברווחים וגם עם מקף לפני ספרת הביקורת). שם של עובד משרד **נמחק** מהטקסט כמילה שלמה ("תל אביב" אינו נפגע מחבר צוות בשם "אבי"), והפריט נשאר.
  * המחיר: פריט תמים שחולק מילה עם שם של גורם מושמט גם הוא — ההשמטה נספרת, והנתון נשאר בפרק כהפניה.
  */
 function apr_report_ai_scrub(string $text, array $pii): ?string
@@ -594,6 +613,7 @@ function apr_report_ai_scrub(string $text, array $pii): ?string
     $flat = (string)preg_replace('/[()]/', '', $text);
     if (preg_match('/(?<!\d)(?:\+?972[\s.\-]*0?|0)\d{1,2}[\s.\-]*\d{3}[\s.\-]*\d{4}(?!\d)/', $flat) === 1) return null;                          // טלפון: רווח, מקף או נקודה
     if (preg_match('/(?<!\d)\d{8,9}(?!\d)/', $text) === 1 || preg_match('/(?<!\d)\d{7,8}[\-\x{05BE}\x{2010}-\x{2015}]\d(?!\d)/u', $text) === 1) return null;   // ת"ז
+    if (preg_match('/(?<![\d.,])\d(?:[ \x{00A0}]?\d){7,8}(?![\d.,])/u', $text) === 1) return null;                                                   // ת"ז ברווחים: 123 456 789
     foreach ($pii['staff'] as $n) {
         $tokens = apr_report_ai_tokens($n);
         if (!$tokens) continue;
