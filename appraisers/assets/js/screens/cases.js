@@ -86,6 +86,7 @@ async function viewCases(pid, sub, arg) {
     if (pid && sub === 'alt' && arg) return viewAlt(pid, arg);
     if (pid && sub === 'calcsheet' && arg) return viewCalcSheet(pid, arg);
     if (pid && sub === 'renovation') return viewRenovation(pid);
+    if (pid && sub === 'report' && arg) return viewReport(pid, arg);
     if (pid && sub === 'check' && arg) return viewCheck(pid, arg);
     if (pid && sub === 'planning' && arg) return viewPlanningItem(pid, arg);
     if (pid && sub === 'file') return arg ? viewFile(pid, arg) : viewCase(pid, 'reqs');
@@ -498,7 +499,7 @@ async function viewCase(pid, tab) {
     // תיק סגור — קריאה בלבד עד פתיחה מחדש (השרת אוכף; כאן רק לא מציגים כפתורים שיידחו)
     if (c.status === 'closed') d.me.perms = { ...d.me.perms, edit: false, tasks: false, documents: false, members: false };
     const perms = d.me.perms;
-    const tabs = ['overview', 'facts', 'sources', 'visits', ...(d.comps ? ['comps'] : []), 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
+    const tabs = ['overview', 'facts', 'sources', 'visits', ...(d.comps ? ['comps'] : []), ...(d.report ? ['report'] : []), 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
     const cur = tabs.includes(tab) ? tab : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
     const reload = () => viewCase(pid, cur);
@@ -506,12 +507,12 @@ async function viewCase(pid, tab) {
     const head = `<div class="summary"><div class="line"><b class="one">${esc(c.title || C.noTitle)}</b><span class="chip" dir="ltr">${esc(c.number)}</span></div>
         <div class="line muted">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : `<span class="chip bad">${C.noResponsible}</span>`}</div>
         <div class="chips">${canStatus ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
-        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : t === 'sources' && d.sources.attention.length ? d.sources.attention.length : t === 'visits' && d.visits.open ? d.visits.open : t === 'comps' && d.comps.total ? d.comps.total : undefined]), href(cur))}`;
+        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : t === 'sources' && d.sources.attention.length ? d.sources.attention.length : t === 'visits' && d.visits.open ? d.visits.open : t === 'comps' && d.comps.total ? d.comps.total : t === 'report' && d.report.versions ? d.report.versions : undefined]), href(cur))}`;
     let body = '', docs = null, rqs = null;
     if (cur === 'overview') {
         const openM = d.requirements.filter(r => r.mandatory && dOpen(r));
         const openT = d.tasks.filter(t => ['open', 'in_progress'].includes(t.status)), doneT = d.tasks.filter(t => !['open', 'in_progress'].includes(t.status));
-        body = `${c.status === 'closed' ? `<p class="banner" role="note">🔒 ${esc(C.closedBanner(fmtDate(c.closed_at), c.close_reason))}</p>` : ''}
+        body = `${c.status === 'closed' ? `<p class="banner" role="note">🔒 ${esc(C.closedBanner(fmtDate(c.closed_at), c.close_reason))}</p>` : ''}<div id="case-report"></div>
             ${d.profile.newer || d.profile.pending ? `<p class="banner" role="note">🆕 ${esc(d.profile.newer ? C.newer(d.profile.newer) : C.pending)} <button type="button" class="btn ghost sm" id="cdiff">${C.check}</button></p>` : ''}
             ${d.plan.alerts.map(a => `<p class="banner" role="note">🔔 ${esc(a.text)}</p>`).join('')}
             ${d.open_conflicts ? `<p class="banner" role="note">⚠️ ${esc(T.f.openConflicts(d.open_conflicts))} <a class="btn ghost sm" href="#/cases/${pid}/conflicts">${T.f.conflicts}</a></p>` : ''}
@@ -544,6 +545,9 @@ async function viewCase(pid, tab) {
     } else if (cur === 'comps') {
         docs = await compsTab(pid, reload);
         body = docs.html;
+    } else if (cur === 'report') {
+        docs = await reportTab(pid, reload);
+        body = docs.html;
     } else if (cur === 'parties') {
         [rqs, docs] = await Promise.all([api('case-requests', { params: { case: pid } }), sharesSection(pid, reload)]);
         body = partiesHtml(d, !!perms.edit) + requestsHtml(rqs, d) + membersHtml(d) + docs.html;
@@ -555,6 +559,7 @@ async function viewCase(pid, tab) {
         body = log.rows.length ? auditHtml(log.rows, r => esc((T.audit[r.action] || (() => r.action))(r)), r => esc(r.actor || C.system)) : `<p class="empty">${C.activityEmpty}</p>`;
     }
     App.main.innerHTML = head + body;
+    if (cur === 'overview' && d.report && d.report.versions) rCaseCheck(pid);   // בקרת הדוח בסקירת התיק (17 §9) — נטענת בנפרד
     if (cur === 'overview') aiCaseSection(pid);   // בינה בתיק (11): "בלי בינה" ושימוש — נטען בנפרד, ואינו מעכב את המסך
     docs?.bind();
 

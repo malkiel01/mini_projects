@@ -81,6 +81,12 @@
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
+ * דוח (17): case-report {case} · report-version {version} · report-compare {version, with} (קריאה) · report-draft-create {case} ·
+ *   report-section-save {section, rev, content, title?} · report-section-add {version, title} · report-section-delete {section, rev} ·
+ *   report-rebuild {version, sections?, include_edited?} · report-section-ai {section, rev} · report-section-reviewed {section, rev} ·
+ *   report-proposal-decide {proposal, decision, content?} · report-comment-add {version, section?, text} · report-comment-resolve {comment} ·
+ *   report-submit / report-return {version, rev} · report-approve {version, rev, acks} (רגישה) · report-version-new {case, reason} ·
+ *   report-version-delete {version, rev, reason}
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me. כל מזהה בבקשה הוא pid; מזהה המשתמש ומזהה המשרד
  * של הבקשה עצמה לא נלקחים מהדפדפן אף פעם. פעולת משרד יכולה לשאת office (pid) — הוא חייב להיות המשרד הפעיל.
@@ -124,6 +130,8 @@ require_once __DIR__ . '/valuation.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/ai_admin.php';
 require_once __DIR__ . '/extract.php';
+require_once __DIR__ . '/report_build.php';
+require_once __DIR__ . '/report.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -396,6 +404,26 @@ function apr_route(string $action, array $ctx, array $p, array $get, array $in, 
         'sheet-template-delete' => apr_sheet_template_delete($ctx, $p),
         'renovation-add' => apr_renovation_add($ctx, $p),
         'renovation-delete' => apr_renovation_delete($ctx, $p),
+
+        // דוח (17)
+        'case-report' => apr_case_report($ctx, $p),
+        'report-version' => apr_report_version($ctx, $p),
+        'report-compare' => apr_report_compare($ctx, $p),
+        'report-draft-create' => apr_report_draft_create($ctx, $p),
+        'report-section-save' => apr_report_section_save($ctx, $p),
+        'report-section-add' => apr_report_section_add($ctx, $p),
+        'report-section-delete' => apr_report_section_delete($ctx, $p),
+        'report-rebuild' => apr_report_rebuild($ctx, $p),
+        'report-section-ai' => apr_report_section_ai($ctx, $p),
+        'report-section-reviewed' => apr_report_section_reviewed($ctx, $p),
+        'report-proposal-decide' => apr_report_proposal_decide($ctx, $p),
+        'report-comment-add' => apr_report_comment_add($ctx, $p),
+        'report-comment-resolve' => apr_report_comment_resolve($ctx, $p),
+        'report-submit' => apr_report_submit($ctx, $p),
+        'report-return' => apr_report_return($ctx, $p),
+        'report-approve' => apr_report_approve($ctx, $p),
+        'report-version-new' => apr_report_version_new($ctx, $p),
+        'report-version-delete' => apr_report_version_delete($ctx, $p),
         // בינה (11) — ניהול ותצוגה בלבד; שום פעולה כאן אינה מפעילה מודל
         'sys-ai' => apr_sys_ai(),
         'sys-ai-provider-save' => apr_sys_ai_provider_save($p),

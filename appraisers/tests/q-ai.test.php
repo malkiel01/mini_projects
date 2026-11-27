@@ -666,7 +666,7 @@ foreach (glob(__DIR__ . '/../lib/*.php') as $f) $libs[basename($f)] = implode(''
 foreach (['api.php', 'cron.php'] as $f) $libs[$f] = (string)file_get_contents(__DIR__ . '/../' . $f);
 $who = fn(string $re) => array_keys(array_filter($libs, fn($src, $name) => $name !== 'devloop.php' && preg_match($re, $src) === 1, ARRAY_FILTER_USE_BOTH));
 eq([$who('/apr_ai_adapter\s*\(/'), $who('/->\s*complete\s*\(/'), $who('/->\s*health\s*\(\s*\$key/'), $who('/apr_ai_key_open\s*\(/'), $who('/api\.anthropic\.com|AprAnthropicAdapter/'), $who('/\bai_run\s*\(/'), substr_count($libs['ai.php'], '->complete('), substr_count($libs['ai.php'], '->health(')],
-    [['ai.php', 'ai_adapter.php'], ['ai.php'], ['ai.php'], ['ai.php'], ['ai_adapter.php'], ['ai.php', 'extract.php'], 1, 1],   // extract.php (12) קורא ל-ai_run — ורק לו; המתאם והמפתח נשארים של ai.php בלבד
+    [['ai.php', 'ai_adapter.php'], ['ai.php'], ['ai.php'], ['ai.php'], ['ai_adapter.php'], ['ai.php', 'extract.php', 'report_build.php'], 1, 1],   // extract.php (12) קורא ל-ai_run — ורק לו; המתאם והמפתח נשארים של ai.php בלבד
     '§5 השער: רק lib/ai.php קורא למתאם ופותח מפתח — complete() פעם אחת (בתוך ai_run) ו-health() פעם אחת (בדיקת חיבור); אין קובץ אחר שמגיע לספק');
 eq(preg_match('/function ai_run\(.*?\n}\n/s', $libs['ai.php'], $gate), 1, 'ai_run נמצאה לבדיקה הסטטית');
 $pos = fn(string $s) => strpos($gate[0], $s);

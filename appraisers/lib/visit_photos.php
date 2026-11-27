@@ -373,6 +373,8 @@ function apr_visit_photo_delete(array $ctx, array $in): array
     if (!in_array($p['visit_status'], ['in_progress', 'completed'], true)) apr_fail('visit_not_open');
     return apr_tx(function () use ($ctx, $c, $p, $rev) {
         apr_case_still_open($c);
+        // תמונה שגרסת דוח שאושרה מפנה אליה אינה נמחקת (אפיון 17, מקרה קצה 8) — הגרסה מוצגת ומיוצאת מה-snapshot, והוא מפנה לקובץ הזה
+        if (apr_val("SELECT 1 FROM report_versions WHERE case_id = ? AND state IN ('approved', 'delivered', 'superseded') AND deleted_at IS NULL AND instr(snapshot, ?) > 0 LIMIT 1", [$c['id'], '"photo":"' . $p['pid'] . '"'])) apr_fail('report_photo_locked');
         apr_visit_photo_set($p, $rev, ['deleted_at' => apr_now(), 'deleted_by' => (int)$ctx['user']['id'], 'for_report' => 0]);
         apr_exec('UPDATE files SET deleted_at = ?, deleted_by = ?, delete_reason = ? WHERE id = ? AND deleted_at IS NULL', [apr_now(), (int)$ctx['user']['id'], 'תמונת ביקור נמחקה', $p['file_id']]);
         apr_case_audit($c, 'visit.photo_delete', 'visit_photo', $p['pid'], ['seq' => (int)$p['seq'], 'was_for_report' => (bool)$p['for_report']]);
