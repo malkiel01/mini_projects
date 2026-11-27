@@ -85,6 +85,7 @@ function shareSheet(pid, x, kind, cur, reload, keep) {
     $$('[name=scope]', dlg).forEach(r => r.addEventListener('change', () => { $('#sh-items', dlg).hidden = r.value !== 'items' || !r.checked; }));
 }
 
+const shHasDraft = p => Array.isArray(p) ? p.includes('see_draft') : !!(p && p.see_draft);
 function sharePreviewSheet(pid, x, kind, cur, reload, body, pv) {
     const s = pv.summary, r = s.recipient;
     const line = (k, html) => `<div class="line"><span class="muted">${esc(k)}</span><span>${html}</span></div>`;
@@ -97,7 +98,7 @@ function sharePreviewSheet(pid, x, kind, cur, reload, body, pv) {
           ${s.reason ? line(SH.reason, esc(s.reason)) : ''}</div>
         <p class="sec-title">🚫 ${esc(SH.pvHidden)}</p>
         <ul class="list">${s.hidden.map(k => `<li class="card static"><span class="use-ic" aria-hidden="true">▫️</span><div class="body"><div class="l1"><span>${esc(SH.hidden[k] || k)}</span></div></div></li>`).join('')}</ul>
-        ${s.future_items ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvFuture)}</p>` : ''}${s.update ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvUpdate)}</p>` : ''}
+        ${shHasDraft(s.perms) ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvDraftNote)}</p>` : ''}${s.future_items ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvFuture)}</p>` : ''}${s.update ? `<p class="banner" role="note">ℹ️ ${esc(SH.pvUpdate)}</p>` : ''}
         <p class="hint">${esc(s.needs_accept ? SH.pvAccept : SH.pvSupport)}</p>
         <div class="row-btns"><button type="button" class="btn ghost" id="sh-back">${esc(SH.back)}</button></div>`, async () => {
         await api('share-create', { body: { ...body, preview: pv.preview } });
@@ -194,7 +195,7 @@ async function shSourcesTab(pid) {
 
 async function viewCaseShared(pid, tab, d) {
     const c = d.case, a = d.shared.areas, support = d.shared.kind === 'support';
-    const tabs = ['overview', ...(a.requirement || a.file ? ['files'] : []), ...(a.visit ? ['visits'] : []), ...(a.source_check ? ['sources'] : []), ...(a.comps ? ['comps'] : []), ...(a.facts ? ['facts'] : [])];
+    const tabs = ['overview', ...(a.requirement || a.file ? ['files'] : []), ...(a.visit ? ['visits'] : []), ...(a.source_check ? ['sources'] : []), ...(a.comps ? ['comps'] : []), ...(a.facts ? ['facts'] : []), ...(d.report ? ['report'] : [])];
     const cur = tabs.includes(tab) ? tab : tab === 'reqs' && tabs.includes('files') ? 'files' : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
     const reload = () => viewCaseShared(pid, cur, d);
@@ -216,6 +217,7 @@ async function viewCaseShared(pid, tab, d) {
     else if (cur === 'sources') part = await shSourcesTab(pid);
     else if (cur === 'comps') part = await compsTab(pid, reload);
     else if (cur === 'facts') part = await factsTab(pid);
+    else if (cur === 'report') part = await reportTab(pid, reload);
     App.main.innerHTML = head + part.html;
     part.bind();
 }

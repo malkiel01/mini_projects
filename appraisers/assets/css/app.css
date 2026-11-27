@@ -376,3 +376,45 @@ fieldset.f legend { font-weight: 600; font-size: .9rem; padding: 0; margin-botto
 .list.wgrid > li { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); align-items: flex-start; }
 .list.wgrid > li + li { border-top: 1px solid var(--line); }
 .list.wgrid .l1 { white-space: normal; }
+
+/* ── הדוח (17): עורך הפרקים, הבקרה והתצוגה המקדימה. טלפון קודם — הפרקים כשורת גלילה; במסך רחב — שלוש עמודות ── */
+.rgrid { display: grid; gap: var(--s3); min-width: 0; }
+.rgrid > * { min-width: 0; }
+.rnav { display: flex; gap: var(--s1); overflow-x: auto; padding-bottom: var(--s1); scrollbar-width: thin; }
+.rnav button { flex: none; max-width: 70vw; min-height: var(--tap); padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: start; }
+.rnav button[aria-current="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
+.rnav button i { color: var(--danger); font-style: normal; }
+.rnav button[aria-current="true"] i { color: inherit; }
+@media (min-width: 900px) {
+    .rgrid { grid-template-columns: 220px minmax(0, 1fr) 260px; align-items: start; }
+    .rnav { flex-direction: column; overflow: visible; position: sticky; top: calc(var(--head) + var(--s2)); }
+    .rnav button { max-width: none; white-space: normal; padding: var(--s2) var(--s3); }
+}
+.rdoc, .rpreview { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); margin-bottom: var(--s3); overflow-wrap: anywhere; }
+.rdoc > :last-child { margin-bottom: 0; }
+.rp, .rfact, .rmiss { margin: 0 0 var(--s2); line-height: 1.6; }
+.rp.rai { border-inline-start: 4px solid var(--danger); background: var(--danger-soft); padding: var(--s2); border-radius: 4px; }
+.rh { font-size: .95rem; margin: var(--s3) 0 var(--s1); }
+.rmiss { color: var(--danger); }
+.rlist { margin: 0 0 var(--s2); padding-inline-start: var(--s4); }
+.rimg { margin: 0 0 var(--s2); }
+.rimg img { max-width: min(100%, 420px); height: auto; border-radius: var(--r); border: 1px solid var(--line); display: block; }
+.rimg figcaption { font-size: .85rem; color: var(--muted); }
+.rsrc { font-size: .8rem; white-space: nowrap; }
+.rblk { display: grid; gap: var(--s1); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); }
+.rblk.rai { border-inline-start: 4px solid var(--danger); }
+.rblk-h { display: flex; align-items: center; gap: var(--s1); font-size: .8rem; color: var(--muted); }
+.rblk-h > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rblk-h .icon-btn { min-height: 32px; min-width: 32px; font-size: .85rem; }
+.rblk .hint { margin: 0; }
+.rstrip { text-align: center; font-weight: 700; letter-spacing: .04em; color: var(--danger); border: 2px dashed var(--danger); border-radius: var(--r); padding: var(--s2); margin: 0 0 var(--s3); }
+.rstrip.ok { color: var(--ok); border-style: solid; border-color: var(--ok); }
+.rpreview .rtitle { font-size: 1.2rem; text-align: center; margin: 0 0 var(--s3); }
+.rpreview section { margin-bottom: var(--s4); }
+.rpreview section h3 { font-size: 1.05rem; border-bottom: 1px solid var(--line); padding-bottom: var(--s1); margin: 0 0 var(--s2); }
+.rpreview > .rstrip:last-child { margin: var(--s3) 0 0; }
+.rcmp { margin-bottom: var(--s2); }
+.rprop { margin-bottom: var(--s3); }
+@media (max-width: 600px) { .seg-tabs:has(> :nth-child(9)) { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.rmain > .hint { margin-top: var(--s2); }
