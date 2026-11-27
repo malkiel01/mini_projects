@@ -161,7 +161,8 @@ function apr_report_table_in(mixed $rows): array
 
 /**
  * הערך המוסכם של כל מאפיין — אותו כלל כמו במסך הנתונים (12): יש נתון פעיל (לא נדחה, עם ערך), וכל הפעילים שקולים. מחזיר
- * [key => ['attr', 'fact' (השורה), 'value' (apr_fact_value_out), 'verified']] רק למאפיינים שיש להם ערך מוסכם.
+ * [key => ['attr', 'fact' (השורה), 'value' (apr_fact_value_out), 'verified']] רק למאפיינים שיש להם ערך מוסכם. מאפיין רב-ערכים נכנס עם
+ * כל ערכיו הפעילים (מופרדים ב-"; "), 'fact' הוא הראשון שבהם, ו-'verified' — רק כשכולם אומתו.
  */
 function apr_report_facts(array $c): array
 {
@@ -170,14 +171,25 @@ function apr_report_facts(array $c): array
     $out = [];
     foreach (apr_attrs_all() as $a) {
         $active = array_values(array_filter($by[$a['key']] ?? [], fn($f) => $f['state'] !== 'rejected' && apr_fact_has_value($f)));
-        if (!$active || (int)$a['multi']) continue;
+        if (!$active) continue;
+        $one = function (array $f) use ($a): array {
+            $val = apr_fact_value_out($f['value_num'] === null ? null : (int)$f['value_num'], $f['value_text'], $f['value_date'], $f['unit'], $f['area_kind'], $a);
+            if ($a['value_type'] === 'choice' && $val['text'] !== null) foreach (json_decode((string)($a['choices'] ?? ''), true) ?: [] as $ch) if (($ch['key'] ?? null) === $val['text']) $val['text'] = (string)($ch['label'] ?? $val['text']);
+            $val['text'] = $val['bool'] !== null ? ($val['bool'] ? 'כן' : 'לא') : ($val['num'] ?? $val['text'] ?? $val['date']);
+            return $val;
+        };
+        // מאפיין רב-ערכים (בעלים רשומים, הערות ושעבודים, הצמדות …): כל הערכים הפעילים, כערך אחד לקריאה — אין בו "ערך מוסכם" אחד, ואין בו סתירה
+        if ((int)$a['multi']) {
+            $parts = array_values(array_unique(array_filter(array_map(fn($f) => apr_report_fact_stamp($one($f)), $active), fn($x) => $x !== null && $x !== '')));
+            if (!$parts) continue;
+            $out[$a['key']] = ['attr' => $a, 'fact' => $active[0], 'value' => ['text' => implode('; ', $parts), 'unit' => null, 'area_kind' => null] + array_fill_keys(array_keys($one($active[0])), null),
+                'verified' => !array_filter($active, fn($f) => $f['state'] !== 'verified')];
+            continue;
+        }
         $keys = array_unique(array_map(fn($f) => json_encode([$f['area_kind'], apr_fact_norm($f, $a)]), $active));
         if (count($keys) !== 1 || apr_fact_norm($active[0], $a)[0] === null) continue;
         $best = array_values(array_filter($active, fn($f) => $f['state'] === 'verified'))[0] ?? $active[0];
-        $val = apr_fact_value_out($best['value_num'] === null ? null : (int)$best['value_num'], $best['value_text'], $best['value_date'], $best['unit'], $best['area_kind'], $a);
-        if ($a['value_type'] === 'choice' && $val['text'] !== null) foreach (json_decode((string)($a['choices'] ?? ''), true) ?: [] as $ch) if (($ch['key'] ?? null) === $val['text']) $val['text'] = (string)($ch['label'] ?? $val['text']);
-        $val['text'] = $val['bool'] !== null ? ($val['bool'] ? 'כן' : 'לא') : ($val['num'] ?? $val['text'] ?? $val['date']);
-        $out[$a['key']] = ['attr' => $a, 'fact' => $best, 'value' => $val, 'verified' => $best['state'] === 'verified'];
+        $out[$a['key']] = ['attr' => $a, 'fact' => $best, 'value' => $one($best), 'verified' => $best['state'] === 'verified'];
     }
     return $out;
 }

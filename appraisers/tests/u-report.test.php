@@ -774,5 +774,109 @@ eq([$okS[0], $sec($viewS, 'area_desc')['origin'], in_array('fact', $types($sec($
     'B3 / 17-C6: פרק בינה (בלי בלוק fact) בגרסה שאושרה — שינוי הנתון אחרי האישור מדליק stale_after_approval; הטקסט שאושר אינו משתנה');
 $fake->next = $echo;
 
+// 🟡7: הממצאים שנשענים על עסקאות, שומה, מקורות, משימות, דרישות וסתירות — ומאפיינים רבי-ערכים בדוח (§6.2: "נתונים שאינם rejected")
+$CF = make_case($avi, $PM);
+$members($CF);
+$fact($CF, 'area', '85.5', ['unit' => 'sqm', 'area_kind' => 'registered']);
+$fact($CF, 'rooms', '3');
+$fact($CF, 'rooms', '4');                                                                  // סתירה פתוחה
+$fact($CF, 'registered_owner', 'פלוני בן פלוני');
+$fact($CF, 'registered_owner', 'אלמונית בת פלוני');
+$fact($CF, 'encumbrance', 'משכנתה מדרגה ראשונה');
+$FD = $fact($CF, 'floor', '3')[1]['fact']['pid'];
+$post('task-create', ['case' => $CF, 'title' => 'לברר היתר']);
+apr_exec('UPDATE requirements SET mandatory = 1 WHERE case_id = ?', [$caseId($CF)]);        // דרישת חובה שלא הושלמה
+$altOf = fn(string $case) => apr_val('SELECT pid FROM alternatives WHERE case_id = ? AND deleted_at IS NULL ORDER BY id LIMIT 1', [$caseId($case)]) ?: ($post('alt-save', ['case' => $case, 'name' => 'חלופה לבדיקה', 'key_date' => '2026-09-01', 'state_kind' => 'other'])[1]['alt'] ?? null);
+$AF = $altOf($CF);
+$KF = $post('comp-add', ['case' => $CF, 'values' => ['price' => '2000000', 'deal_date' => '2026-01-10', 'area' => '80', 'area_kind' => 'registered', 'condition' => 'טוב']])[1]['comp'] ?? null;
+$KF2 = $post('comp-add', ['case' => $CF, 'values' => ['price' => '3000000', 'deal_date' => '2026-02-10', 'area' => '90', 'area_kind' => 'registered', 'condition' => 'טוב']])[1]['comp'] ?? null;
+foreach ([$KF, $KF2] as $k) $post('comp-status', ['comp' => $k, 'rev' => (int)apr_val('SELECT rev FROM comps WHERE pid = ?', [$k]), 'status' => 'selected']);
+$GF = $post('comp-set-save', ['case' => $CF, 'name' => 'קבוצה א', 'unit_basis' => 'total', 'method' => 'weighted', 'rounding' => 'none'])[1]['set'] ?? null;
+$gfrev = fn() => (int)apr_val('SELECT rev FROM comp_sets WHERE pid = ?', [$GF]);
+foreach ([$KF, $KF2] as $k) { $post('comp-set-member', ['set' => $GF, 'comp' => $k, 'rev' => $gfrev(), 'member' => true]); $post('comp-weight', ['set' => $GF, 'comp' => $k, 'rev' => $gfrev(), 'weight' => '1']); }
+$APF = $post('approach-save', ['alt' => $AF, 'kind' => 'comparison', 'comp_set' => $GF, 'reasoning' => 'שוק פעיל'])[1]['approach'] ?? null;
+$srcKey = apr_val("SELECT key FROM sources ORDER BY id LIMIT 1");
+$recF = call('POST', 'source-check-record', ['case' => $CF, 'source' => $srcKey, 'status' => 'not_found', 'coverage_note' => 'נבדק לפי גוש וחלקה', 'query_text' => 'גוש 6158 חלקה 12'], $avi);
+$post('case-ai-set', ['case' => $CF, 'no_ai' => true]);
+$post('report-draft-create', ['case' => $CF]);
+$VF = $versions($CF)[0]['pid'];
+// המסמך שהנתון נשען עליו נמחק
+$fidF = apr_insert('files', ['pid' => apr_pid(), 'office_id' => apr_val('SELECT office_id FROM cases WHERE pid = ?', [$CF]), 'case_id' => $caseId($CF), 'sha256' => hash('sha256', 'f'), 'size' => 1, 'mime' => 'application/pdf', 'ext' => 'pdf',
+    'original_name' => 'f.pdf', 'storage_key' => 'k' . bin2hex(random_bytes(4)), 'uploader_kind' => 'user', 'uploader_id' => 1, 'channel' => 'internal', 'received_at' => apr_now(), 'scan_state' => 'clean']);
+$docGone = '';
+try { apr_exec('UPDATE facts SET source_file_id = ?, rev = rev + 1 WHERE pid = ?', [$fidF, $FD]); apr_exec('UPDATE files SET deleted_at = ? WHERE id = ?', [apr_now(), $fidF]); } catch (PDOException $e) { $docGone = $e->getMessage(); }
+$viewF = $ver($VF)[1];
+$kindsF = array_values(array_unique(array_column($viewF['findings'], 'kind')));
+$propF = array_column(array_filter($sec($viewF, 'property')['blocks'], fn($b) => $b['type'] === 'fact'), null, 'attr');
+$keysF = array_column($viewF['findings'], 'key');
+eq([[$AF !== null, $KF !== null, $GF !== null, $APF !== null, $recF[0], $docGone],
+    array_values(array_intersect(['conflict_open', 'task_open', 'req_open', 'doc_gone', 'alt_no_conclusion', 'small_sample', 'source_unchecked'], $kindsF)),
+    $propF['registered_owner']['value']['text'] ?? null, $propF['encumbrance']['value']['text'] ?? null, count($keysF) === count(array_unique($keysF))],
+    [[true, true, true, true, 200, ''], ['conflict_open', 'task_open', 'req_open', 'doc_gone', 'alt_no_conclusion', 'small_sample', 'source_unchecked'],
+        'פלוני בן פלוני; אלמונית בת פלוני', 'משכנתה מדרגה ראשונה', true],
+    '🟡7: סתירה פתוחה, משימה פתוחה, דרישת חובה פתוחה, מסמך שנמחק, חלופה בלי מסקנה, מדגם קטן ומקור שלא נמצא — כולם עולים בבקרה; מאפיין רב-ערכים (בעלים רשומים, הערות ושעבודים) נכנס לפרק הזכויות עם כל ערכיו; אין שני ממצאים באותו מפתח');
+
+// staleness משינוי שיוך / משקל של עסקה. שיוך: שורות הטבלה "עסקאות השוואה שנבחרו" משתנות ← הפרק (שלא נערך) נבנה מחדש ומסומן "עודכן".
+// משקל: **אינו מוצג בדוח** (לא בטבלת העסקאות, ותוצאת הגישה היא המסקנה שהשמאי הקליד לקבוצה) — ולכן שינוי משקל אינו משנה דבר בדוח, ואינו מדליק דבר
+$compsRow = fn() => apr_row("SELECT s.* FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.pid = ? AND s.key = 'comps'", [$VF]);
+$rowsOf = function () use ($ver, $VF, $sec) { foreach ($sec($ver($VF)[1], 'comps')['blocks'] as $b) if ($b['type'] === 'data_table' && $b['table'] === 'comps') return count($b['rows']); return null; };
+$n0 = $rowsOf();
+$m0 = $compsRow();
+$wF = $post('comp-weight', ['set' => $GF, 'comp' => $KF2, 'rev' => $gfrev(), 'weight' => '3']);
+$n1 = $rowsOf();
+$m1 = $compsRow();
+$mF = $post('comp-set-member', ['set' => $GF, 'comp' => $KF2, 'rev' => $gfrev(), 'member' => false, 'reason' => 'אינה דומה']);
+$n2 = $rowsOf();
+$m2 = $compsRow();
+eq([$wF[0], $n0, $n1, $m1['auto_hash'] === $m0['auto_hash'], $mF[0], $n2, $m2['auto_hash'] !== $m1['auto_hash'], $m2['changed_note'] !== null, (int)$m2['rev'] > (int)$m1['rev']], [200, 2, 2, true, 200, 1, true, true, true],
+    'staleness: הוצאת עסקה מקבוצה (comp-set-member) משנה את טבלת העסקאות בדוח, והפרק נבנה מחדש ומסומן "עודכן"; שינוי משקל (comp-weight) אינו משנה את הדוח — המשקל אינו מוצג בו');
+
+// 🟡1: שני "לא ידוע" זהים באותו פרק הם ממצא אחד — והאישור אינו נופל על UNIQUE; 🟡9: מסקנה עם אגורות מוצגת כפי שהמנוע מחזיר אותה
+[$CU, $VU] = $ready();
+$members($CU);
+$AU = $altOf($CU);
+$concU = $post('alt-conclude', ['alt' => $AU, 'rev' => (int)apr_val('SELECT rev FROM alternatives WHERE pid = ?', [$AU]), 'value' => '2100000.55', 'reason' => 'שיקול דעת']);
+$cuS = $sec($ver($VU)[1], 'conclusion');
+$save($cuS['pid'], [['type' => 'p', 'text' => 'מסקנה'], ['type' => 'note_missing', 'what' => 'נתון חסר'], ['type' => 'note_missing', 'what' => 'נתון חסר'], ['type' => 'data_table', 'table' => 'alternatives']]);
+$dupKeys = array_count_values(array_column($ver($VU)[1]['findings'], 'key'));
+$altCell = null;
+foreach ($sec($ver($VU)[1], 'conclusion')['blocks'] as $b) if ($b['type'] === 'data_table') $altCell = $b['rows'][0][3] ?? null;
+// 🟡2: עובדת משרד שקיבלה approve_report אינה מאשרת — רק שמאי בתיק
+call('POST', 'case-member-update', ['case' => $CU, 'user' => $talPid, 'perms' => ['view' => true, 'edit' => true, 'approve_report' => true]], $avi);
+$submit($VU);
+$talApprove = code($approve($VU, $acksAll($VU), $tal));
+$talPerm = $ver($VU, $tal)[1]['perms']['approve'] ?? null;
+// 🟡5: נתון שמגיע בזמן "בבדיקה" — הפרקים קפואים; הבקרה חוסמת עד החזרה לעריכה
+$fact($CU, 'rooms', '5');
+$inRev = $blocking($VU);
+$apprNew = code($approve($VU, $acksAll($VU)));
+$post('report-return', ['version' => $VU, 'rev' => $vvrev($VU)]);
+$afterReturn = $blocking($VU);
+$rejectAll($VU);
+$fill($VU);
+$submit($VU);
+$okU = $approve($VU, $acksAll($VU));
+// 🟡8: הערה על גרסה שאושרה אינה נסגרת
+$cmU = apr_insert('report_comments', ['pid' => $cmPid = apr_pid(), 'version_id' => (int)apr_val('SELECT id FROM report_versions WHERE pid = ?', [$VU]), 'text' => 'הערה פתוחה', 'created_by' => 1, 'created_at' => apr_now()]);
+$resU = code($post('report-comment-resolve', ['comment' => $cmPid]));
+eq([$concU[0], max($dupKeys), $altCell, $talApprove, $talPerm, in_array('data_new', $inRev, true), $apprNew, in_array('data_new', $afterReturn, true), $okU[0], $resU, apr_val('SELECT resolved_at FROM report_comments WHERE id = ?', [$cmU])],
+    [200, 1, '2100000.55', 'forbidden', false, true, 'report_blocked', false, 200, 'report_approved', null],
+    '🟡1: ממצא אחד למפתח, והאישור עובר; 🟡9: מסקנה 2100000.55 מוצגת כך; 🟡2: approve_report בלי תפקיד שמאי אינו מאשר; 🟡5: נתון בזמן "בבדיקה" ← ממצא חוסם data_new, ואחרי החזרה — רענון; 🟡8: הערה על גרסה שאושרה אינה נסגרת');
+
+// 🟡5: "גרסה חדשה" אינה מסתירה נתון שהגיע אחרי האישור — פרק שלא נערך מתעדכן ברענון הראשון
+$fact($CU, 'floors_total', '8');
+$nvU = $post('report-version-new', ['case' => $CU, 'reason' => 'נתון נוסף']);
+$adU = $sec($ver($nvU[1]['version'] ?? '')[1] ?? ['sections' => []], 'area_desc');
+// 🟡6: מה ששותף ממשרד אחר מקבל — בלי נימוק הפתיחה, ובלי מזהים פנימיים וסימוני עריכה
+$verRowU = apr_row('SELECT * FROM report_versions WHERE pid = ?', [$nvU[1]['version'] ?? '']) + ['created_name' => 'א', 'submitted_name' => null, 'approved_name' => null];
+$headP = apr_report_version_head($verRowU, false);
+$secP = apr_report_partner_section(['pid' => 'p', 'key' => 'k', 'title' => 't', 'mandatory' => true, 'build' => 'data', 'origin' => 'ai', 'state' => 'drafted', 'ai_reviewed' => true, 'rev' => 4, 'sources' => [['type' => 'fact', 'pid' => 'x']],
+    'blocks' => [['type' => 'p', 'text' => 'ט', 'ai' => true, 'src' => ['type' => 'fact', 'pid' => 'x'], 'num_unknown' => ['7']], ['type' => 'fact', 'attr' => 'area', 'label' => 'שטח', 'value' => ['text' => '85'], 'fact' => 'fpid', 'was' => '80', 'changed' => true],
+        ['type' => 'data_table', 'table' => 'comps', 'cols' => ['א'], 'rows' => [['1']], 'refs' => [['type' => 'comp', 'pid' => 'c']]]]]);
+eq([$nvU[0], in_array('floors_total', array_column(array_filter($adU['proposal']['blocks'] ?? [], fn($b) => $b['type'] === 'fact'), 'attr'), true),
+    array_key_exists('reopen_reason', $headP), array_key_exists('rev', $headP), apr_report_version_head($verRowU)['reopen_reason'], array_keys($secP), array_map('array_keys', $secP['blocks'])],
+    [200, true, false, false, 'נתון נוסף', ['pid', 'key', 'title', 'mandatory', 'blocks'], [['type', 'text'], ['type', 'attr', 'label', 'value'], ['type', 'table', 'cols', 'rows']]],
+    '🟡5: בגרסה חדשה, נתון שהגיע אחרי האישור אינו נבלע — לפרק שנערך הוא מגיע כהצעת עדכון; 🟡6: שותף אינו מקבל את reopen_reason / rev, ולא origin / ai_reviewed / src / fact / refs / was / changed / ai / num_unknown');
+
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();
