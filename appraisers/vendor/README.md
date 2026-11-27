@@ -7,17 +7,18 @@
 
 | חבילה | גרסה | רישיון | מה נשאר ממנה |
 | --- | --- | --- | --- |
-| `mpdf/mpdf` | 8.3.1 | GPL-2.0-only | `src/`, `data/`, שני גופנים מ-`ttfonts/`, `LICENSE.txt`, `CREDITS.txt` |
+| `mpdf/mpdf` | 8.3.1 | GPL-2.0-only | `src/`, `data/`, `LICENSE.txt`, `CREDITS.txt` (שני הגופנים שבשימוש עברו ל-`lib/fonts/`) |
 | `setasign/fpdi` | 2.6.10 | MIT | `src/FpdiTrait.php` בלבד (המחלקה הראשית של mPDF משתמשת ב-trait), `LICENSE.txt` |
 | `psr/log` | 3.0.2 | MIT | שש המחלקות שנטענות (`LoggerInterface`, `LoggerAwareInterface`, `LoggerTrait`, `AbstractLogger`, `NullLogger`, `LogLevel`), `LICENSE` |
 | `mpdf/psr-log-aware-trait` | 3.0.0 | MIT (מוצהר ב-`composer.json` שלה; אין בחבילה קובץ רישיון) | `src/` (שני קבצים), `composer.json` |
 
-**הגופן:** DejaVu Sans, רגיל ומודגש (`DejaVuSans.ttf`, `DejaVuSans-Bold.ttf`) — רישיון Bitstream Vera / DejaVu
-(`mpdf/mpdf/ttfonts/DejaVuinfo.txt`), שמתיר הטמעה והפצה. הוא מוטמע ב-PDF (כתת-קבוצה) וב-DOCX.
+**הגופן:** DejaVu Sans, רגיל ומודגש — מתוך `ttfonts/` של mPDF, אבל יושב ב-**`lib/fonts/`** ולא כאן: גם כותב ה-Word מטמיע
+אותו, והוא אינו תלוי בספרייה. הרישיון (Bitstream Vera / DejaVu, מתיר הטמעה והפצה): `lib/fonts/LICENSE-DejaVu.txt`.
+הגופן מוטמע ב-PDF (כתת-קבוצה) וב-DOCX (שלם, בערפול שהתקן דורש).
 
 ## מה קוצץ
 
-- מ-`mpdf/mpdf`: `tests/`, `utils/`, `tmp/`, קובצי התצורה של הכלים, ו-86 מתוך 88 הגופנים שב-`ttfonts/` (88MB במקור).
+- מ-`mpdf/mpdf`: `tests/`, `utils/`, `tmp/`, קובצי התצורה של הכלים, וכל `ttfonts/` (88MB במקור; שני הגופנים שבשימוש — ב-`lib/fonts/`).
 - מ-`setasign/fpdi`: כל קורא ה-PDF (`PdfParser/`, `PdfReader/`, `Tcpdf/`, `Tfpdf/` …) — האפליקציה אינה מייבאת PDF לתוך PDF.
 - חבילות שאינן נטענות כלל, ולכן אינן כאן: `myclabs/deep-copy` (רק תוכן העניינים של mPDF משתמש בה, ואין לנו כזה),
   `psr/http-message`, `mpdf/psr-http-message-shim` (רק להבאת תמונה מכתובת — חסום אצלנו), `paragonie/random_compat`

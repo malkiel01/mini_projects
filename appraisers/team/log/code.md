@@ -202,3 +202,33 @@
   שהשתנו ← 409, `confirm_changed`); 🟡1–4 של ביקורת סבב 2 (מיזוג הצעת בינה, בלי מחיקת שמות עובדים, `discarded`, בדיקות ומוטציות לתיקונים שלא היו
   נעולים). `u-report` — 52 בדיקות; `mutations-17` — 153, כולן נתפסות; `mutations-05` ו-`mutations-16` — כולן נתפסות; הענף ממוזג עם main.
   סטיות / לא נבנה / לא נבדק — README "17 · סבבים 2–3", `team/handoff/code.md` ("מה 17 השאירה"), והדיווח לבקרה (4). נדרש מהבקרה: אימות ומיזוג.
+- 2026-11-27 08:40 UTC · **קוד (18)** (`session_018g4NYGFaHCygg1SSWzZn5D`) · פרוסה 18 (יצוא ל-Word ול-PDF, ומסירה) — **מושהה באמצע**, לפי הודעת בקרה (5)
+  מ-08:30 (הבעלים השהה את כל הפרויקטים; אומת מול `.claude/teams/STATE.md` שב-main). הענף `claude/appraisers-code` מכיל את main של 27.11 (אחרי #1760).
+  **אין מיזוג; ה-PR טיוטה.** בלי תזכורת עצמית ובלי מעקב אחרי ה-PR — חידוש רק בהודעה מהבקרה.
+  **נבנה ונבדק — מנוע ההפקה בלבד:** `vendor/` (mPDF 8.3.1 מקוצצת, 6.4MB, `.htaccess`, `autoload.php` משלנו, README) · הגופן DejaVu Sans ב-`lib/fonts/`
+  (לא ב-vendor: גם ה-Word מטמיע אותו) · `lib/export_doc.php` (ייצוג הביניים — ממנו נכתבים שני הקבצים; גרסה שאושרה נקראת מה-snapshot בלבד) ·
+  `lib/export_docx.php` (OOXML ישיר) · `lib/export_pdf.php` (+ בדיקת התקינות `export` במסך המפתח) · `lib/migrations/018_export.sql` (**נכתבה, ושום קוד
+  עוד אינו משתמש בה**) · `tests/v-export.test.php` — 31 בדיקות עשן לכותבים בלבד · `a-boundaries` מכירה את `vendor/`. `run.php` 24/24; `php -l`, `check-apps`,
+  `devloop sync --check` ירוקים. שני הקבצים נבדקו גם בעין (PDF; DOCX דרך LibreOffice): עברית מימין לשמאל, טבלה שנשברת עם שורת כותרת, סימן מים, תחתית.
+  **לא נבנה (כל השאר):** `lib/export.php` (פעולות + משימת הרקע `report.export`), העלאת קובץ מתוקן, עיצוב המשרד, המסירה ודף הנמען, המסכים, כל קריטריוני
+  §10 חוץ מהעשן, `mutations-18`, README / `open-items` / AP-018 / גרסה 0.18 ו-`?v=` / `app.json`.
+  **הצעד הבא, לפי הסדר:** (1) `lib/export.php`: `report-exports` (קריאה, כלל `case`), `report-export-create {version, format, op}` (member; טיוטה — `edit`,
+  מאושרת — `export`), `report-export-file` (כלל `case`; טיוטה: פנימי `edit`, שותף `apr_can('report')` + `download`; מאושרת: `export`, או `view` + `download`),
+  המשימה `report.export` (ניסיון אחד; `state_at_export` נקבע בבקשה, ומצב שהשתנה עד ההרצה ← `failed: version_changed`; מגבלת 300 שניות מועברת לכותבים;
+  `error` — קוד טכני בלבד; סורק להפקות תקועות; הנעת התור אחרי התשובה מ-`api.php`). (2) קובץ של הדוח נסתר מכל זרימת קבצים כללית: כלל אחד ב-`apr_file_visible()`
+  (כל נקודות הגישה לקובץ כבר עוברות בו — נבדק ב-grep) + ב-`apr_file_row()` + החרגה מבדיקת הכפילות ב-`apr_file_ingest`; בדיקה שעוברת על כל פעולת קובץ כללית.
+  (3) `apr_report_approve`: להוסיף ל-snapshot את `case.number`, `office` (`apr_export_snapshot_office` — השם והעיצוב כפי שהיו), ולגרסת `from_upload` —
+  `binding` (`file` | `sections`, חובה באישור) ו-`upload`; `apr_export_doc` כבר קורא אותם, עם נפילה לערכי הרגע לגרסה שאושרה לפני 0.18. (4) `report-upload`
+  (גוף גולמי — להוסיף לתנאי ב-`api.php`) דרך `apr_file_ingest` עם `mimes` (DOCX / PDF), `dup=1` ו-`after` שיוצר את הגרסה ואת שורת `report_exports` מסוג `upload`.
+  (5) מסירה: `delivery-preview` / `delivery-create` (רגישה — `APR_SENSITIVE`) / `delivery-revoke`, והציבוריות `delivery-open|otp-send|otp-verify|file` + `delivery/`
+  בדפוס של `portal/` (CSP עם nonce, והערת ה-`diag.js`); ב-`app.json` להשאיר את שורת ה-API במקום 4 (`a-boundaries` קוראת `public[4]`). (6) מסכים + דפדפן,
+  `#/office/branding` (הלוגו ב-`data/branding/`, מקודד מחדש ל-PNG). (7) בדיקות לכל 🤖, מחלץ טקסט משלנו ל-PDF (mPDF כותבת UTF-16BE בסדר חזותי), מוטציות, תיעוד.
+  **הכרעות שכבר בקוד:** קובצי ההפקה ב-`files` (כמו באפיון), עם טריגר שאוסר מחיקה — גם רכה — של כל קובץ דוח · `delivery_files` במקום `export_ids` (המסד
+  אוכף: רק הנוסח המחייב של אותה גרסה — הפקה מה-snapshot, או הקובץ שהועלה כש-`binding = file`) · האסימון על `deliveries` (קישור אחד למסירה) · `to_hash` —
+  קוד נשלח רק לכתובת שהייתה בזמן המסירה; מייל שהשתנה ← הקישור אינו בתוקף · בלי קוד — רק `portal_link` לנמען בלי מייל (CHECK במסד), באישור מפורש · מייל המסירה
+  דרך `apr_conn_pick` + `apr_channel_send`, לא דרך `messages` (ה-CHECK של `kind` נעול ב-008), וב-`email_link` הגרסה עוברת ל-`delivered` רק אחרי שהמייל יצא ·
+  `AprMpdf` מנטרלת את `{PAGENO}`, `{nb}`, `{nbpg}`, `{DATE …}` (mPDF מחליפה אותם גם בטקסט של משתמש); `useOTL = 0` (בלי ליגטורות).
+  **סטיות עד כאן (לדיווח בסוף):** הגופן ב-`lib/fonts/` ולא ב-`vendor/…/ttfonts` · אין עמוד לרוחב לטבלה רחבה (מקרה קצה 5) — האותיות מוקטנות · תוכן העניינים
+  ב-Word הוא שדה אמיתי, אבל מספרי העמודים מופיעים רק אחרי "עדכון שדה"; ב-PDF — רשימת הפרקים בלי מספרי עמודים.
+  **מלכודות:** `f-invites` נופלת על מחרוזת של 43+ תווי `[A-Za-z0-9+/]` בתוך מירכאות (גם נתיב של סכמת OOXML) · מחלקה שמרחיבה את `\Mpdf\Mpdf` מוגדרת בתוך
+  פונקציה (`apr_pdf_load`) — הגדרה ברמת הקובץ טוענת את הספרייה בכל בקשה · `a-boundaries`: רק `lib/export_pdf.php` מזכיר `/vendor/` או `Mpdf\`.

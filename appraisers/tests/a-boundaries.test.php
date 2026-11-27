@@ -70,7 +70,7 @@ foreach ($php as $rel) {
     if (preg_match('#/vendor/|Mpdf\\\\#', $code)) $users[] = $rel;
 }
 eq($users, ['lib/export_pdf.php'], 'vendor/ ו-mPDF נטענים רק מ-lib/export_pdf.php');
-check('vendor/: בלי תיקיות בדיקה, כלים ומטמון של הספרייה', !array_filter(array_keys($files), fn($r) => preg_match('#^vendor/.*/(tests?|utils|tmp|docs?)/#i', $r)));
+check('vendor/: בלי תיקיות בדיקה, כלים ומטמון של הספרייה', !array_filter(array_keys($files), fn($r) => preg_match('#^vendor/[^/]+/[^/]+/(tests?|utils|tmp|docs?|ttfonts)/#', $r)));
 $vsize = array_sum(array_map(fn($r) => filesize($files[$r]), array_filter(array_keys($files), fn($r) => str_starts_with($r, 'vendor/'))));
 check('vendor/: קטן מ-10MB', $vsize < 10 * 1024 * 1024, [$vsize]);
 
