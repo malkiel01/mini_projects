@@ -266,6 +266,16 @@ function apr_report_refresh(array $ctx, array $c, array $v, ?int $uid): array
 }
 
 /**
+ * מזהה הפעולה של ניסוח פרק, לשער הבינה (בקשה חוזרת עם אותו מזהה אינה מחויבת פעמיים): הפרק, ה-rev שלו, וה-rev של הגרסה. ה-rev של הגרסה
+ * נחוץ כי ניסוח ש**נזרק** (הגרסה עברה לבדיקה בזמן הקריאה) אינו מקדם את ה-rev של הפרק — ובלעדיו "ניסוח עכשיו" אחרי החזרה לעריכה היה
+ * נענה כחזרה על בקשה שכבר הושלמה, בלי טקסט.
+ */
+function apr_report_ai_op(array $s): string
+{
+    return 'rd:' . $s['pid'] . ':' . $s['rev'] . ':' . (int)apr_val('SELECT rev FROM report_versions WHERE id = ?', [$s['version_id']]);
+}
+
+/**
  * ניסוח הפרקים שמותר לבינה לנסח, אחרי יצירת הטיוטה. כשהבינה אינה זמינה (לפי ההגדרות בלבד) — **אין קריאה למתאם**, והפרק מסומן "ממתין"
  * עם הסיבה (§6.3, 17-A5). מה שנוסח — נשאר; מכסה שנגמרה באמצע משאירה את השאר "ממתין: מכסה".
  */
@@ -282,7 +292,7 @@ function apr_report_ai_all(?array $ctx, array $c, array $v): void
         $why = apr_extract_unavailable($c, $user);
         if ($why === null && !apr_limit('ai-report:o' . $c['office_id'], 200, 3600)) $why = 'failed';
         $r = $why !== null ? ['state' => 'wait', 'reason' => in_array($why, APR_REPORT_AI_WAITS, true) ? $why : 'failed', 'blocks' => [], 'run' => null]
-            : apr_report_ai_section($ctx, $c, $s, $tpl, 'rd:' . $s['pid'] . ':' . $s['rev']);
+            : apr_report_ai_section($ctx, $c, $s, $tpl, apr_report_ai_op($s));
         apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, $ctx !== null ? (int)$ctx['user']['id'] : null));
     }
 }
@@ -596,7 +606,7 @@ function apr_report_section_ai(array $ctx, array $in): array
     if ((int)$s['user_edited'] === 1 && ($in['replace'] ?? false) !== true) apr_fail('report_replace');
     if (!apr_limit('ai-report:u' . $ctx['user']['id'], ...APR_REPORT_RATE_AI)) apr_fail('ai_rate');
     $tpl = apr_report_tpl($v);
-    $r = apr_report_ai_section($ctx, $c, $s, $tpl, 'rd:' . $s['pid'] . ':' . $s['rev']);
+    $r = apr_report_ai_section($ctx, $c, $s, $tpl, apr_report_ai_op($s));
     $outcome = apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, (int)$ctx['user']['id']));
     apr_case_touch($c);
     // discarded: הפרק או הגרסה כבר אינם פתוחים לכתיבה — הטקסט לא נשמר בשום מקום, והמסך אומר זאת (לא "הפרק נוסח")

@@ -892,6 +892,145 @@ eq([$nvU[0], in_array('floors_total', array_column(array_filter($adU['proposal']
     [200, true, false, false, 'נתון נוסף', ['pid', 'key', 'title', 'mandatory', 'blocks'], [['type', 'text'], ['type', 'attr', 'label', 'value'], ['type', 'table', 'cols', 'rows']]],
     '🟡5: בגרסה חדשה, נתון שהגיע אחרי האישור אינו נבלע — לפרק שנערך הוא מגיע כהצעת עדכון; 🟡6: שותף אינו מקבל את reopen_reason / rev, ולא origin / ai_reviewed / src / fact / refs / was / changed / ai / num_unknown');
 
+// ═══ סבב 3 — B3-ב, והצהובים של ביקורת סבב 2 ══════════════════════════
+$nob0 = ['user' => null, 'office' => null];
+/** "ניסוח עכשיו" (בידי דנה) שבזמן הקריאה לספק קורה משהו: $during($section) רץ מתוך המתאם. מחזיר [pid של הפרק, התשובה]. */
+$aiWhile = function (string $version, string $key, callable $during, string $text = 'ניסוח של הבינה, בלי מספרים') use ($fake, $echo, $ver, $sec, $post, $dana) {
+    $s = $sec($ver($version)[1], $key);
+    $fake->next = function () use ($during, $s, $text) { $during($s); return reply(['blocks' => [['text' => $text, 'src' => 'd1']]]); };
+    $r = $post('report-section-ai', ['section' => $s['pid'], 'rev' => $s['rev'], 'replace' => true], $dana);
+    $fake->next = $echo;
+    return [$s['pid'], $r];
+};
+$pendingOf = fn(string $section) => apr_rows("SELECT p.* FROM section_proposals p JOIN report_sections s ON s.id = p.section_id WHERE s.pid = ? AND p.state = 'pending' ORDER BY p.id", [$section]);
+$decide = fn(string $proposal, string $decision, ?array $content = null, string $as = null) => $post('report-proposal-decide', ['proposal' => $proposal, 'decision' => $decision] + ($content !== null ? ['content' => $content] : []), $as);
+
+// B3-ב: 85.5 ← טקסט בינה ← השמאי טוען את העורך ← עמיתה מתקנת ל-120, ואיש אינו קורא את הדוח ← "סקרתי" עם ה-rev שעל המסך ← 409
+$CQ = make_case($avi, $PM);
+$members($CQ);
+$FQ = $fact($CQ, 'area', '85.5', ['unit' => 'sqm', 'area_kind' => 'registered'])[1]['fact']['pid'];
+$fake->next = $echo;
+$post('report-draft-create', ['case' => $CQ]);
+$VQ = $versions($CQ)[0]['pid'];
+$adQ = $sec($ver($VQ)[1], 'area_desc');
+$post('fact-correct', ['fact' => $FQ, 'rev' => $frev($FQ), 'value' => '120', 'correction_note' => 'מדידה חוזרת']);
+$toctou = $post('report-section-reviewed', ['section' => $adQ['pid'], 'rev' => $adQ['rev']]);
+$rowQ = $srow($adQ['pid']);
+$adQ2 = $sec($ver($VQ)[1], 'area_desc');                                                         // המסך נטען מחדש: הממצא וההצעה מוצגים
+$blockQ = $blocking($VQ);
+// הממצא נעול (🟡4): תבנית שמורידה אותו ל"אזהרה" אינה משנה, והפרופיל אינו שומר אותו כאזהרה
+$cqRow = apr_row('SELECT * FROM cases WHERE pid = ?', [$CQ]) + ['perms' => [], 'my_role' => 'system', 'share' => null];
+$vqRow = $versions($CQ)[0];
+$vqRow['template'] = json_encode(['findings' => ['ai_stale' => 'warn', 'data_new' => 'warn']] + apr_pc_report_default(), JSON_UNESCAPED_UNICODE);
+$lvlQ = array_column(apr_report_findings($cqRow, $vqRow, apr_report_sections($nob0, $cqRow, $vqRow)), 'level', 'kind')['ai_stale'] ?? null;
+$pcQ = apr_pc_report(['findings' => ['ai_stale' => 'warn', 'data_new' => 'warn']])['findings'];
+$okQ = $post('report-section-reviewed', ['section' => $adQ2['pid'], 'rev' => $adQ2['rev'], 'confirm_changed' => true]);
+$auditQ = (string)json_encode(apr_row("SELECT * FROM audit_log WHERE action = 'report.section_reviewed' ORDER BY id DESC LIMIT 1"), JSON_UNESCAPED_UNICODE);
+eq([$adQ['origin'], $adQ['ai_reviewed'], $toctou[0], code($toctou), (int)$rowQ['ai_reviewed'], $adQ2['rev'] === $adQ['rev'], in_array('ai_stale', $blockQ, true), $adQ2['proposal']['origin'] ?? null, $lvlQ, [$pcQ['ai_stale'], $pcQ['data_new']],
+    $okQ[0], str_contains($auditQ, 'confirm_changed'), in_array('ai_stale', $blocking($VQ), true), $sec($ver($VQ)[1], 'area_desc')['ai_reviewed']],
+    ['ai', false, 409, 'report_ai_stale', 0, true, true, 'auto', 'block', ['block', 'block'], 200, true, false, true],
+    'B3-ב: נתון שתוקן אחרי שהעורך נטען, בלי שאיש קרא את הדוח (ה-rev של הפרק לא התקדם) — "סקרתי" נדחה ב-409 והפרק נשאר לא נסקר; אחרי טעינה מחדש הממצא ai_stale וההצעה מוצגים, ורק confirm_changed מאשר — ונרשם ביומן. 🟡4: ai_stale ו-data_new נעולים — לא התבנית ולא הפרופיל מורידים אותם לאזהרה');
+
+// מיזוג: (🟡4) הצעת **נתונים** אינה מלבינה פרק בינה; (🟡1) הצעת **בינה** שמי שאינה שמאית ממזגת בתו אחד שונה — "בינה, לא נסקר"; (🟡4) שמאי שהשאיר את טקסט הבינה — מסומן
+$p1 = $pendingOf($adQ['pid'])[0] ?? [];
+$mergeData = $decide($p1['pid'] ?? '', 'merge', [['type' => 'p', 'text' => 'נוסח שעובדת המשרד כתבה במיזוג']], $tal);
+$adQ3 = $sec($ver($VQ)[1], 'area_desc');
+$aiWhile($VQ, 'area_desc', fn($s) => $save($s['pid'], [['type' => 'p', 'text' => 'עריכה ידנית של השמאי']]), 'טקסט של הבינה למיזוג');
+$adQ4 = $sec($ver($VQ)[1], 'area_desc');
+$p2 = $pendingOf($adQ['pid'])[0] ?? [];
+$mergeTal = $decide($p2['pid'] ?? '', 'merge', [['type' => 'p', 'text' => 'טקסט של הבינה למיזוג.']], $tal);
+$adQ5 = $sec($ver($VQ)[1], 'area_desc');
+$rowQ5 = $srow($adQ['pid']);
+$blockQ5 = $blocking($VQ);
+$aiWhile($VQ, 'area_desc', fn($s) => $save($s['pid'], [['type' => 'p', 'text' => 'עריכה שנייה של השמאי']]), 'טקסט שני של הבינה');
+$p3 = $pendingOf($adQ['pid'])[0] ?? [];
+$mergeAvi = $decide($p3['pid'] ?? '', 'merge', [['type' => 'p', 'text' => 'טקסט שני של הבינה'], ['type' => 'p', 'text' => 'תוספת של השמאי']]);
+$adQ6 = $sec($ver($VQ)[1], 'area_desc');
+eq([[$p1['origin'] ?? null, $mergeData[0], $adQ3['origin'], $adQ3['ai_reviewed']], [$adQ4['origin'], $p2['origin'] ?? null, $mergeTal[0], $adQ5['origin'], $adQ5['ai_reviewed'], (int)$rowQ5['ai_run_id'] === (int)($p2['ai_run_id'] ?? -1),
+    $rowQ5['ai_input_hash'] === ($p2['ai_input_hash'] ?? 'x'), in_array('ai_unreviewed', $blockQ5, true)], [$p3['origin'] ?? null, $mergeAvi[0], $adQ6['origin'], $adQ6['blocks'][0]['ai'] ?? null, $adQ6['blocks'][1]['ai'] ?? null, $adQ6['ai_reviewed']]],
+    [['auto', 200, 'ai', false], ['manual', 'ai', 200, 'ai', false, true, true, true], ['ai', 200, 'ai', true, null, false]],
+    '🟡4: מיזוג של הצעת נתונים בידי עובדת המשרד אינו מלבין פרק בינה (נשאר "בינה", הסקירה מתבטלת). 🟡1: הצעת בינה שעובדת המשרד ממזגת בשינוי של תו אחד — הפרק "בינה, לא נסקר" עם הריצה והקלט של ההצעה, וחוסם. 🟡4: שמאי שמיזג והשאיר את טקסט הבינה — הפסקה והפרק מסומנים בינה');
+
+// 🟡4: קבלת הצעת בינה על פרק בינה שכבר נסקר — הסקירה מתאפסת, והפרק נושא את הריצה ואת נתוני הקלט של ההצעה (לא את הישנים)
+$vsQ = $sec($ver($VQ)[1], 'visit');
+$post('report-section-reviewed', ['section' => $vsQ['pid'], 'rev' => $vsQ['rev']]);
+$vs0 = $srow($vsQ['pid']);
+$visit($CQ);                                                                                    // נתוני הפרק השתנו; איש אינו קורא את הדוח
+$keepKeys = ['type' => 1, 'text' => 1, 'what' => 1, 'table' => 1, 'attr' => 1, 'photo' => 1];
+$fake->next = function () use ($save, $vs0, $keepKeys) {                                         // השמאי שומר בזמן הקריאה, ומשאיר את טקסט הבינה: הפרק עדיין "בינה" ונסקר
+    $save($vs0['pid'], [...array_map(fn($b) => array_intersect_key($b, $keepKeys), json_decode($vs0['content'], true)), ['type' => 'p', 'text' => 'תוספת של השמאי בזמן הניסוח']]);
+    return reply(['blocks' => [['text' => 'בנכס נערך ביקור, לפי הנתונים', 'src' => 'd1']]]);
+};
+$aiQ3 = $post('report-section-ai', ['section' => $vs0['pid'], 'rev' => (int)$vs0['rev']], $dana);
+$fake->next = $echo;
+$vsMid = $srow($vsQ['pid']);
+$p4 = $pendingOf($vsQ['pid'])[0] ?? [];
+$accQ = $decide($p4['pid'] ?? '', 'accept');
+$vsEnd = $srow($vsQ['pid']);
+eq([$aiQ3[1]['as_proposal'] ?? null, [$vsMid['origin'], (int)$vsMid['ai_reviewed']], $p4['origin'] ?? null, ($p4['ai_input_hash'] ?? null) !== null && $p4['ai_input_hash'] !== $vs0['ai_input_hash'], $accQ[0],
+    [$vsEnd['origin'], (int)$vsEnd['ai_reviewed'], $vsEnd['ai_reviewed_by']], $vsEnd['ai_input_hash'] === ($p4['ai_input_hash'] ?? 'x'), (int)$vsEnd['ai_run_id'] === (int)($p4['ai_run_id'] ?? -1) && (int)$vsEnd['ai_run_id'] !== (int)$vs0['ai_run_id']],
+    [true, ['ai', 1], 'ai', true, 200, ['ai', 0, null], true, true],
+    '🟡4: קבלת הצעת בינה על פרק בינה שנסקר — הסקירה מתאפסת, והפרק נושא את הריצה ואת נתוני הקלט של ההצעה');
+
+// 🟡4: הצעה פתוחה קודמת מוחלפת בהצעת הבינה — לפרק יש הצעה פתוחה אחת
+$plQ = $sec($ver($VQ)[1], 'planning');
+$save($plQ['pid'], [['type' => 'p', 'text' => 'המצב התכנוני, בעריכת השמאי']]);
+call('POST', 'source-check-record', ['case' => $CQ, 'source' => $srcKey, 'status' => 'found', 'result_summary' => 'נמצא', 'query_text' => 'גוש 6158'], $avi);
+$ver($VQ);
+$oldP = $pendingOf($plQ['pid'])[0] ?? [];
+$aiWhile($VQ, 'planning', fn($s) => $save($s['pid'], [['type' => 'p', 'text' => 'עריכה נוספת בזמן הניסוח']]));
+$newP = $pendingOf($plQ['pid']);
+// 🟡3 (סבב 3): ניסוח שאין לו לאן להיכתב — "נזרק", לא "נוסח": הגרסה יצאה מטיוטה בזמן הקריאה; הפרק נמחק; הגרסה נמחקה
+$plBefore = $srow($plQ['pid']);
+[, $dSubmit] = $aiWhile($VQ, 'planning', fn() => $submit($VQ));
+$stateMid = $versions($CQ)[0]['state'];
+$post('report-return', ['version' => $VQ, 'rev' => $vvrev($VQ)]);
+[$prQ, $dSecDel] = $aiWhile($VQ, 'property', fn($s) => $post('report-section-delete', ['section' => $s['pid'], 'rev' => (int)apr_val('SELECT rev FROM report_sections WHERE pid = ?', [$s['pid']])]));
+[, $dVerDel] = $aiWhile($VQ, 'planning', fn() => $post('report-version-delete', ['version' => $VQ, 'rev' => $vvrev($VQ), 'reason' => 'נמחקה בזמן הניסוח']));
+$plAfter = $srow($plQ['pid']);
+eq([[$oldP['origin'] ?? null, count($newP), $newP[0]['origin'] ?? null, apr_val('SELECT state FROM section_proposals WHERE pid = ?', [$oldP['pid'] ?? ''])],
+    [$stateMid, $dSubmit[1]['state'] ?? null, $dSubmit[1]['reason'] ?? null, $dSubmit[1]['as_proposal'] ?? null], [$dSecDel[1]['state'] ?? null, $srow($prQ)['deleted_at'] !== null, (int)apr_val('SELECT COUNT(*) FROM section_proposals p JOIN report_sections s ON s.id = p.section_id WHERE s.pid = ?', [$prQ])],
+    [$dVerDel[1]['state'] ?? null, apr_val('SELECT deleted_at FROM report_versions WHERE pid = ?', [$VQ]) !== null, [$plAfter['content'], $plAfter['origin'], $plAfter['rev']] === [$plBefore['content'], $plBefore['origin'], $plBefore['rev']]],
+    array_column($pendingOf($plQ['pid']), 'pid') === array_column($newP, 'pid')],
+    [['auto', 1, 'ai', 'rejected'], ['in_review', 'discarded', 'gone', false], ['discarded', true, 0], ['discarded', true, true], true],
+    '🟡4: הצעת נתונים פתוחה מוחלפת בהצעת הבינה (אחת פתוחה). 🟡3 (סבב 3): ניסוח בזמן שהגרסה עברה לבדיקה / הפרק נמחק / הגרסה נמחקה — התשובה discarded (לא done), לא נוצרת הצעה, ותוכן הפרק של גרסה מחוקה אינו משתנה');
+
+// "הכול" (🟡4, 🟡3): פרק שנערך בזמן שהספק ניסח אותו אינו נדרס — הניסוח נשמר כהצעה; וגרסה שיצאה מטיוטה עוצרת את הלולאה, בלי קריאות נוספות בתשלום
+$CW = make_case($avi, $PM);
+$fact($CW, 'area', '64', ['unit' => 'sqm', 'area_kind' => 'registered']);
+$fake->calls = [];
+$fake->next = function (array $req) use ($echo, $save, $CW, $caseId) {
+    if (str_contains((string)json_encode($req, JSON_UNESCAPED_UNICODE), 'כותרת הפרק: סביבת הנכס ותיאורו')) {
+        $save((string)apr_val("SELECT s.pid FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.case_id = ? AND s.key = 'area_desc'", [$caseId($CW)]), [['type' => 'p', 'text' => 'נערך בזמן שהבינה ניסחה את הפרקים']]);
+    }
+    return $echo($req);
+};
+$post('report-draft-create', ['case' => $CW]);
+$callsW = count($fake->calls);
+$adW = $sec($ver($versions($CW)[0]['pid'])[1], 'area_desc');
+$CW2 = make_case($avi, $PM);
+$fact($CW2, 'area', '64', ['unit' => 'sqm', 'area_kind' => 'registered']);
+$fake->calls = [];
+$fake->next = function (array $req) use ($echo, $submit, $versions, $CW2) { $submit($versions($CW2)[0]['pid']); return $echo($req); };
+$post('report-draft-create', ['case' => $CW2]);
+$fake->next = $echo;
+eq([$callsW, $adW['origin'], $adW['blocks'][0]['text'] ?? null, $adW['proposal']['origin'] ?? null,
+    count($fake->calls), $versions($CW2)[0]['state'], (int)apr_val("SELECT COUNT(*) FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.case_id = ? AND s.origin = 'ai'", [$caseId($CW2)])],
+    [4, 'manual', 'נערך בזמן שהבינה ניסחה את הפרקים', 'ai', 1, 'in_review', 0],
+    '"הכול": עריכה ידנית של פרק בזמן שהספק מנסח אותו נשארת, והניסוח נשמר כהצעת בינה (B2 במסלול הזה); גרסה שעברה לבדיקה בזמן הקריאה הראשונה — הלולאה נעצרת אחרי קריאה אחת, ושום פרק אינו נכתב');
+
+// 🟡4: "גרסה חדשה" נושאת את ai_input_hash של הגרסה שאושרה — טקסט בינה שנכתב לפני שינוי הנתון חוסם גם בה; ושותף אינו מקבל reopen_reason / rev בשום קריאה
+$hashOf = fn(string $version) => apr_val("SELECT s.ai_input_hash FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.pid = ? AND s.key = 'area_desc'", [$version]);
+$nvS = $post('report-version-new', ['case' => $CS, 'reason' => 'השטח תוקן אחרי האישור'])[1]['version'] ?? '';
+$share($CU, ['see_draft' => true]);
+$draftU = $nvU[1]['version'] ?? '';
+$leaks = fn(array $head) => array_values(array_intersect(['reopen_reason', 'rev'], array_keys($head)));
+eq([$hashOf($VS) !== null && $hashOf($VS) !== false, $hashOf($nvS) === $hashOf($VS), in_array('ai_stale', $blocking($nvS), true),
+    $ver($draftU, $boaz)[0], $leaks($ver($draftU, $boaz)[1]['version'] ?? ['rev' => 1]), $leaks($ver($VU, $boaz)[1]['version'] ?? ['rev' => 1]), array_merge(...array_map($leaks, $report($CU, $boaz)[1]['versions'] ?? [['rev' => 1]])),
+    $ver($draftU)[1]['version']['reopen_reason'] ?? null, isset($ver($draftU)[1]['version']['rev'])],
+    [true, true, true, 200, [], [], [], 'נתון נוסף', true],
+    '🟡4: גרסה חדשה נושאת את ai_input_hash של הגרסה שאושרה, ולכן טקסט בינה שנכתב לפני שינוי הנתון חוסם גם בה (ai_stale); שותף ממשרד אחר אינו מקבל reopen_reason / rev — בטיוטה, בגרסה שאושרה וברשימת הגרסאות — והמשתתף הפנימי כן');
+
 // ═══ סבב 3 — B1: טקסט חופשי שאדם הקליד אינו מגיע לספק הבינה. הבדיקה נגזרת מהסכימה, לא מרשימה של שדות ═══
 // סמן ייחודי (אותיות בלבד, 10 תווים — שורד גם substr של תאריך) לכל מאפיין ולכל עמודה. סמן ב-payload = דליפה.
 $mk = fn(string $name) => 'ZQ' . strtr(substr(md5($name), 0, 6), '0123456789', 'ghijklmnop') . 'QZ';

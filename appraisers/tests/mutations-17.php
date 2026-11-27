@@ -53,7 +53,7 @@ $M = [
     ['סטייה 7: טלפון מושמט', 'report_build.php', "\\d{4}(?!\\d)/', \$flat) === 1) return null;", "\\d{4}(?!\\d)/', \$flat) === 2) return null;"],
     ['סטייה 7: ת"ז מושמטת', 'report_build.php', "\\d{8,9}(?!\\d)/', \$text) === 1 ||", "\\d{8,9}(?!\\d)/', \$text) === 2 ||"],
     ['סטייה 7: מייל מושמט', 'report_build.php', "[a-z]{2,}/iu', \$text) === 1) return null;", "[a-z]{2,}/iu', \$text) === 2) return null;"],
-    ['סטייה 7: שם המבקר נמחק', 'report_build.php', "    foreach (\$pii['staff'] as \$n) {", "    foreach ([] as \$n) {"],
+    ['סטייה 7: שם המבקר אינו נכנס לקלט', 'report_build.php', "(\$v['visitor'] && empty(\$tpl['for_ai']) ? ', בידי ' . \$v['visitor'] : '')", "(\$v['visitor'] ? ', בידי ' . \$v['visitor'] : '')"],
     ['סטייה 7: הקלט עובר ניקוי', 'report_build.php', "        \$text = apr_report_ai_scrub(\$text, \$pii);\n        if (\$text === null) { \$omitted++; return false; }\n", ''],
     ['17-D1 src שלא נשלח ← נזרק', 'report_build.php', " || \$src === null || !isset(\$items[\$src])) { \$dropped++; continue; }", " || \$src === null) { \$dropped++; continue; }"],
     ['17-D1 מספר שאינו בנתונים מסומן', 'report_build.php', " + (\$unknown ? ['num_unknown' => \$unknown] : []);", " + [];"],
@@ -186,15 +186,120 @@ B],
     ['B1 נתון שלא נשלח נשאר בפרק כהפניה', 'report_build.php', <<<'A'
             if (!$sent) $kept[] = ['type' => 'fact', 'attr' => $b['attr']];
 A, ''],
-    ['🟡4 שם של חבר צוות — מילה שלמה בלבד (אחריו)', 'report_build.php', <<<'A'
-$name . '(?![\p{L}\p{N}\p{M}"\x{05F4}\'\x{05F3}])/iu'
+    // ── סבב 3: B3-ב והצהובים של ביקורת סבב 2 ──
+    ['B3-ב "סקרתי" על נתונים שהשתנו ← 409', 'report.php', <<<'A'
+        if ($changed && ($in['confirm_changed'] ?? false) !== true) apr_fail('report_ai_stale');
+A, ''],
+    ['B3-ב האישור המפורש נרשם ביומן', 'report.php', <<<'A'
+['key' => $s['key']] + ($changed ? ['confirm_changed' => true] : []));
 A, <<<'B'
-$name . '/iu'
+['key' => $s['key']]);
 B],
-    ['🟡4 שם של חבר צוות — מילה שלמה בלבד (לפניו)', 'report_build.php', <<<'A'
-(?:בידי\s+)?(?<![\p{L}\p{N}])[ול]{0,2}'
+    ['סבב 3 🟡1: מי שאינו שמאי אינו מלבין הצעת בינה במיזוג', 'report.php', <<<'A'
+ || !apr_comp_can_judge($ctx, $c));
 A, <<<'B'
-(?:בידי\s+)?'
+);
+B],
+    ['סבב 3 🟡4: מיזוג של הצעת נתונים אינו מלבין פרק בינה', 'report.php', <<<'A'
+                $set = $took ? $aiSet : apr_report_origin_after($ctx, $c, $s, $blocks, $json);
+A, <<<'B'
+                $set = $took ? $aiSet : ['origin' => 'manual'] + $reset;
+B],
+    ['סבב 3 🟡4: מיזוג של הצעת בינה מסמן בינה', 'report.php', <<<'A'
+                $set = $took ? $aiSet : apr_report_origin_after($ctx, $c, $s, $blocks, $json);
+A, <<<'B'
+                $set = apr_report_origin_after($ctx, $c, $s, $blocks, $json);
+B],
+    ['סבב 3 🟡4: קבלת הצעת בינה מאפסת סקירה', 'report.php', <<<'A'
+            $aiSet = ['origin' => 'ai', 'ai_run_id' => $p['ai_run_id'], 'ai_input_hash' => $p['ai_input_hash']] + $reset;
+A, <<<'B'
+            $aiSet = ['origin' => 'ai', 'ai_run_id' => $p['ai_run_id'], 'ai_input_hash' => $p['ai_input_hash']];
+B],
+    ['סבב 3 🟡4: קבלת הצעת בינה נושאת את נתוני הקלט של ההצעה', 'report.php', <<<'A'
+            $aiSet = ['origin' => 'ai', 'ai_run_id' => $p['ai_run_id'], 'ai_input_hash' => $p['ai_input_hash']] + $reset;
+A, <<<'B'
+            $aiSet = ['origin' => 'ai', 'ai_run_id' => $p['ai_run_id']] + $reset;
+B],
+    ['סבב 3 🟡4: קבלת הצעת בינה נושאת את הריצה של ההצעה', 'report.php', <<<'A'
+            $aiSet = ['origin' => 'ai', 'ai_run_id' => $p['ai_run_id'], 'ai_input_hash' => $p['ai_input_hash']] + $reset;
+A, <<<'B'
+            $aiSet = ['origin' => 'ai', 'ai_input_hash' => $p['ai_input_hash']] + $reset;
+B],
+    ['סבב 3 🟡4: הצעה פתוחה קודמת מוחלפת בהצעת הבינה', 'report.php', <<<'A'
+    if ($moved) {
+        apr_exec("UPDATE section_proposals SET state = 'rejected', decided_at = ? WHERE section_id = ? AND state = 'pending'", [apr_now(), $s['id']]);
+A, <<<'B'
+    if ($moved) {
+B],
+    ['סבב 3 🟡3: פרק שנמחק בזמן הקריאה ← נזרק', 'report.php', <<<'A'
+    if (!$s || $s['deleted_at'] !== null || $s['version_deleted'] !== null || $s['version_state'] !== 'draft') return 'discarded';
+A, <<<'B'
+    if (!$s || $s['version_deleted'] !== null || $s['version_state'] !== 'draft') return 'discarded';
+B],
+    ['סבב 3 🟡3: טקסט אינו נכתב לגרסה מחוקה', 'report.php', <<<'A'
+    if (!$s || $s['deleted_at'] !== null || $s['version_deleted'] !== null || $s['version_state'] !== 'draft') return 'discarded';
+A, <<<'B'
+    if (!$s || $s['deleted_at'] !== null || $s['version_state'] !== 'draft') return 'discarded';
+B],
+    ['סבב 3 🟡3: גרסה שיצאה מטיוטה בזמן הקריאה ← נזרק', 'report.php', <<<'A'
+    if (!$s || $s['deleted_at'] !== null || $s['version_deleted'] !== null || $s['version_state'] !== 'draft') return 'discarded';
+A, <<<'B'
+    if (!$s || $s['deleted_at'] !== null || $s['version_deleted'] !== null) return 'discarded';
+B],
+    ['סבב 3 🟡3: התשובה אומרת "נזרק", לא "נוסח"', 'report.php', <<<'A'
+    return ['state' => $outcome === 'discarded' ? 'discarded' : $r['state'],
+A, <<<'B'
+    return ['state' => $r['state'],
+B],
+    ['סבב 3 🟡3: ב"הכול", גרסה שיצאה מטיוטה עוצרת את הלולאה', 'report.php', <<<'A'
+        if (!apr_val("SELECT 1 FROM report_versions WHERE id = ? AND deleted_at IS NULL AND state = 'draft'", [$v['id']])) return;
+A, ''],
+    ['סבב 3 🟡4: B2 במסלול "הכול" — השורה שלפני הקריאה', 'report.php', <<<'A'
+        apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, $ctx !== null ? (int)$ctx['user']['id'] : null));
+A, <<<'B'
+        apr_tx(fn() => apr_report_ai_apply($c, apr_row('SELECT * FROM report_sections WHERE id = ?', [$s['id']]), $r, $tpl, $ctx !== null ? (int)$ctx['user']['id'] : null));
+B],
+    ['סבב 3 🟡3: מזהה הפעולה נושא את ה-rev של הגרסה', 'report.php', <<<'A'
+    return 'rd:' . $s['pid'] . ':' . $s['rev'] . ':' . (int)apr_val('SELECT rev FROM report_versions WHERE id = ?', [$s['version_id']]);
+A, <<<'B'
+    return 'rd:' . $s['pid'] . ':' . $s['rev'];
+B],
+    ['סבב 3 🟡4: גרסה חדשה נושאת ai_input_hash', 'report.php', <<<'A'
+                'auto_hash' => $s['auto_hash'], 'ai_input_hash' => $s['ai_input_hash'], 'updated_by' => $uid, 'updated_at' => $now]);
+A, <<<'B'
+                'auto_hash' => $s['auto_hash'], 'updated_by' => $uid, 'updated_at' => $now]);
+B],
+    ['סבב 3 🟡4: ai_stale נעול — הפרופיל והתבנית אינם מורידים אותו', 'report_build.php', <<<'A'
+'ai_stale' => ['block', true]
+A, <<<'B'
+'ai_stale' => ['block', false]
+B],
+    ['סבב 3 🟡4: data_new נעול', 'report_build.php', <<<'A'
+'data_new' => ['block', true]
+A, <<<'B'
+'data_new' => ['block', false]
+B],
+    ['סבב 3 🟡4: שותף — טיוטה בלי reopen_reason / rev', 'report.php', <<<'A'
+    return $base + ['version' => apr_report_version_head($v, $internal), 'frozen' => false,
+A, <<<'B'
+    return $base + ['version' => apr_report_version_head($v), 'frozen' => false,
+B],
+    ['סבב 3 🟡4: שותף — גרסה שאושרה בלי rev', 'report.php', <<<'A'
+        return $base + ['version' => apr_report_version_head($v, $internal), 'frozen' => true,
+A, <<<'B'
+        return $base + ['version' => apr_report_version_head($v), 'frozen' => true,
+B],
+    ['סבב 3 🟡4: שותף — רשימת הגרסאות בלי reopen_reason / rev', 'report.php', <<<'A'
+'versions' => array_map(fn($v) => apr_report_version_head($v, $internal), $rows),
+A, <<<'B'
+'versions' => array_map(fn($v) => apr_report_version_head($v), $rows),
+B],
+    ['סבב 3 🟡2: הסינון אינו מוחק מילים מתוך טקסט', 'report_build.php', <<<'A'
+    $text = trim((string)preg_replace('/\s{2,}/u', ' ', $text));
+    return $text === '' ? null : $text;
+A, <<<'B'
+    $text = trim((string)preg_replace('/\s{2,}/u', ' ', str_replace(['אביב', 'גיל'], '', $text)));
+    return $text === '' ? null : $text;
 B],
     ['B2 פרק שהשתנה בזמן הקריאה ← הצעה, לא דריסה', 'report.php', <<<'A'
     if ($moved) {
