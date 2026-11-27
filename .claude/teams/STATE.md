@@ -11,7 +11,7 @@
 
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
-| `appraisers` שמאות מקרקעין | פעיל (חודש 21.11 באישור הבעלים) — 14 מתוך 22 ב-main (0.15); פרוסה 16 בקוד (14); שעון `trig_013dnpHoHQ2THx77U6say9Pt` (דקה 47) | `session_018g4NYDF3ThMFSJdPNYMBHe` (בקרה 3; קודם בקרה 2 `session_018g4NYFwUcVefmCvwGAazWA`) |
+| `appraisers` שמאות מקרקעין | פעיל (הבעלים, 27.11: "שיעבוד על מקסימום" — מודל ומאמץ מרביים לכל צ'אט חדש בצוות, קצב מלא) — 16 מתוך 22 ב-main (0.17, #1760); פרוסה 18 (יצוא) אצל קוד (18) `session_018g4NYGFaHCygg1SSWzZn5D`; אחריה 19 (זרם שני), 14, 20–22; שעון `trig_01Nav88E7dFWT6cnG6RhhtgA` (שעתי, דקה 47; של בקרה 3 `trig_013dnpHoHQ2THx77U6say9Pt` כבוי) | `session_018g4NYCg179r7WMdpTrAmgH` (בקרה 4, 27.11 — עברה את סף ההקשר, להחלפה בבקרה 5; קודם בקרה 3 `session_018g4NYDF3ThMFSJdPNYMBHe` — בארכיון, בקרה 2 `session_018g4NYFwUcVefmCvwGAazWA`) |
 | `kol-maroko` קול מרוקו | ⏸️ מושהה עד הודעה של הבעלים (20.11). השעון `trig_01FnY5VNEHj6GeeD2BEF2jxx` כבוי (לא נמחק). פתוח: בנייה 6 עדיין לא לתור — הבעלים צריך 🚀 לתור — האתר מושך, ואז לבדוק את החיפוש ב-/lexicon/ | `session_018g4NYCfRt1nZLMGYy1CrHx` (בקרה 13, Opus; קודם בקרה 12 `session_018g4NYE2VgSchStksNm4cLo`) |
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | **מושהה עד הודעה של הבעלים (2026-11-16)** — היה בהקמה (נפתח 2026-11-14), אין צ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
