@@ -282,7 +282,7 @@ $cpRow = apr_row('SELECT * FROM cases WHERE pid = ?', [$CP]) + ['perms' => [], '
 $cpSec = ['key' => 'area_desc', 'title' => 'סביבת הנכס ותיאורו', 'ai_allowed' => 1, 'pid' => 'x', 'rev' => 1];
 $useFact = fn() => apr_val("SELECT pid FROM facts WHERE case_id = ? AND attribute_key = 'actual_use' AND deleted_at IS NULL AND state <> 'rejected' ORDER BY id DESC LIMIT 1", [$cpRow['id']]);
 $leaks = [];
-$samples = ['ת"ז השוכר 123456789.' => '123456789', 'ת"ז 123456789, נמסרה' => '123456789', 'ת.ז 01234567-8 של השוכר' => '01234567', 'מספר זהות 12345678 בלבד' => '12345678',
+$samples = ['ת"ז השוכר 123456789.' => '123456789', 'ת"ז 123456789, נמסרה' => '123456789', 'ת.ז 01234567-8 של השוכר' => '01234567', 'מספר זהות 12345678 בלבד' => '12345678', 'ת.ז 1234567-8 בספח' => '1234567',
     'טלפון 054.765.4321 לתיאום' => '4321', 'טלפון +972 54 765 4321' => '4321', 'טלפון +972-(0)54-7654321' => '7654321', 'נייד 052.111.2233' => '2233', 'טל׳ 03-5551234' => '5551234',
     'נמסר בידי מר ישראלי' => 'ישראלי', 'לדברי ישראל  ישראלי (רווח כפול)' => 'ישראל', 'לדברי ישראל־ישראלי' => 'ישראל', 'לדברי יִשְׂרָאֵל' => 'לדברי', 'נמסר לישראלי בכתב' => 'לישראלי',
     'מכתב מבנק הדוגמה' => 'הדוגמה', 'אישור של הבנק: הדוגמה' => 'הדוגמה', 'isr [at] bank.example' => 'bank', 'isr(at)bank.example' => 'bank', 'ISR@BANK.example' => 'BANK'];
@@ -299,12 +299,12 @@ $fake->calls = [];
 apr_report_ai_section(null, $cpRow, $cpSec, apr_pc_report_default(), 'rd:b1-test:clean');
 $cleanSent = json_encode($fake->calls, JSON_UNESCAPED_UNICODE);
 // 🟡4: שם של חבר צוות ("אבי") נמחק רק כמילה שלמה; 🟡7: ארגון וטלפון שמור של גורם
-$staff = ['parties' => ['ישראל ישראלי', 'בנק הדוגמה', '054-7654321'], 'staff' => ['אבי', 'טל', 'דנה לוי']];
+$staff = ['parties' => ['ישראל ישראלי', 'בנק הדוגמה', '054-7654321', '+1 212 555 0199'], 'staff' => ['אבי', 'טל', 'דנה לוי']];
 eq([$leaks, str_contains($cleanSent, 'מגורים, בתל אביב'),
     apr_report_ai_scrub('הנכס בתל אביב, ליד רחוב אבידן', $staff), apr_report_ai_scrub('טל׳ המשרד נמסר, והטל ירד', $staff), apr_report_ai_scrub('הביקור נערך בידי אבי.', $staff), apr_report_ai_scrub('נבדק על ידי דנה־לוי ואבי', $staff),
-    apr_report_ai_scrub('אישור מבנק אחר', $staff), apr_report_ai_scrub('חוות דעת של הדוגמה בע"מ', $staff), apr_report_ai_scrub('לתיאום: 0547654321', $staff), apr_report_ai_scrub('לתיאום: 972547654321+', $staff),
+    apr_report_ai_scrub('אישור מבנק אחר', $staff), apr_report_ai_scrub('חוות דעת של הדוגמה בע"מ', $staff), apr_report_ai_scrub('לתיאום: 0547654321', $staff), apr_report_ai_scrub('לתיאום: 972547654321+', $staff), apr_report_ai_scrub('משרד בחו"ל: 1-212-555-0199', $staff),
     apr_report_ai_scrub('שטח 85.5 מ"ר, קומה 3 מתוך 12, נבנה בשנת 1998', $staff), apr_report_ai_scrub('מחיר: 2,100,000 ₪ ביום 2026-09-01', $staff)],
-    [[], true, 'הנכס בתל אביב, ליד רחוב אבידן', 'טל׳ המשרד נמסר, והטל ירד', 'הביקור נערך.', 'נבדק על ידי', null, null, null, null,
+    [[], true, 'הנכס בתל אביב, ליד רחוב אבידן', 'טל׳ המשרד נמסר, והטל ירד', 'הביקור נערך.', 'נבדק על ידי', null, null, null, null, null,
         'שטח 85.5 מ"ר, קומה 3 מתוך 12, נבנה בשנת 1998', 'מחיר: 2,100,000 ₪ ביום 2026-09-01'],
     'B1: ת"ז (9 ספרות לפני נקודה / פסיק, 8 ספרות, עם מקף), טלפון (נקודות, ‎+972, סוגריים), חלק משם של גורם / רווח כפול / מקף / ניקוד / אות שימוש, ארגון, ומייל ב-[at] — אינם ב-payload של המתאם; הנתון התמים נשלח. 🟡4: שם של חבר צוות נמחק כמילה שלמה בלבד ("תל אביב", "טל׳" נשארים)');
 
@@ -627,6 +627,15 @@ eq([[$acc1, $acc2, $acc3], $noDraft, $finalOnly, $pd[0], array_column($report($C
         ['pid', 'key', 'title', 'mandatory', 'blocks'], [], null, array_fill(0, 6, 'not_found')],
     '17-D3 שותף ממשרד אחר: בלי see_draft — הטיוטה אינה ברשימה ואינה נקראת (404), גרסה מאושרת כן (בלי בקרה, הערות ומקורות); עם see_draft — הטיוטה נקראת, הפרקים בלבד; כל פעולה משנה — 404');
 
+// 🟡7: שותף ממשרד אחר — בלי הערות הבודק, בלי פרטי האישור ובלי ספירת הבקרה; גם כשיש הערה על הטיוטה
+$post('report-comment-add', ['version' => $VS2, 'text' => 'הערה פנימית לבודק']);
+$pdc = $ver($VS2, $boaz)[1];
+$pfin = $ver($V2, $boaz)[1];
+eq([count($ver($VS2)[1]['comments']), $pdc['comments'] ?? null, $pdc['internal'] ?? null, $report($CS2, $boaz)[1]['check'] ?? null, $report($CS2)[1]['check'] !== null, array_key_exists('approval', $pfin) ? $pfin['approval'] : 'x', $ver($V2)[1]['approval']['by'] ?? null,
+    $report($CK, $boaz)[1]['check'] ?? null, array_key_exists('reopen_reason', $pfin['version']), $ver($V2)[1]['version']['reopen_reason']],
+    [1, [], false, null, true, null, 'אבי', null, false, 'השטח תוקן אחרי מדידה'],
+    '🟡7 / 🟡6: שותף אינו מקבל את הערות הבודק (comments), את פרטי האישור (approval), את ספירת הבקרה (check) ואת נימוק הפתיחה של גרסה — והמשתתף הפנימי כן');
+
 // ═══ מקרי קצה ═════════════════════════════════════════════════
 // 11: הסרת פרק חובה מהגרסה — מותרת, ונרשמת. 12: מחיקת טיוטה — רק approve_report, בנימוק, מחיקה רכה. הערות לבודק
 [$CE, $VE] = $ready();
@@ -748,12 +757,16 @@ $reSave = $save($adR6['pid'], [...$strip($adR6['blocks']), ['type' => 'p', 'text
 $adR7 = $sec($ver($VR)[1], 'area_desc');
 $aviSave = $save($adR7['pid'], [...$strip($adR7['blocks']), ['type' => 'p', 'text' => 'תוספת של השמאי']]);                      // שמאי, והטקסט של הבינה לא השתנה
 $adR8 = $sec($ver($VR)[1], 'area_desc');
+$talRewrite = $save($adR8['pid'], [['type' => 'p', 'text' => 'עובדת המשרד כתבה את הפרק מחדש']], $tal);                               // מי שאינה שמאית אינה מורידה את הסימון, גם כשלא נשאר טקסט בינה
+$adR8b = $sec($ver($VR)[1], 'area_desc');
+$adR8x = $adR8;
+$adR8 = $adR8b;
 $aviEdit = $save($adR8['pid'], [['type' => 'p', 'text' => 'שטח הדירה 120 מ"ר (רשום) — נוסח מחדש בידי השמאי']]);                 // שמאי שינה בפועל את טקסט הבינה
 $adR9 = $sec($ver($VR)[1], 'area_desc');
 eq([$rvR[0], $cleanR, $adR4['ai_reviewed'], $adR4['proposal']['origin'] ?? null, $blockR, $blockR2, $blockR3,
-    [$reSave[0], $adR7['origin'], $adR7['ai_reviewed'], $adR7['blocks'][0]['ai'] ?? null], [$aviSave[0], $adR8['origin'], $adR8['blocks'][0]['ai'] ?? null], [$aviEdit[0], $adR9['origin']]],
+    [$reSave[0], $adR7['origin'], $adR7['ai_reviewed'], $adR7['blocks'][0]['ai'] ?? null], [$aviSave[0], $adR8x['origin'], $adR8x['blocks'][0]['ai'] ?? null], [$talRewrite[0], $adR8b['origin'], $adR8b['ai_reviewed']], [$aviEdit[0], $adR9['origin']]],
     [200, [], false, 'auto', ['ai_unreviewed', 'proposal_pending', 'ai_stale'], ['report_blocked', ['ai_unreviewed', 'ai_stale']], [],
-        [200, 'ai', false, true], [200, 'ai', true], [200, 'manual']],
+        [200, 'ai', false, true], [200, 'ai', true], [200, 'ai', false], [200, 'manual']],
     'B3: נתון שהשתנה אחרי שטקסט הבינה נסקר ← הסקירה מתבטלת, נוצרת הצעת עדכון, והאישור נחסם ב-ai_stale גם אחרי דחיית ההצעה; סקירה מחדש מנקה. 🟡3: שמירה חוזרת של טקסט הבינה (בלי ai: true, בידי מי שאינה שמאית) משאירה את הפרק "בינה" ומבטלת את הסקירה; שמאי שלא שינה את טקסט הבינה — הסימון נשאר; שמאי ששינה אותו — יורד');
 
 // B3 + 17-C6: גרסה שאושרה עם פרק בינה — שינוי בנתון שעליו נכתב הטקסט מדליק "נתונים השתנו אחרי האישור"
@@ -877,6 +890,26 @@ eq([$nvU[0], in_array('floors_total', array_column(array_filter($adU['proposal']
     array_key_exists('reopen_reason', $headP), array_key_exists('rev', $headP), apr_report_version_head($verRowU)['reopen_reason'], array_keys($secP), array_map('array_keys', $secP['blocks'])],
     [200, true, false, false, 'נתון נוסף', ['pid', 'key', 'title', 'mandatory', 'blocks'], [['type', 'text'], ['type', 'attr', 'label', 'value'], ['type', 'table', 'cols', 'rows']]],
     '🟡5: בגרסה חדשה, נתון שהגיע אחרי האישור אינו נבלע — לפרק שנערך הוא מגיע כהצעת עדכון; 🟡6: שותף אינו מקבל את reopen_reason / rev, ולא origin / ai_reviewed / src / fact / refs / was / changed / ai / num_unknown');
+
+// 🟡7: הסרת פרק דורשת שמאי בתיק; תמונה של תיק אחר אינה נכנסת לבלוק; תשובת בינה קטועה (stop_reason) נדחית; הגבלת הקצב נאכפת לפני השער
+$prR = $sec($ver($VR)[1], 'property');
+$talDel = code($post('report-section-delete', ['section' => $prR['pid'], 'rev' => $prR['rev']], $tal));
+$alienPhoto = code($save($prR['pid'], [['type' => 'image', 'photo' => $PH]]));                       // $PH שייכת לתיק אחר ($CK)
+$fake->next = fn() => reply(['blocks' => [['text' => 'תשובה שנקטעה באמצע', 'src' => 'd1']]], 'max_tokens');
+$cut = $post('report-section-ai', ['section' => $prR['pid'], 'rev' => $prR['rev']]);
+$prR2 = $sec($ver($VR)[1], 'property');
+$fake->next = $echo;
+$rate = null;
+$callsAtLimit = null;
+for ($i = 0; $i < APR_REPORT_RATE_AI[0] + 2 && $rate === null; $i++) {
+    $x = $sec($ver($VR)[1], 'property');
+    $before = count($fake->calls);
+    $r = $post('report-section-ai', ['section' => $x['pid'], 'rev' => $x['rev'], 'replace' => true]);
+    if (code($r) === 'ai_rate') { $rate = $r[0]; $callsAtLimit = count($fake->calls) - $before; }
+}
+eq([$talDel, $alienPhoto, $cut[1]['state'] ?? null, $cut[1]['reason'] ?? null, $prR2['origin'], $prR2['ai_wait'], $rate, $callsAtLimit],
+    ['forbidden', 'report_block', 'wait', 'failed', 'auto', 'failed', 429, 0],
+    '🟡7: עובדת משרד (edit, לא שמאית) אינה מסירה פרק; תמונה של תיק אחר נדחית; תשובה שנקטעה (stop_reason ≠ end_turn) אינה נכתבת — הפרק "ממתין"; מעבר למגבלת הקצב ← 429, בלי קריאה לספק');
 
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();

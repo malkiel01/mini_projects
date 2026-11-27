@@ -28,9 +28,9 @@ $M = [
     ['17-D3 רשימת הגרסאות מסוננת', 'report.php', "    \$rows = array_values(array_filter(\$rows, fn(\$v) => apr_report_visible(\$c, \$v)));\n    \$internal", "    \$rows = array_values(\$rows);\n    \$internal"],
     ['17-D3 see_draft באזור report', 'shares.php', "'report' => \$in('report') && \$has('see_draft'),", "'report' => \$in('report'),"],
     ['שותף: מאושרת — פרקים בלבד (בלי ממצאים)', 'report.php', "'findings' => \$internal ? (\$snap['findings'] ?? []) : [],", "'findings' => (\$snap['findings'] ?? []),"],
-    ['שותף: מאושרת — בלי מקורות', 'report.php', ": array_diff_key(\$s, ['sources' => 1]), \$snap['sections'] ?? []),", ": \$s, \$snap['sections'] ?? []),"],
+    ['שותף: מאושרת — בלי מקורות ומזהים פנימיים', 'report.php', ": apr_report_partner_section(\$s), \$snap['sections'] ?? []),", ": \$s, \$snap['sections'] ?? []),"],
     ['שותף: טיוטה — בלי ממצאים והערות', 'report.php', "'findings' => \$internal ? apr_report_findings_out(\$c, \$v, \$sections) : [],", "'findings' => apr_report_findings_out(\$c, \$v, \$sections),"],
-    ['שותף: פרק בלי שדות העריכה', 'report.php', "    if (!\$internal) return \$o;\n", ''],
+    ['שותף: פרק בלי שדות העריכה', 'report.php', "    if (!\$internal) return apr_report_partner_section(\$o);\n", ''],
     ['כרטיס התיק: סיכום הדוח רק למה שנראה', 'report.php', "fn(\$v) => apr_report_visible(\$c, \$v)));\n    if (\$c['share'] !== null && !\$rows) return null;", "fn(\$v) => true));\n    if (\$c['share'] !== null && !\$rows) return null;"],
     // ── עריכה, rev, הצעות (§7) ──
     ['17-B4 rev ישן ← 409', 'report.php', "rev = rev + 1 WHERE id = ? AND rev = ? AND deleted_at IS NULL'", "rev = rev + 1 WHERE id = ? AND rev >= ? - 1000000 AND deleted_at IS NULL'"],
@@ -49,15 +49,15 @@ $M = [
     ['סטייה 7: רשימה סגורה בפרופיל', 'report_build.php', "&& \$build === 'data' && in_array(\$key, APR_REPORT_AI_KEYS, true)];", "&& \$build === 'data' && !in_array(\$key, APR_REPORT_NO_AI, true)];"],
     ['סטייה 7: purpose אינו ברשימה', 'report_build.php', "const APR_REPORT_AI_KEYS = ['property', 'area_desc', 'visit', 'planning'];", "const APR_REPORT_AI_KEYS = ['property', 'area_desc', 'visit', 'planning', 'purpose'];"],
     ['סטייה 7: הרשימה נאכפת גם בזמן הניסוח', 'report_build.php', " || !in_array(\$section['key'], APR_REPORT_AI_KEYS, true)) return ['state' => 'failed', 'reason' => 'not_allowed'", ") return ['state' => 'failed', 'reason' => 'not_allowed'"],
-    ['סטייה 7: שם של גורם מושמט', 'report_build.php', "        if (mb_stripos(\$text, \$p) !== false) return null;\n", ''],
-    ['סטייה 7: טלפון מושמט', 'report_build.php', "\\d{4}(?!\\d)/', \$text) === 1) return null;", "\\d{4}(?!\\d)/', \$text) === 2) return null;"],
-    ['סטייה 7: ת"ז מושמטת', 'report_build.php', "\\d{9}(?![\\d.,])/', \$text) === 1) return null;", "\\d{9}(?![\\d.,])/', \$text) === 2) return null;"],
-    ['סטייה 7: מייל מושמט', 'report_build.php', "[\\w.\\-]+/u', \$text) === 1) return null;", "[\\w.\\-]+/u', \$text) === 2) return null;"],
+    ['סטייה 7: שם של גורם מושמט', 'report_build.php', "        if (str_contains(\$norm, apr_report_ai_norm(\$p))) return null;\n        foreach (apr_report_ai_tokens(\$p) as \$t) if (apr_report_ai_word(\$norm, \$t, true)) return null;\n", ''],
+    ['סטייה 7: טלפון מושמט', 'report_build.php', "\\d{4}(?!\\d)/', \$flat) === 1) return null;", "\\d{4}(?!\\d)/', \$flat) === 2) return null;"],
+    ['סטייה 7: ת"ז מושמטת', 'report_build.php', "\\d{8,9}(?!\\d)/', \$text) === 1 ||", "\\d{8,9}(?!\\d)/', \$text) === 2 ||"],
+    ['סטייה 7: מייל מושמט', 'report_build.php', "[a-z]{2,}/iu', \$text) === 1) return null;", "[a-z]{2,}/iu', \$text) === 2) return null;"],
     ['סטייה 7: שם המבקר נמחק', 'report_build.php', "    foreach (\$pii['staff'] as \$n) {", "    foreach ([] as \$n) {"],
     ['סטייה 7: הקלט עובר ניקוי', 'report_build.php', "        \$text = apr_report_ai_scrub(\$text, \$pii);\n        if (\$text === null) { \$omitted++; return false; }\n", ''],
     ['17-D1 src שלא נשלח ← נזרק', 'report_build.php', " || \$src === null || !isset(\$items[\$src])) { \$dropped++; continue; }", " || \$src === null) { \$dropped++; continue; }"],
     ['17-D1 מספר שאינו בנתונים מסומן', 'report_build.php', " + (\$unknown ? ['num_unknown' => \$unknown] : []);", " + [];"],
-    ['§6.2 טקסט בינה נכנס "לא נסקר"', 'report.php', "'origin' => 'ai', 'ai_run_id' => \$r['run'], 'ai_reviewed' => 0,", "'origin' => 'ai', 'ai_run_id' => \$r['run'], 'ai_reviewed' => 1,"],
+    ['§6.2 טקסט בינה נכנס "לא נסקר"', 'report.php', "'ai_input_hash' => \$r['hash'] ?? null, 'ai_reviewed' => 0,", "'ai_input_hash' => \$r['hash'] ?? null, 'ai_reviewed' => 1,"],
     ['ניסוח בבינה אינו מעלים "לא ידוע"', 'report.php', "in_array(\$b['type'], ['data_table', 'image', 'note_missing'], true)", "in_array(\$b['type'], ['data_table', 'image'], true)"],
     ['17-D2 רק נתוני הפרק', 'report_build.php', "    \$built = apr_report_resolve(\$ctx, \$c, apr_report_build(\$c, \$section['key'], \$tpl)['blocks'], \$tpl);\n    \$items = [];", "    \$built = apr_report_resolve(\$ctx, \$c, [...apr_report_build(\$c, \$section['key'], \$tpl)['blocks'], ...apr_report_build(\$c, 'property', \$tpl)['blocks']], \$tpl);\n    \$items = [];"],
     // ── הבקרה (§9) והאישור (§8) ──
@@ -97,6 +97,228 @@ $M = [
 ];
 
 $orig = [];
+// ── סבב 2 (ביקורת 17-report.md): B1–B3 והצהובים. המחרוזות ב-nowdoc — כפי שהן בקוד ──
+$R2 = [
+    ['B1 ת"ז של 8–9 ספרות, גם לפני נקודה / פסיק', 'report_build.php', <<<'A'
+    if (preg_match('/(?<!\d)\d{8,9}(?!\d)/', $text) === 1 || 
+A, <<<'B'
+    if (
+B],
+    ['B1 ת"ז עם מקף לפני ספרת הביקורת', 'report_build.php', <<<'A'
+ || preg_match('/(?<!\d)\d{7,8}[\-\x{05BE}\x{2010}-\x{2015}]\d(?!\d)/u', $text) === 1) return null;
+A, <<<'B'
+) return null;
+B],
+    ['B1 טלפון עם נקודות', 'report_build.php', <<<'A'
+\d{1,2}[\s.\-]*\d{3}[\s.\-]*\d{4}(?!\d)/', $flat)
+A, <<<'B'
+\d{1,2}[\s\-]*\d{3}[\s\-]*\d{4}(?!\d)/', $flat)
+B],
+    ['B1 כל אסימון של שם גורם / ארגון', 'report_build.php', <<<'A'
+        foreach (apr_report_ai_tokens($p) as $t) if (apr_report_ai_word($norm, $t, true)) return null;
+A, ''],
+    ['B1 אות שימוש לפני שם של גורם', 'report_build.php', <<<'A'
+if (apr_report_ai_word($norm, $t, true)) return null;
+A, <<<'B'
+if (apr_report_ai_word($norm, $t, false)) return null;
+B],
+    ['B1 ניקוד אינו מסתיר שם', 'report_build.php', <<<'A'
+    $text = (string)preg_replace('/[\x{0591}-\x{05BD}\x{05BF}-\x{05C7}\x{200E}\x{200F}\x{202A}-\x{202E}]+/u', '', $text);
+A, ''],
+    ['B1 מייל ב-[at] / (at)', 'report_build.php', <<<'A'
+'/@|[\[({]\s*at\s*[\])}]|
+A, <<<'B'
+'/@|
+B],
+    ['B1 / 🟡7 טלפון שמור של גורם', 'report_build.php', <<<'A'
+            if (strlen($core) >= 7 && str_contains($digits, $core)) return null;
+A, ''],
+    ['B1 העיקרון: טקסט חופשי בזכויות / שכירות / עסקה אינו נשלח', 'report_build.php', <<<'A'
+in_array($a['grp'], APR_REPORT_AI_NO_FREE_TEXT, true));
+A, <<<'B'
+false);
+B],
+    ['B1 העיקרון: טקסט חופשי של מזהה אינו נשלח', 'report_build.php', <<<'A'
+empty($tpl['for_ai']) ? $i['value_text'] : null]);
+A, <<<'B'
+$i['value_text']]);
+B],
+    ['B1 נתון שלא נשלח נשאר בפרק כהפניה', 'report_build.php', <<<'A'
+            if (!$sent) $kept[] = ['type' => 'fact', 'attr' => $b['attr']];
+A, ''],
+    ['🟡4 שם של חבר צוות — מילה שלמה בלבד (אחריו)', 'report_build.php', <<<'A'
+$name . '(?![\p{L}\p{N}\p{M}"\x{05F4}\'\x{05F3}])/iu'
+A, <<<'B'
+$name . '/iu'
+B],
+    ['🟡4 שם של חבר צוות — מילה שלמה בלבד (לפניו)', 'report_build.php', <<<'A'
+(?:בידי\s+)?(?<![\p{L}\p{N}])[ול]{0,2}'
+A, <<<'B'
+(?:בידי\s+)?'
+B],
+    ['B2 פרק שהשתנה בזמן הקריאה ← הצעה, לא דריסה', 'report.php', <<<'A'
+    if ($moved) {
+        apr_exec("UPDATE section_proposals SET state = 'rejected', decided_at = ? WHERE section_id = ? AND state = 'pending'", [apr_now(), $s['id']]);
+A, <<<'B'
+    if ($moved) { $before = (int)$s['rev']; }
+    if (false) {
+        apr_exec("UPDATE section_proposals SET state = 'rejected', decided_at = ? WHERE section_id = ? AND state = 'pending'", [apr_now(), $s['id']]);
+B],
+    ['B2 הצעה שמקורה בבינה נכנסת כטקסט בינה שלא נסקר', 'report.php', <<<'A'
+                $set = $fromAi ? $aiSet : ['origin' => 'auto',
+A, <<<'B'
+                $set = false ? $aiSet : ['origin' => 'auto',
+B],
+    ['B3 רענון: נתוני הקלט של טקסט בינה השתנו', 'report.php', <<<'A'
+apr_report_ai_input($ctx, $c, $s, $tpl)['hash']) !== $s['ai_input_hash']) {
+A, <<<'B'
+apr_report_ai_input($ctx, $c, $s, $tpl)['hash']) === 'x') {
+B],
+    ['B3 הסקירה מתבטלת', 'report.php', <<<'A'
+                if ((int)$s['ai_reviewed'] === 1) apr_report_update(
+A, <<<'B'
+                if (false) apr_report_update(
+B],
+    ['B3 ממצא חוסם ai_stale', 'report_build.php', <<<'A'
+!== ($s['ai_input_hash'] ?? null)) $add('ai_stale'
+A, <<<'B'
+=== 'x') $add('ai_stale'
+B],
+    ['B3 ai_stale נעול כחוסם', 'report_build.php', <<<'A'
+'ai_stale' => ['block', true]
+A, <<<'B'
+'ai_stale' => ['warn', false]
+B],
+    ['B3 סקירה מחדש קובעת את הבסיס', 'report.php', <<<'A'
+['ai_input_hash' => apr_report_ai_input($ctx, $c, $s, apr_report_tpl($v))['hash'], 'ai_reviewed' => 1,
+A, <<<'B'
+['ai_reviewed' => 1,
+B],
+    ['B3 / 17-C6 נתוני הקלט של פרק בינה ב-data_hash', 'report.php', <<<'A'
+        if ($s['origin'] === 'ai') $all[$s['key'] . '#ai'] =
+A, <<<'B'
+        if (false) $all[$s['key'] . '#ai'] =
+B],
+    ['🟡1 ממצא אחד למפתח', 'report_build.php', <<<'A'
+        $out[$kind . ':' . $id] ??= [
+A, <<<'B'
+        $out[] = [
+B],
+    ['🟡2 אישור — רק שמאי בתיק', 'report.php', <<<'A'
+    if ($need === 'approve' && !apr_report_is_appraiser($ctx, $c)) apr_fail('forbidden');
+A, <<<'B'
+    if (false) apr_fail('forbidden');
+B],
+    ['🟡2 perms.approve — רק שמאי בתיק', 'report.php', <<<'A'
+!empty($c['perms']['approve_report']) && apr_report_is_appraiser($ctx, $c)];
+A, <<<'B'
+!empty($c['perms']['approve_report'])];
+B],
+    ['🟡3 מי שאינו שמאי אינו מוריד את סימון הבינה', 'report.php', <<<'A'
+    return ['origin' => 'ai'] + ($json !== $s['content'] ? $reset : []);
+A, <<<'B'
+    return ($ai ? ['origin' => 'ai'] : ['origin' => 'manual']) + $reset;
+B],
+    ['🟡3 שמירה של מי שאינו שמאי מבטלת סקירה', 'report.php', <<<'A'
+    return ['origin' => 'ai'] + ($json !== $s['content'] ? $reset : []);
+A, <<<'B'
+    return ['origin' => 'ai'];
+B],
+    ['🟡3 סימון הפסקה נקבע בשרת', 'report_build.php', <<<'A'
+        if ($o['type'] === 'p' && in_array($o['text'], array_column(
+A, <<<'B'
+        if ($o['type'] === 'p' && ($b['ai'] ?? false) === true && in_array($o['text'], array_column(
+B],
+    ['🟡3 שמאי ששינה את כל טקסט הבינה ← manual', 'report.php', <<<'A'
+    if (apr_comp_can_judge($ctx, $c)) return $ai ? ['origin' => 'ai'] : ['origin' => 'manual'] + $reset;
+A, <<<'B'
+    if (apr_comp_can_judge($ctx, $c)) return ['origin' => 'ai'];
+B],
+    ['🟡5 נתון בזמן "בבדיקה" ← data_new', 'report_build.php', <<<'A'
+        if ($version['state'] === 'in_review' && $s['build'] === 'data') {
+A, <<<'B'
+        if (false) {
+B],
+    ['🟡5 גרסה חדשה: ה-hash של הגרסה הקודמת', 'report.php', <<<'A'
+                'auto_hash' => $s['auto_hash'], 'ai_input_hash' => $s['ai_input_hash'], 'updated_by' => $uid, 'updated_at' => $now]);
+A, <<<'B'
+                'auto_hash' => $s['build'] === 'data' ? apr_report_hash(apr_report_build($c, $s['key'], $tpl)['blocks']) . ':x' : null, 'ai_input_hash' => $s['ai_input_hash'], 'updated_by' => $uid, 'updated_at' => $now]);
+B],
+    ['🟡6 שותף: בלי reopen_reason / rev', 'report.php', <<<'A'
+    return $internal ? $h : array_diff_key($h,
+A, <<<'B'
+    return true ? $h : array_diff_key($h,
+B],
+    ['🟡6 שותף: פרק בלי מזהים פנימיים', 'report.php', <<<'A'
+    $s['blocks'] = array_map(fn($b) => array_diff_key($b, ['src' => 1, 'fact' => 1, 'refs' => 1, 'was' => 1, 'changed' => 1, 'ai' => 1, 'num_unknown' => 1]), $s['blocks'] ?? []);
+A, ''],
+    ['🟡7 שותף: טיוטה בלי הערות הבודק', 'report.php', <<<'A'
+apr_report_findings_out($c, $v, $sections) : [], 'comments' => $internal ? apr_report_comments($v) : [],
+A, <<<'B'
+apr_report_findings_out($c, $v, $sections) : [], 'comments' => apr_report_comments($v),
+B],
+    ['🟡7 שותף: בלי פרטי האישור', 'report.php', <<<'A'
+'approval' => $internal ? [
+A, <<<'B'
+'approval' => true ? [
+B],
+    ['🟡7 שותף: בלי ספירת הבקרה', 'report.php', <<<'A'
+    $open = $internal ? (array_values(
+A, <<<'B'
+    $open = true ? (array_values(
+B],
+    ['🟡7 תמונת בלוק שייכת לתיק', 'report_build.php', <<<'A'
+WHERE p.pid = ? AND v.case_id = ?', [$b['photo'], $c['id']])
+A, <<<'B'
+WHERE p.pid = ? AND ? > 0', [$b['photo'], $c['id']])
+B],
+    ['🟡7 תשובה קטועה (stop_reason) נדחית', 'report_build.php', <<<'A'
+ && ($r['stop_reason'] ?? 'end_turn') === 'end_turn' ?
+A, <<<'B'
+ ?
+B],
+    ['🟡7 הגבלת קצב ל"ניסוח עכשיו"', 'report.php', <<<'A'
+    if (!apr_limit('ai-report:u' . $ctx['user']['id'], ...APR_REPORT_RATE_AI)) apr_fail('ai_rate');
+A, ''],
+    ['🟡7 הסרת פרק דורשת judge', 'report.php', <<<'A'
+function apr_report_section_delete(array $ctx, array $in): array
+{
+    $c = apr_report_case($ctx, apr_report_section_case($in['section'] ?? null), 'judge');
+A, <<<'B'
+function apr_report_section_delete(array $ctx, array $in): array
+{
+    $c = apr_report_case($ctx, apr_report_section_case($in['section'] ?? null), 'edit');
+B],
+    ['🟡8 הערה על גרסה שאושרה אינה נסגרת', 'report.php', <<<'A'
+    if (!in_array(apr_report_version_row($c, $k['version_pid'])['state'], APR_REPORT_OPEN, true)) apr_fail('report_approved');
+A, <<<'B'
+    if (false) apr_fail('report_approved');
+B],
+    ['🟡8 ניסוח בבינה על פרק שנערך — רק עם replace', 'report.php', <<<'A'
+    if ((int)$s['user_edited'] === 1 && ($in['replace'] ?? false) !== true) apr_fail('report_replace');
+A, ''],
+    ['🟡9 המסקנה כמחרוזת המנוע', 'report_build.php', <<<'A'
+apr_comp_dec_out($a['conclusion_value'], 2)]);
+A, <<<'B'
+apr_val_money($a['conclusion_value'])['nis']]);
+B],
+    ['§6.2 מאפיין רב-ערכים נכנס לדוח', 'report_build.php', <<<'A'
+        if ((int)$a['multi']) {
+A, <<<'B'
+        if ((int)$a['multi']) continue;
+        if (false) {
+B],
+    ['🟡7 ממצא: סתירה פתוחה', 'report_build.php', "\$add('conflict_open', \$k['pid'],", "if (false) \$add('conflict_open', \$k['pid'],"],
+    ['🟡7 ממצא: משימה פתוחה', 'report_build.php', "\$add('task_open', \$t['pid'],", "if (false) \$add('task_open', \$t['pid'],"],
+    ['🟡7 ממצא: דרישת חובה פתוחה', 'report_build.php', "\$add('req_open', \$r['pid'],", "if (false) \$add('req_open', \$r['pid'],"],
+    ['🟡7 ממצא: מסמך שנמחק', 'report_build.php', "\$add('doc_gone', \$factPid,", "if (false) \$add('doc_gone', \$factPid,"],
+    ['🟡7 ממצא: חלופה בלי מסקנה', 'report_build.php', "if (\$a['conclusion_value'] === null) \$add('alt_no_conclusion',", "if (false) \$add('alt_no_conclusion',"],
+    ['🟡7 ממצא: מדגם קטן', 'report_build.php', "if (\$calc['rows'] && count(\$calc['rows']) < \$small) \$add('small_sample',", "if (false) \$add('small_sample',"],
+    ['🟡7 ממצא: מקור שלא נבדק', 'report_build.php', "        \$add('source_unchecked', \$k['pid'],", "        if (false) \$add('source_unchecked', \$k['pid'],"],
+];
+// nowdoc מסתיים בלי שורה חדשה; מוטציה שמסירה שורה שלמה מסירה גם את סוף השורה שלה
+foreach ($R2 as $m) $M[] = $m[3] === '' ? [$m[0], $m[1], $m[2] . "\n", ''] : $m;
+
 $restore = function () use (&$orig, $lib) { foreach ($orig as $f => $src) file_put_contents($lib . $f, $src); };
 register_shutdown_function($restore);
 $only = $argv[1] ?? null;
