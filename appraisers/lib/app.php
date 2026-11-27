@@ -132,6 +132,9 @@ require_once __DIR__ . '/ai_admin.php';
 require_once __DIR__ . '/extract.php';
 require_once __DIR__ . '/report_build.php';
 require_once __DIR__ . '/report.php';
+require_once __DIR__ . '/export_doc.php';
+require_once __DIR__ . '/export_docx.php';
+require_once __DIR__ . '/export_pdf.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
