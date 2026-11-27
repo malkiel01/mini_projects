@@ -297,15 +297,15 @@ apr_report_ai_section(null, $cpRow, $cpProp, apr_pc_report_default(), 'rd:b1-tes
 $sent = json_encode($fake->calls, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $leaks = array_values(array_unique(array_filter($samples, fn($needle) => str_contains($sent, $needle))));
 $viewProp = json_encode(apr_report_resolve(['user' => null, 'office' => null], $cpRow, apr_report_build($cpRow, 'property', apr_pc_report_default())['blocks'], apr_pc_report_default()), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-// 🟡4: שם של חבר צוות ("אבי") נמחק רק כמילה שלמה; 🟡7: ארגון וטלפון שמור של גורם
-$staff = ['parties' => ['ישראל ישראלי', 'בנק הדוגמה', '054-7654321', '+1 212 555 0199'], 'staff' => ['אבי', 'טל', 'דנה לוי']];
+// 🟡2 (סבב 3): הסינון אינו מוחק מילים מתוך טקסט — גם לא שם של עובד ("אביב", "גיל", "טל" הם גם מילים רגילות); 🟡7: ארגון וטלפון שמור של גורם
+$staff = ['parties' => ['ישראל ישראלי', 'בנק הדוגמה', '054-7654321', '+1 212 555 0199'], 'staff' => ['אבי', 'אביב', 'גיל', 'טל', 'דנה לוי']];
 eq([$notSaved, count($fake->calls), $leaks, str_contains($sent, 'חיפה'), str_contains($sent, 'הרצל 5, תל אביב'), str_contains($sent, 'גוש 6158, חלקה 12'), str_contains($viewProp, '123456789') && str_contains($viewProp, 'ישראלי'),
-    apr_report_ai_scrub('הנכס בתל אביב, ליד רחוב אבידן', $staff), apr_report_ai_scrub('טל׳ המשרד נמסר, והטל ירד', $staff), apr_report_ai_scrub('הביקור נערך בידי אבי.', $staff), apr_report_ai_scrub('נבדק על ידי דנה־לוי ואבי', $staff),
+    apr_report_ai_scrub('דיזנגוף 10, תל אביב', $staff), apr_report_ai_scrub('גיל הבניין כ-30 שנה, והטל ירד', $staff), array_key_exists('staff', $pii), str_contains($sent, 'אבי') && !str_contains($sent, 'בידי'),
     apr_report_ai_scrub('אישור מבנק אחר', $staff), apr_report_ai_scrub('חוות דעת של הדוגמה בע"מ', $staff), apr_report_ai_scrub('לתיאום: 0547654321', $staff), apr_report_ai_scrub('לתיאום: 972547654321+', $staff), apr_report_ai_scrub('משרד בחו"ל: 1-212-555-0199', $staff),
     apr_report_ai_scrub('ת"ז 123 456 789', $staff), apr_report_ai_scrub('שטח 85.5 מ"ר, קומה 3 מתוך 12, נבנה בשנת 1998', $staff), apr_report_ai_scrub('מחיר: 2,100,000 ₪ ביום 2026-09-01', $staff), apr_report_ai_scrub('גוש 6158, חלקה 12, תת-חלקה 3', $staff)],
-    [[], 1, [], false, true, true, true, 'הנכס בתל אביב, ליד רחוב אבידן', 'טל׳ המשרד נמסר, והטל ירד', 'הביקור נערך.', 'נבדק על ידי', null, null, null, null, null,
+    [[], 1, [], false, true, true, true, 'דיזנגוף 10, תל אביב', 'גיל הבניין כ-30 שנה, והטל ירד', false, true, null, null, null, null, null,
         null, 'שטח 85.5 מ"ר, קומה 3 מתוך 12, נבנה בשנת 1998', 'מחיר: 2,100,000 ₪ ביום 2026-09-01', 'גוש 6158, חלקה 12, תת-חלקה 3'],
-    'B1 (רשת הביטחון): ת"ז (9 ספרות לפני נקודה / פסיק, 8 ספרות, עם מקף, ברווחים), טלפון (נקודות, ‎+972, סוגריים), חלק משם של גורם / רווח כפול / מקף / ניקוד / אות שימוש, ארגון, ומייל ב-[at] — בתוך כתובת מובנית, אינם ב-payload של המתאם (השורה כולה מושמטת); כתובת וגוש-חלקה תמימים נשלחים; בדוח עצמו הכול נשאר. 🟡4: שם של חבר צוות נמחק כמילה שלמה בלבד ("תל אביב", "טל׳" נשארים)');
+    'B1 (רשת הביטחון): ת"ז (9 ספרות לפני נקודה / פסיק, 8 ספרות, עם מקף, ברווחים), טלפון (נקודות, ‎+972, סוגריים), חלק משם של גורם / רווח כפול / מקף / ניקוד / אות שימוש, ארגון, ומייל ב-[at] — בתוך כתובת מובנית, אינם ב-payload של המתאם (השורה כולה מושמטת); כתובת וגוש-חלקה תמימים נשלחים; בדוח עצמו הכול נשאר. 🟡2 (סבב 3): שום מילה אינה נמחקת מתוך טקסט — "תל אביב" ו"גיל הבניין" נשארים כלשונם גם כשיש בתיק עובדים בשם אביב וגיל');
 
 // B1, העיקרון (סבב 3): טקסט חופשי שאדם הקליד אינו נשלח כלל, בשום קבוצה — הנתון נשאר בפרק כהפניה; טקסט חופשי של מזהה "אחר" אינו נשלח, ונשאר בדוח עצמו
 $fact($CP, 'rent_term', 'עד סוף 2027, השוכר הוא פלוני אלמוני');
@@ -749,7 +749,8 @@ $r = $tryApprove($VR);
 $blockR2 = [code($r), $errKinds($r)];
 // דחיית ההצעה אינה מנקה את הממצא; סקירה מחדש (מול הנתונים של הרגע) — כן. ואז שמירה חוזרת של אותו טקסט אינה מסירה את סימון הבינה (🟡3)
 $adR5 = $sec($ver($VR)[1], 'area_desc');
-$post('report-section-reviewed', ['section' => $adR5['pid'], 'rev' => $adR5['rev']]);
+$reNoConfirm = code($post('report-section-reviewed', ['section' => $adR5['pid'], 'rev' => $adR5['rev']]));                       // B3-ב: בלי אישור מפורש — 409
+$post('report-section-reviewed', ['section' => $adR5['pid'], 'rev' => $adR5['rev'], 'confirm_changed' => true]);
 $blockR3 = $blocking($VR);
 $adR6 = $sec($ver($VR)[1], 'area_desc');
 $strip = fn(array $bl) => array_map(fn($b) => array_intersect_key($b, ['type' => 1, 'text' => 1, 'attr' => 1, 'table' => 1, 'what' => 1, 'photo' => 1]), $bl);
@@ -763,11 +764,11 @@ $adR8x = $adR8;
 $adR8 = $adR8b;
 $aviEdit = $save($adR8['pid'], [['type' => 'p', 'text' => 'שטח הדירה 120 מ"ר (רשום) — נוסח מחדש בידי השמאי']]);                 // שמאי שינה בפועל את טקסט הבינה
 $adR9 = $sec($ver($VR)[1], 'area_desc');
-eq([$rvR[0], $cleanR, $adR4['ai_reviewed'], $adR4['proposal']['origin'] ?? null, $blockR, $blockR2, $blockR3,
+eq([$rvR[0], $cleanR, $adR4['ai_reviewed'], $adR4['proposal']['origin'] ?? null, $blockR, $blockR2, $reNoConfirm, $blockR3,
     [$reSave[0], $adR7['origin'], $adR7['ai_reviewed'], $adR7['blocks'][0]['ai'] ?? null], [$aviSave[0], $adR8x['origin'], $adR8x['blocks'][0]['ai'] ?? null], [$talRewrite[0], $adR8b['origin'], $adR8b['ai_reviewed']], [$aviEdit[0], $adR9['origin']]],
-    [200, [], false, 'auto', ['ai_unreviewed', 'proposal_pending', 'ai_stale'], ['report_blocked', ['ai_unreviewed', 'ai_stale']], [],
+    [200, [], false, 'auto', ['ai_unreviewed', 'proposal_pending', 'ai_stale'], ['report_blocked', ['ai_unreviewed', 'ai_stale']], 'report_ai_stale', [],
         [200, 'ai', false, true], [200, 'ai', true], [200, 'ai', false], [200, 'manual']],
-    'B3: נתון שהשתנה אחרי שטקסט הבינה נסקר ← הסקירה מתבטלת, נוצרת הצעת עדכון, והאישור נחסם ב-ai_stale גם אחרי דחיית ההצעה; סקירה מחדש מנקה. 🟡3: שמירה חוזרת של טקסט הבינה (בלי ai: true, בידי מי שאינה שמאית) משאירה את הפרק "בינה" ומבטלת את הסקירה; שמאי שלא שינה את טקסט הבינה — הסימון נשאר; שמאי ששינה אותו — יורד');
+    'B3: נתון שהשתנה אחרי שטקסט הבינה נסקר ← הסקירה מתבטלת, נוצרת הצעת עדכון, והאישור נחסם ב-ai_stale גם אחרי דחיית ההצעה; סקירה מחדש מנקה — רק עם confirm_changed (בלעדיו 409). 🟡3: שמירה חוזרת של טקסט הבינה (בלי ai: true, בידי מי שאינה שמאית) משאירה את הפרק "בינה" ומבטלת את הסקירה; שמאי שלא שינה את טקסט הבינה — הסימון נשאר; שמאי ששינה אותו — יורד');
 
 // B3 + 17-C6: גרסה שאושרה עם פרק בינה — שינוי בנתון שעליו נכתב הטקסט מדליק "נתונים השתנו אחרי האישור"
 [$CS, $VS] = [make_case($avi, $PM), null];

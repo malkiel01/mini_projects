@@ -273,7 +273,12 @@ function apr_report_ai_all(?array $ctx, array $c, array $v): void
 {
     $tpl = apr_report_tpl($v);
     $user = $ctx !== null ? (int)$ctx['user']['id'] : ($c['responsible_user_id'] === null ? null : (int)$c['responsible_user_id']);
-    foreach (apr_rows("SELECT * FROM report_sections WHERE version_id = ? AND deleted_at IS NULL AND ai_allowed = 1 AND user_edited = 0 AND origin = 'auto' ORDER BY sort, id", [$v['id']]) as $s) {
+    foreach (apr_rows("SELECT id FROM report_sections WHERE version_id = ? AND deleted_at IS NULL AND ai_allowed = 1 AND user_edited = 0 AND origin = 'auto' ORDER BY sort, id", [$v['id']]) as $row) {
+        // לפני כל קריאה לספק — המצב של הרגע. קריאה אחת יכולה להימשך דקה, ובינתיים אנשים עובדים: גרסה שנמחקה או יצאה מ"טיוטה" ← עוצרים (אין
+        // לאן לכתוב, ואין סיבה לשלם על קריאה); פרק שנערך, נמחק או כבר נוסח בינתיים ← מדלגים עליו
+        if (!apr_val("SELECT 1 FROM report_versions WHERE id = ? AND deleted_at IS NULL AND state = 'draft'", [$v['id']])) return;
+        $s = apr_row("SELECT * FROM report_sections WHERE id = ? AND deleted_at IS NULL AND ai_allowed = 1 AND user_edited = 0 AND origin = 'auto'", [$row['id']]);
+        if (!$s) continue;
         $why = apr_extract_unavailable($c, $user);
         if ($why === null && !apr_limit('ai-report:o' . $c['office_id'], 200, 3600)) $why = 'failed';
         $r = $why !== null ? ['state' => 'wait', 'reason' => in_array($why, APR_REPORT_AI_WAITS, true) ? $why : 'failed', 'blocks' => [], 'run' => null]
@@ -287,17 +292,18 @@ function apr_report_ai_all(?array $ctx, array $c, array $v): void
  * הפרק — ניסוח בבינה אינו מעלים "לא ידוע" מהבקרה; או "ממתין" עם הסיבה.
  *
  * $s — השורה **כפי שהייתה לפני הקריאה לספק**. אם הפרק השתנה בינתיים (מישהו שמר בזמן שהספק ענה) — הטקסט **אינו נכתב לפרק**: הוא נשמר
- * כהצעה (origin = ai), והעריכה של האדם נשארת (B2) — ואז מוחזר true. עם הטקסט נשמר hash של נתוני הקלט — כך יודעים אחר כך שהטקסט נכתב לפני שינוי בנתונים (B3).
+ * כהצעה (origin = ai), והעריכה של האדם נשארת (B2). מחזיר מה קרה לתוצאה: applied | proposal | wait | discarded. עם הטקסט נשמר hash של נתוני הקלט — כך יודעים אחר כך שהטקסט נכתב לפני שינוי בנתונים (B3).
  */
-function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid): bool
+function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid): string
 {
     $before = (int)$s['rev'];
-    $s = apr_row('SELECT s.*, v.state AS version_state FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE s.id = ?', [$s['id']]);
-    if (!$s || $s['deleted_at'] !== null || $s['version_state'] !== 'draft') return false;
+    $s = apr_row('SELECT s.*, v.state AS version_state, v.deleted_at AS version_deleted FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE s.id = ?', [$s['id']]);
+    // הפרק נמחק, או שהגרסה נמחקה / יצאה מ"טיוטה" בזמן הקריאה: אין לאן לכתוב. התוצאה נזרקת — והקורא יודע זאת (לא "נוסח")
+    if (!$s || $s['deleted_at'] !== null || $s['version_deleted'] !== null || $s['version_state'] !== 'draft') return 'discarded';
     $moved = (int)$s['rev'] !== $before;
     if ($r['state'] !== 'done') {
         if (!$moved && $r['reason'] !== 'no_data' && $r['reason'] !== 'not_allowed') apr_report_update('report_sections', $s, (int)$s['rev'], ['ai_wait' => $r['reason']], $uid);
-        return false;
+        return 'wait';
     }
     $keep = array_values(array_filter(apr_report_build($c, $s['key'], $tpl)['blocks'], fn($b) => in_array($b['type'], ['data_table', 'image', 'note_missing'], true)));
     $content = json_encode([...$r['blocks'], ...($r['kept'] ?? []), ...$keep], JSON_UNESCAPED_UNICODE);
@@ -307,12 +313,12 @@ function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid
         apr_insert('section_proposals', ['pid' => apr_pid(), 'section_id' => $s['id'], 'content' => $content, 'content_hash' => apr_report_hash($content), 'origin' => 'ai', 'ai_run_id' => $r['run'],
             'ai_input_hash' => $r['hash'] ?? null, 'reason' => 'הפרק נערך בזמן שהבינה ניסחה אותו — הניסוח נשמר כהצעה, והעריכה נשארה', 'created_at' => apr_now()]);
         apr_case_audit($c, 'report.section_ai_proposal', 'report_section', $s['pid'], $meta, null, $uid, $uid === null ? 'system' : 'user');
-        return true;
+        return 'proposal';
     }
     apr_report_update('report_sections', $s, $before, ['content' => $content, 'origin' => 'ai', 'ai_run_id' => $r['run'], 'ai_input_hash' => $r['hash'] ?? null, 'ai_reviewed' => 0,
         'ai_reviewed_by' => null, 'ai_reviewed_at' => null, 'ai_wait' => null, 'state' => 'drafted', 'user_edited' => 0], $uid);
     apr_case_audit($c, 'report.section_ai', 'report_section', $s['pid'], $meta, null, $uid, $uid === null ? 'system' : 'user');
-    return false;
+    return 'applied';
 }
 
 /** הטריגר: ביקור הושלם (נקרא מ-apr_visit_finish, בתוך הטרנזקציה שלו). טיוטה ראשונה — פעם אחת לתיק (17-A6); ביקור נוסף — רענון והצעות. */
@@ -591,12 +597,16 @@ function apr_report_section_ai(array $ctx, array $in): array
     if (!apr_limit('ai-report:u' . $ctx['user']['id'], ...APR_REPORT_RATE_AI)) apr_fail('ai_rate');
     $tpl = apr_report_tpl($v);
     $r = apr_report_ai_section($ctx, $c, $s, $tpl, 'rd:' . $s['pid'] . ':' . $s['rev']);
-    $asProposal = apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, (int)$ctx['user']['id']));
+    $outcome = apr_tx(fn() => apr_report_ai_apply($c, $s, $r, $tpl, (int)$ctx['user']['id']));
     apr_case_touch($c);
-    return ['state' => $r['state'], 'reason' => $r['reason'], 'as_proposal' => $asProposal, 'rev' => (int)apr_val('SELECT rev FROM report_sections WHERE id = ?', [$s['id']])];
+    // discarded: הפרק או הגרסה כבר אינם פתוחים לכתיבה — הטקסט לא נשמר בשום מקום, והמסך אומר זאת (לא "הפרק נוסח")
+    return ['state' => $outcome === 'discarded' ? 'discarded' : $r['state'], 'reason' => $outcome === 'discarded' ? 'gone' : $r['reason'], 'as_proposal' => $outcome === 'proposal', 'rev' => (int)apr_val('SELECT rev FROM report_sections WHERE id = ?', [$s['id']])];
 }
 
-/** report-section-reviewed {section, rev} — שמאי בתיק מסמן שסקר את טקסט הבינה. בלי זה אין אישור (ממצא חוסם). */
+/**
+ * report-section-reviewed {section, rev, confirm_changed?} — שמאי בתיק מסמן שסקר את טקסט הבינה. בלי זה אין אישור (ממצא חוסם). כשהנתונים
+ * שעליהם נכתב הטקסט השתנו מאז — 409 (report_ai_stale), אלא אם הבקשה נושאת confirm_changed: true.
+ */
 function apr_report_section_reviewed(array $ctx, array $in): array
 {
     $c = apr_report_case($ctx, apr_report_section_case($in['section'] ?? null), 'judge');
@@ -605,9 +615,14 @@ function apr_report_section_reviewed(array $ctx, array $in): array
         $s = apr_report_section_row($c, $in['section'] ?? null);
         $v = apr_report_draft($c, apr_val('SELECT pid FROM report_versions WHERE id = ?', [$s['version_id']]));
         if ($s['origin'] !== 'ai' || (int)$s['ai_reviewed'] === 1) apr_fail('nothing_to_change');
-        // הסקירה היא מול הנתונים של הרגע: מעכשיו הם הבסיס שממנו נמדד "הנתונים השתנו אחרי שהטקסט נכתב" (B3)
-        apr_report_update('report_sections', $s, $rev, ['ai_input_hash' => apr_report_ai_input($ctx, $c, $s, apr_report_tpl($v))['hash'], 'ai_reviewed' => 1, 'ai_reviewed_by' => (int)$ctx['user']['id'], 'ai_reviewed_at' => apr_now(), 'state' => 'reviewed'], (int)$ctx['user']['id']);
-        apr_case_audit($c, 'report.section_reviewed', 'report_section', $s['pid'], ['key' => $s['key']]);
+        // B3-ב: "סקרתי" אינו חותם על נתונים שהשתנו מאז שהטקסט נכתב. ה-rev של פרק שלא נסקר אינו מתקדם כשנתון משתנה, ולכן מי שסוקר ממסך ישן
+        // היה חותם בלי לדעת — הוא מקבל 409. רק אישור מפורש (confirm_changed), שהמסך שולח אחרי שהציג את הממצא ואת ההצעה, קובע את הנתונים של
+        // הרגע כבסיס שממנו נמדד "הנתונים השתנו אחרי שהטקסט נכתב" (B3). האישור נרשם ביומן
+        $now = apr_report_ai_input($ctx, $c, $s, apr_report_tpl($v))['hash'];
+        $changed = $now !== $s['ai_input_hash'];
+        if ($changed && ($in['confirm_changed'] ?? false) !== true) apr_fail('report_ai_stale');
+        apr_report_update('report_sections', $s, $rev, ['ai_input_hash' => $now, 'ai_reviewed' => 1, 'ai_reviewed_by' => (int)$ctx['user']['id'], 'ai_reviewed_at' => apr_now(), 'state' => 'reviewed'], (int)$ctx['user']['id']);
+        apr_case_audit($c, 'report.section_reviewed', 'report_section', $s['pid'], ['key' => $s['key']] + ($changed ? ['confirm_changed' => true] : []));
         return ['section' => $s['pid'], 'rev' => $rev + 1];
     });
 }
@@ -640,8 +655,9 @@ function apr_report_proposal_decide(array $ctx, array $in): array
                 // הצעה שמקורה בבינה (ניסוח שהגיע אחרי עריכה, B2) נכנסת כטקסט בינה שלא נסקר; הצעה מהנתונים — כפרק שנבנה מהנתונים
                 $set = $fromAi ? $aiSet : ['origin' => 'auto', 'ai_input_hash' => null, 'auto_hash' => apr_report_hash($proposed) . ':' . apr_report_data_hash($ctx, $c, $proposed, $tpl)] + $reset;
             } else {
-                // מיזוג אינו מסיר את סימון הבינה (🟡3): אותו כלל כמו בשמירה. טקסט בינה שנכנס מההצעה — הפרק "בינה", לא נסקר
-                $took = $fromAi && array_filter($blocks, fn($b) => !empty($b['ai']));
+                // מיזוג אינו מסיר את סימון הבינה (🟡3): אותו כלל כמו בשמירה. מיזוג של הצעת בינה: טקסט בינה שנשאר כלשונו — הפרק "בינה", לא נסקר;
+                // ומי שאינו שמאי בתיק אינו מוריד את הסימון גם כששינה את הטקסט — תו אחד שונה אינו סקירה
+                $took = $fromAi && (array_filter($blocks, fn($b) => !empty($b['ai'])) || !apr_comp_can_judge($ctx, $c));
                 $set = $took ? $aiSet : apr_report_origin_after($ctx, $c, $s, $blocks, $json);
                 if (!$fromAi) $set['auto_hash'] = apr_report_hash($proposed) . ':' . apr_report_data_hash($ctx, $c, $proposed, $tpl);
             }

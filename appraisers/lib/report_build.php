@@ -559,16 +559,16 @@ function apr_report_ai_input(array $ctx, array $c, array $section, array $tpl): 
 }
 
 /**
- * הפרטים המזהים של אנשים בתיק, שאינם נשלחים למודל: 'parties' — שם, ארגון, מייל וטלפון של כל גורם בתיק (גם מי שהוסר), ושל איש הקשר
- * של ביקור; 'staff' — שמות המשתתפים והמבקרים (עובדי המשרד).
+ * הפרטים המזהים של אנשים בתיק, שאינם נשלחים למודל: 'parties' — שם, ארגון, מייל וטלפון של כל גורם בתיק (גם מי שהוסר). שמות של עובדי המשרד
+ * אינם כאן: הם אינם נכנסים לקלט מלכתחילה (הבונה אינו מוסיף את שם המבקר בקלט לבינה), ומחיקה שלהם מתוך טקסט השחיתה אותו כששם העובד הוא
+ * גם מילה רגילה ("אביב", "גיל", "טל") — "תל אביב" הפך ל"תל".
  */
 function apr_report_ai_pii(array $c): array
 {
     $parties = [];
     foreach (apr_rows('SELECT k.name, k.org, k.email, k.phone FROM case_parties p JOIN contacts k ON k.id = p.contact_id WHERE p.case_id = ?', [$c['id']]) as $k) foreach ($k as $v) $parties[] = $v;
-    $staff = array_column(apr_rows('SELECT u.name FROM users u WHERE u.id IN (SELECT user_id FROM case_members WHERE case_id = ? UNION SELECT visitor_user_id FROM visits WHERE case_id = ?)', [$c['id'], $c['id']]), 'name');
     $clean = fn(array $a) => array_values(array_unique(array_filter(array_map(fn($v) => trim((string)$v), $a), fn($v) => mb_strlen($v) >= 2)));
-    return ['parties' => $clean($parties), 'staff' => $clean($staff)];
+    return ['parties' => $clean($parties)];
 }
 
 /** טקסט להשוואה: בלי ניקוד וטעמים, מקף / מקף עברי / קו מפריד ← רווח, רווחים מרובים ← אחד, אותיות קטנות. */
@@ -595,7 +595,7 @@ function apr_report_ai_word(string $norm, string $token, bool $prefix): bool
 /**
  * פריט בדרך למודל: null ← הפריט **מושמט**. מושמט כל פריט שיש בו: **אסימון כלשהו** (מילה שלמה) משם או מארגון של גורם בתיק — גם חלק מהשם,
  * גם ברווח כפול, במקף או בניקוד; מייל או טלפון שמורים של גורם; משהו שנראה כמו מייל (גם "[at]"), טלפון (גם בנקודות, גם ‎+972) או ת"ז
- * (8–9 ספרות, גם ברווחים וגם עם מקף לפני ספרת הביקורת). שם של עובד משרד **נמחק** מהטקסט כמילה שלמה ("תל אביב" אינו נפגע מחבר צוות בשם "אבי"), והפריט נשאר.
+ * (8–9 ספרות, גם ברווחים וגם עם מקף לפני ספרת הביקורת). הפריט מושמט כולו או נשלח כלשונו — הסינון **אינו מוחק מילים מתוך טקסט**.
  * המחיר: פריט תמים שחולק מילה עם שם של גורם מושמט גם הוא — ההשמטה נספרת, והנתון נשאר בפרק כהפניה.
  */
 function apr_report_ai_scrub(string $text, array $pii): ?string
@@ -618,12 +618,6 @@ function apr_report_ai_scrub(string $text, array $pii): ?string
     if (preg_match('/(?<!\d)(?:\+?972[\s.\-]*0?|0)\d{1,2}[\s.\-]*\d{3}[\s.\-]*\d{4}(?!\d)/', $flat) === 1) return null;                          // טלפון: רווח, מקף או נקודה
     if (preg_match('/(?<!\d)\d{8,9}(?!\d)/', $text) === 1 || preg_match('/(?<!\d)\d{7,8}[\-\x{05BE}\x{2010}-\x{2015}]\d(?!\d)/u', $text) === 1) return null;   // ת"ז
     if (preg_match('/(?<![\d.,])\d(?:[ \x{00A0}]?\d){7,8}(?![\d.,])/u', $text) === 1) return null;                                                   // ת"ז ברווחים: 123 456 789
-    foreach ($pii['staff'] as $n) {
-        $tokens = apr_report_ai_tokens($n);
-        if (!$tokens) continue;
-        $name = implode('[\s\x{05BE}\-]+', array_map(fn($t) => implode('[\x{0591}-\x{05BD}\x{05BF}-\x{05C7}]*', array_map(fn($ch) => preg_quote($ch, '/'), mb_str_split($t))), $tokens));
-        $text = (string)preg_replace('/,?\s*(?:בידי\s+)?(?<![\p{L}\p{N}])[ול]{0,2}' . $name . '(?![\p{L}\p{N}\p{M}"\x{05F4}\'\x{05F3}])/iu', '', $text);
-    }
     $text = trim((string)preg_replace('/\s{2,}/u', ' ', $text));
     return $text === '' ? null : $text;
 }

@@ -204,10 +204,14 @@ function rEditMode(body) {
         if (s.user_edited && !confirm(RT.aiReplaceAsk)) return;
         b.disabled = true;
         toast(RT.aiWorking);
-        try { const r = await api('report-section-ai', { body: { section: s.pid, rev: s.rev, replace: !!s.user_edited } }); toast(r.state === 'done' ? (r.as_proposal ? RT.aiAsProposal : RT.aiDone) : RT.aiNotDone(RT.aiWaits[r.reason] || r.reason || ''), r.state !== 'done'); } catch (e) { toastError(e); }
+        try { const r = await api('report-section-ai', { body: { section: s.pid, rev: s.rev, replace: !!s.user_edited } }); toast(r.state === 'done' ? (r.as_proposal ? RT.aiAsProposal : RT.aiDone) : r.state === 'discarded' ? RT.aiDiscarded : RT.aiNotDone(RT.aiWaits[r.reason] || r.reason || ''), r.state !== 'done'); } catch (e) { toastError(e); }
         rReload();
     }));
-    $('#r-reviewed')?.addEventListener('click', () => { if (confirm(RT.markReviewedAsk)) rAct('report-section-reviewed', { section: s.pid, rev: s.rev }); });
+    // "סקרתי" על טקסט שהנתונים שלו השתנו מאז שנכתב: רק באישור מפורש, ורק אחרי שהממצא (וההצעה) מוצגים במסך. מסך ישן — השרת עונה 409, והמסך נטען מחדש
+    $('#r-reviewed')?.addEventListener('click', () => {
+        const stale = (R.x.findings || []).some(f => f.kind === 'ai_stale' && f.section === s.pid);
+        if (confirm(stale ? RT.markReviewedChangedAsk : RT.markReviewedAsk)) rAct('report-section-reviewed', { section: s.pid, rev: s.rev, ...(stale ? { confirm_changed: true } : {}) });
+    });
     $('#r-rebuild1')?.addEventListener('click', () => { if (confirm(s.user_edited ? RT.rebuildForceAsk : RT.rebuildAsk)) rAct('report-rebuild', { version: R.v, sections: [s.pid], include_edited: !!s.user_edited }); });
     $('#r-secdel')?.addEventListener('click', () => { if (confirm((s.mandatory ? RT.removeMandatoryAsk : RT.removeSectionAsk)(s.title))) { R.sec = null; rAct('report-section-delete', { section: s.pid, rev: s.rev }); } });
     $$('[data-rprop]').forEach(b => b.addEventListener('click', () => {
