@@ -4,18 +4,17 @@
   "apps": {
     "funerals-dashboard": {
       "status": "paused",
-      "status_note": "מוזגו 10–12b ונפרסו; בקרה 8 ממתינה להחלטה על הסף",
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים",
       "progress_url": "https://claude.ai/artifact/H5rVZgqYnea8rybPsfzd53"
     },
     "appraisers": {
-      "status": "active",
-      "status_note": "בקרה (4) על Fable 5.2 · max · שעון כל שעה",
-      "waiting": [],
-      "now": "17 דוח — סבב 2 של תיקונים (קוד 17)"
+      "status": "paused",
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים",
+      "waiting": []
     },
     "sforno": {
       "status": "paused",
-      "status_note": "עד הודעה שלך",
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים",
       "slices": [
         {
           "id": "01",
@@ -107,29 +106,33 @@
     },
     "kol-maroko": {
       "status": "paused",
-      "status_note": "הפיתוח הסתיים; PR #1569 (R6) עדיין פתוח",
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים",
       "questions": "off",
       "questions_note": "השאלות של קול מרוקו מסומנות כנענו ב-team/decisions.md ולא בקובץ השאלות, ולכן לא נספרות כאן."
     },
     "trading-strategies": {
-      "status": "active",
-      "status_note": "חודש 27.11 — בקרה (12), שעון כל שעה"
+      "status": "paused",
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים"
     },
     "org-budget-proposals": {
       "status": "paused",
-      "status_note": "עד הודעה שלך"
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים"
     },
     "grave-prices": {
       "status": "paused",
-      "status_note": "עד הודעה שלך"
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים"
     },
     "platform": {
       "status": "paused",
-      "status_note": "לא התחיל — מחכה ל\"תתחיל\""
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים"
     },
     "whatsapp-ai-scanner": {
       "status": "paused",
-      "status_note": "עד הודעה שלך"
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים"
+    },
+    "claude-tasks": {
+      "status": "paused",
+      "status_note": "⏸️ מושהה עד הודעה של הבעלים (27.11) — השעונים כבויים"
     }
   }
 }
