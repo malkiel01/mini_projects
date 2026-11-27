@@ -59,7 +59,7 @@ $M = [
     ['17-D1 מספר שאינו בנתונים מסומן', 'report_build.php', " + (\$unknown ? ['num_unknown' => \$unknown] : []);", " + [];"],
     ['§6.2 טקסט בינה נכנס "לא נסקר"', 'report.php', "'ai_input_hash' => \$r['hash'] ?? null, 'ai_reviewed' => 0,", "'ai_input_hash' => \$r['hash'] ?? null, 'ai_reviewed' => 1,"],
     ['ניסוח בבינה אינו מעלים "לא ידוע"', 'report.php', "in_array(\$b['type'], ['data_table', 'image', 'note_missing'], true)", "in_array(\$b['type'], ['data_table', 'image'], true)"],
-    ['17-D2 רק נתוני הפרק', 'report_build.php', "    \$built = apr_report_resolve(\$ctx, \$c, apr_report_build(\$c, \$section['key'], \$tpl)['blocks'], \$tpl);\n    \$items = [];", "    \$built = apr_report_resolve(\$ctx, \$c, [...apr_report_build(\$c, \$section['key'], \$tpl)['blocks'], ...apr_report_build(\$c, 'property', \$tpl)['blocks']], \$tpl);\n    \$items = [];"],
+    ['17-D2 רק נתוני הפרק', 'report_build.php', "    \$built = apr_report_resolve(\$ctx, \$c, apr_report_build(\$c, \$section['key'], \$tpl)['blocks'], \$tpl);\n    \$facts = apr_report_facts(\$c);", "    \$built = apr_report_resolve(\$ctx, \$c, [...apr_report_build(\$c, \$section['key'], \$tpl)['blocks'], ...apr_report_build(\$c, 'property', \$tpl)['blocks']], \$tpl);\n    \$facts = apr_report_facts(\$c);"],
     // ── הבקרה (§9) והאישור (§8) ──
     ['17-C2 אין שמאי מורשה', 'report_build.php', "    if (!\$approver) \$add('no_approver',", "    if (false) \$add('no_approver',"],
     ['17-C2 פרק חובה ריק', 'report_build.php', "        if ((int)\$s['mandatory'] === 1 && !apr_report_has_content(\$blocks)) \$add(", "        if (false) \$add("],
