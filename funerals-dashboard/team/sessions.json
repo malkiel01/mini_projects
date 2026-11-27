@@ -19,9 +19,10 @@
     }
   ],
   "control": {
-    "session": "session_018g4NYFDHbeZpw9fbz68i9m",
-    "branch": "claude/funerals-dashboard-control",
-    "clock": "trig_013Vvw9Rw16vnti3CnuP12vf"
+    "session": "session_018g4NYCQafBpv5yqhSx9VM7",
+    "branch": "claude/funerals-dashboard-control-8",
+    "role": "בקרה 8",
+    "clock": "ממתין — יצירת שעון נחסמה בהרשאה, ראו STATE"
   },
   "tasks": {
     "session": "session_018g4NYFi7CQiJ79smzSeDjd",
@@ -105,6 +106,11 @@
     {
       "session": "session_018g4NYEMXfmbD3B4CjhKViH",
       "role": "בקרה 6",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYFDHbeZpw9fbz68i9m",
+      "role": "בקרה 7",
       "state": "רדום"
     }
   ]
