@@ -1803,7 +1803,8 @@
         box.replaceChildren(el('span', { class: 'muted small' }, 'עמודות'), ...f.columns.map((c, i) => {
           const label = el('input', { value: c.label, maxlength: 60, 'aria-label': 'שם העמודה' });
           label.addEventListener('input', () => { c.label = label.value; setDirty(true); });
-          label.addEventListener('change', draw_);
+          // עמודה בשם "סכום" / "מחיר" / "כמות" — מספר (כדי שתסוכם), כל עוד היא טקסט חופשי בלי רשימה
+          label.addEventListener('change', () => { if (c.type === 'text' && !c.list && guess(c.label) === 'number') c.type = 'number'; draw_(); });
           const type = el('select', { 'aria-label': 'סוג העמודה' },
             Object.entries({ text: 'טקסט', number: 'מספר', select: '☰ בחירה', calc: 'ƒ מחושב' }).map(([v, t]) => el('option', { value: v, selected: c.type === v }, t)));
           type.addEventListener('change', () => { c.type = type.value; if (c.type === 'calc') { c.formula ??= ''; c.format ??= 'number'; } if (c.type === 'select') c.options ??= []; setDirty(true); draw_(); });

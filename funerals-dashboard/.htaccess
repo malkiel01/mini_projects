@@ -1,0 +1,13 @@
+# פרוסה 09 — כתובות שרת ה-MCP ו-OAuth (docs/spec/09-mcp.md §3.1, §3.2).
+# בפריסה build-gate.php מוסיף מעל זה את בלוק השער. השער בודק את קובץ ה-PHP שאליו מופנים — ולכן
+# mcp.php ו-oauth/metadata.php ב-"public" של app.json. tests/mcp-router.php קורא את הכללים האלה ומריץ אותם בבדיקות.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # הכותרת Authorization מגיעה ל-PHP גם אחרי rewrite
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    RewriteRule ^mcp/?$ mcp.php [L]
+    RewriteRule ^\.well-known/oauth-protected-resource(/.*)?$ oauth/metadata.php?doc=resource [L]
+    RewriteRule ^\.well-known/oauth-authorization-server(/.*)?$ oauth/metadata.php?doc=server [L]
+    RewriteRule ^\.well-known/openid-configuration$ oauth/metadata.php?doc=server [L]
+</IfModule>

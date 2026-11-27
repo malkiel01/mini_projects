@@ -1,0 +1,73 @@
+{
+  "note": "מתעדכן בידי צ'אט הבקרה. צ'אט קוד חדש לכל פרוסה",
+  "spec": "session_018g4NYF1YtreoYJt48ZHQ52",
+  "code": "session_018g4NYGwdZorv6oW8J6WDtx",
+  "control": "session_018g4NYFaERcGPs7d3j8QKsZ",
+  "tasks": "session_018g4NYFB9byAhqYVJfEq9nW",
+  "control_trigger": "trig_0129DApgnnEgTr2g3BDUXG6M",
+  "code_slice": "11-launch",
+  "code_history": [
+    {
+      "slice": "01-foundation",
+      "session": "session_018g4NYDDfrw3CiukwgVVE7W",
+      "pr": 1766
+    },
+    {
+      "slice": "02-content-engine",
+      "session": "session_018g4NYEx7nK8JKxPB4R5CPU",
+      "pr": 1769
+    },
+    {
+      "slice": "03-import",
+      "session": "session_018g4NYCSQ3uA4DVvKh18gFc",
+      "pr": 1775
+    },
+    {
+      "slice": "04-reader",
+      "session": "session_018g4NYEHjhpu7iYHPu1BWPq",
+      "pr": 1780
+    },
+    {
+      "slice": "05-readers-sync",
+      "session": "session_018g4NYCmM4wdPP1WjWedXzg",
+      "pr": 1784
+    },
+    {
+      "slice": "06-downloads",
+      "session": "session_018g4NYGA5ddhLd4pEz9FEaP",
+      "pr": 1788
+    },
+    {
+      "slice": "07-calendar",
+      "session": "session_018g4NYEei2TM8xj19pgRpTF",
+      "pr": 1791
+    },
+    {
+      "slice": "08-reminders",
+      "session": "session_018g4NYDRVzkfBSdywoE87s2",
+      "pr": 1794
+    },
+    {
+      "slice": "09-store",
+      "session": "session_018g4NYE2kJZPUNra69Ndaac",
+      "pr": 1798
+    },
+    {
+      "slice": "10-operations",
+      "session": "session_018g4NYDbzXpfJJokyWCbTxY",
+      "pr": 1801
+    }
+  ],
+  "control_history": [
+    {
+      "n": 1,
+      "session": "session_018g4NYGA2fhgWP6PkcJ8ZCx",
+      "until": "2026-11-22T16:53Z"
+    },
+    {
+      "n": 2,
+      "session": "session_018g4NYE5chJ7yafGbETDiNn",
+      "until": "2026-11-22T21:52Z"
+    }
+  ]
+}

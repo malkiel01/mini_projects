@@ -1,0 +1,3 @@
+# נתוני הריצה בשרת — המסד, המפתחות (secret.key, vapid.json, woo.json), הגיבויים (data/backups/) — לעולם לא בגיט
+data/*
+!data/.htaccess

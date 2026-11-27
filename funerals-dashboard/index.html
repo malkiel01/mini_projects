@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
+<meta name="referrer" content="no-referrer">
+<title>ניהול לוויות חברה קדישא</title>
+<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/devloop.css">
+<link rel="stylesheet" href="assets/css/field.css">
+<link rel="stylesheet" href="assets/css/dropbox.css">
+<link rel="stylesheet" href="assets/css/ai.css">
+</head>
+<body>
+<div id="signin" class="center" hidden>
+  <div class="summary">
+    <h1>🕯️ ניהול לוויות חברה קדישא</h1>
+    <p class="muted">הכניסה דרך הפלטפורמה, לפי אישור לאפליקציה בממשק המנהל.</p>
+    <p class="error" id="signinError" role="alert" hidden></p>
+    <button type="button" id="retryBtn" class="btn primary">כניסה מחדש</button>
+  </div>
+</div>
+
+<div id="noorg" class="center" hidden>
+  <div class="summary">
+    <h1>🕯️ ניהול לוויות חברה קדישא</h1>
+    <p id="noorgText" role="alert"></p>
+  </div>
+</div>
+
+<div id="application" hidden>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <div class="titles"><h1>🕯️ ניהול לוויות חברה קדישא</h1>
+      <div class="sub"><span id="orgName"></span><select id="orgPick" class="org-pick" aria-label="בחירת ארגון" hidden></select> · <span id="topSub"></span></div></div>
+    <button class="icon-btn" id="importBtn" data-more aria-label="ייבוא ממצאים" title="ייבוא ממצאים" hidden>📥</button>
+    <button class="icon-btn" id="exportBtn" data-more aria-label="ייצוא החודש" title="ייצוא החודש" hidden>📤</button>
+    <button class="icon-btn" id="settingsBtn" data-more aria-label="הגדרות" title="הגדרות" hidden>⚙️</button>
+    <button class="icon-btn" id="devBtn" data-more aria-label="מסך מפתח" title="מסך מפתח" hidden>🛠️</button>
+    <a class="icon-btn" href="connect.html" id="gptBtn" data-more aria-label="חיבור לעוזר החיצוני" title="חיבור לעוזר החיצוני">🤖</a>
+    <button class="icon-btn" id="moreBtn" aria-label="עוד פעולות" title="עוד פעולות" aria-haspopup="dialog">⋯</button>
+    <button class="icon-btn" id="userBtn" aria-label="תפריט משתמש" title="תפריט משתמש">👤</button>
+    <input id="importFile" type="file" accept=".json,application/json,text/plain" hidden>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="toolbar">
+      <input class="month-pick" type="month" id="month" aria-label="חודש">
+      <button id="newBtn" class="btn primary"><span aria-hidden="true">+</span> תיק</button>
+    </div>
+
+    <div class="summary" aria-live="polite">
+      <div class="line"><b id="sumDone">0</b> <span class="muted" id="sumOf">מתוך 0 תיקים הושלמו</span><span class="pct" id="sumPct"></span></div>
+      <span class="track" role="progressbar" aria-label="בדיקות שהושלמו" aria-valuemin="0" aria-valuemax="100" id="track"><span id="trackBar" style="inline-size:0"></span></span>
+      <div class="tiles" role="group" aria-label="מונים — לחיצה מסננת">
+        <button type="button" class="tile" data-tile="todo" aria-pressed="false"><b>0</b><span>פתוחים</span></button>
+        <button type="button" class="tile ok" data-tile="done" aria-pressed="false"><b>0</b><span>הושלמו</span></button>
+        <button type="button" class="tile bad" data-tile="bad" aria-pressed="false"><b>0</b><span>חסרים</span></button>
+        <button type="button" class="tile warn" data-tile="verify" aria-pressed="false"><b>0</b><span>לאימות</span></button>
+      </div>
+      <div class="chips" id="sumChips"></div>
+    </div>
+
+    <!-- U2: ארבעת המונים למעלה מסננים (פתוחים, הושלמו, חסרים, לאימות); כאן — רק שני הסינונים שאין להם מונה -->
+    <div class="seg-tabs" role="tablist" aria-label="סינון נוסף">
+      <button role="tab" type="button" data-filter="unchecked" aria-selected="false">טרם נבדק <small id="nUnchecked"></small></button>
+      <button role="tab" type="button" data-filter="all" aria-selected="false">כל התיקים <small id="nAll"></small></button>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="חיפוש: שם, תאריך, צוות" aria-label="חיפוש תיק">
+    </div>
+    <ul class="list" id="records" aria-label="תיקי החודש"></ul>
+  </main>
+</div>
+
+<dialog id="editDialog" aria-labelledby="editorTitle">
+  <form id="editor" method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="editorTitle">תיק</h2>
+      <button type="submit" class="btn primary">שמירה</button>
+    </header>
+    <div class="sheet-body">
+      <div class="summary" id="caseSummary" style="margin:0"></div>
+
+      <div class="seg-tabs" role="tablist" aria-label="תצוגת התיק" id="caseTabs">
+        <button role="tab" type="button" data-pane="case" aria-selected="true">התיק</button>
+        <button role="tab" type="button" data-pane="history" aria-selected="false">🕓 היסטוריה</button>
+      </div>
+      <section id="historyPane" aria-label="היסטוריית התיק" hidden><div id="history" class="list"></div></section>
+
+      <div id="casePane">
+      <section aria-labelledby="gChecks">
+        <h3 class="sec-title" id="gChecks">מה צריך להשלים</h3>
+        <p class="hint">✅ הושלם = מאומת או לא רלוונטי. "מסמך קיים" עדיין דורש אימות של מה שכתוב בו. לחיצה על שורה פותחת עדכון.</p>
+        <div id="checks" class="list"></div>
+      </section>
+
+      <section class="group" aria-labelledby="gNotes">
+        <h3 id="gNotes">הערות</h3>
+        <textarea id="fNotes" class="grow" rows="2" maxlength="1500" aria-labelledby="gNotes"></textarea>
+      </section>
+
+      <section class="group" aria-labelledby="gDocs">
+        <div class="group-head"><h3 id="gDocs">מסמכים</h3><button type="button" class="btn ghost sm" id="addDocument"><span aria-hidden="true">+</span> מסמך</button></div>
+        <div id="docsState"></div>
+        <div id="documents" class="list"></div>
+      </section>
+
+      <section class="group" aria-labelledby="gFiles">
+        <h3 id="gFiles">קבצים</h3>
+        <div id="dbxFiles"></div>
+      </section>
+
+      <section class="group" aria-labelledby="gPay">
+        <div class="group-head"><h3 id="gPay">אסמכתאות תשלום</h3><button type="button" class="btn ghost sm" id="addPayment"><span aria-hidden="true">+</span> תשלום</button></div>
+        <div id="payments" class="list"></div>
+      </section>
+
+      <section class="group" aria-labelledby="gDetails">
+        <h3 id="gDetails">פרטי הלוויה</h3>
+        <div class="fields two">
+          <label class="f wide"><span>שם הנפטר/ת *</span><input id="fName" required maxlength="160"></label>
+          <label class="f"><span>תאריך לוויה</span><input id="fDate" type="date"></label>
+          <label class="f"><span>שעה</span><input id="fTime" type="time"></label>
+          <label class="f"><span>מקום יציאה</span><input id="fOrigin" maxlength="180"></label>
+          <label class="f"><span>צוות טהרה/קבורה</span><input id="fTeam" maxlength="180"></label>
+          <div class="f gps-row"><label class="f"><span>מיקום הקבר</span><input id="fGrave" maxlength="180"></label>
+            <button type="button" class="btn ghost" id="fGps" aria-label="המיקום שלי — ממלא נקודת מיקום" title="המיקום שלי">📍</button></div>
+          <label class="f"><span>חודש שיוך</span><input id="fMonth" type="month" required></label>
+          <label class="f wide"><span>קישור לתיקיית הקבצים</span><input id="fFolder" dir="ltr" inputmode="url"></label>
+        </div>
+      </section>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="moreDialog" aria-labelledby="moreTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="moreTitle">עוד פעולות</h2>
+    </header>
+    <div class="sheet-body"><div class="list" id="moreList"></div></div>
+  </form>
+</dialog>
+
+<dialog id="importDialog" aria-labelledby="importTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="importTitle">📥 ייבוא ממצאים</h2>
+      <button type="button" class="btn primary" id="importRun">ייבוא</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">להדביק את התשובה שהעוזר החיצוני החזיר (גם עם הטקסט שמסביב), או לבחור קובץ. תיק קיים מתעדכן רק בשדות שבתשובה.</p>
+      <textarea id="importText" rows="8" dir="ltr" spellcheck="false" autocomplete="off" aria-label="התשובה לייבוא" placeholder="להדביק כאן את התשובה"></textarea>
+      <button type="button" class="btn" id="importPick">📂 בחירת קובץ</button>
+      <section id="similarBox" aria-labelledby="similarTitle" hidden>
+        <h3 class="sec-title" id="similarTitle">תיקים דומים</h3>
+        <p class="hint">לרשומות האלה אין מזהה, ויש תיק קיים דומה להן. לבחור לכל אחת, ואז שוב "ייבוא".</p>
+        <div class="list" id="similarList"></div>
+      </section>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="tokenDialog" aria-labelledby="tokenTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="tokenTitle">אסימון חדש לחיבור מערכות</h2>
+      <button type="button" id="copyToken" class="btn primary">העתקה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">מוצג פעם אחת בלבד — לשמור במקום פרטי. האסימון הקודם בוטל.</p>
+      <input id="tokenValue" readonly dir="ltr" aria-label="האסימון">
+    </div>
+  </form>
+</dialog>
+
+<dialog id="previewDialog" aria-labelledby="previewTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="previewTitle">תצוגת מסמך</h2>
+    </header>
+    <div class="sheet-body">
+      <div id="preview"></div>
+          </div>
+  </form>
+</dialog>
+
+<dialog id="userDialog" aria-labelledby="userTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="userTitle">המשתמש</h2>
+    </header>
+    <div class="sheet-body">
+      <div class="summary">
+        <div class="line"><b id="uName"></b></div>
+        <div class="line"><span class="muted" id="uEmail" dir="ltr"></span></div>
+        <div class="line"><span class="chip" id="uRole"></span><span class="muted" id="uOrg"></span></div>
+        <div class="line"><span class="muted">גרסה <bdi id="uVersion"></bdi></span></div>
+      </div>
+      <button type="button" class="btn" id="tokenBtn" hidden>🔑 אסימון לקליטה ממערכת אחרת</button>
+      <button type="button" class="btn danger" id="logoutBtn">⎋ יציאה</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="settingsDialog" aria-labelledby="settingsTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="settingsTitle">⚙️ הגדרות</h2>
+    </header>
+    <div class="sheet-body">
+      <div class="seg-tabs" role="tablist" aria-label="הגדרות">
+        <button role="tab" type="button" data-stab="members" aria-selected="true">חברים</button>
+        <button role="tab" type="button" data-stab="orgs" aria-selected="false">ארגונים</button>
+        <button role="tab" type="button" data-stab="dropbox" aria-selected="false">קבצים</button>
+      </div>
+      <section id="sMembers">
+        <div class="group">
+          <h3>הזמנה במייל</h3>
+          <p class="hint">מי שמוזמן נהיה חבר כשהוא נכנס במייל הזה. ההרשאה בפלטפורמה היא האישור.</p>
+          <div class="fields two">
+            <label class="f wide"><span>מייל</span><input id="invEmail" type="email" dir="ltr" inputmode="email" autocomplete="off"></label>
+            <label class="f"><span>תפקיד</span><select id="invRole"></select></label>
+            <div class="f"><span>&nbsp;</span><button type="button" class="btn primary" id="invSend">הזמנה</button></div>
+          </div>
+        </div>
+        <h3 class="sec-title">חברים</h3>
+        <ul class="list" id="membersList"></ul>
+        <h3 class="sec-title">הזמנות פתוחות</h3>
+        <ul class="list" id="invitesList"></ul>
+      </section>
+      <section id="sDropbox" hidden></section>
+      <section id="sOrgs" hidden>
+        <div class="group">
+          <h3>ארגון חדש</h3>
+          <div class="fields two">
+            <label class="f wide"><span>שם</span><input id="orgNew" maxlength="120"></label>
+            <div class="f"><span>&nbsp;</span><button type="button" class="btn primary" id="orgCreate">יצירה</button></div>
+          </div>
+        </div>
+        <ul class="list" id="orgsList"></ul>
+      </section>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="devDialog" aria-labelledby="devTitle">
+  <form method="dialog">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="devTitle">🛠️ מפתח</h2>
+      <button type="button" class="icon-btn" id="devReload" aria-label="רענון" title="רענון">⟳</button>
+    </header>
+    <div class="sheet-body">
+      <div class="seg-tabs" role="tablist" aria-label="מסך מפתח">
+        <button role="tab" type="button" data-dtab="health" aria-selected="true">תקינות</button>
+        <button role="tab" type="button" data-dtab="requests" aria-selected="false">בקשות</button>
+        <button role="tab" type="button" data-dtab="events" aria-selected="false">פעולות</button>
+        <button role="tab" type="button" data-dtab="tasks" aria-selected="false">מטלות</button>
+      </div>
+      <div id="devBody"></div>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="assets/js/form.js"></script>
+<script src="assets/js/devloop.js"></script>
+<script src="assets/js/field-core.js"></script>
+<script src="assets/js/field.js"></script>
+<script src="assets/js/app.js"></script>
+<script src="assets/js/dropbox.js"></script>
+<script src="assets/js/ai.js"></script>
+<script src="assets/js/manage.js"></script>
+</body>
+</html>

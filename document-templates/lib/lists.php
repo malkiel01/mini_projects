@@ -188,6 +188,36 @@ function list_save(array $user, array $b): array
     return ['ok' => true, 'list' => list_view(list_row($user, $id))];
 }
 
+/**
+ * רשימה גדולה (מעל LIST_EDIT_MAX): הוספה והסרה של שורות בלי לייבא את כל הקובץ מחדש.
+ * {id, add?: [[...], ...], del?: [[...], ...]} — del לפי תוכן השורה (מסלול מלא, כמו שמוצג בחיפוש).
+ * הרמות, השם והתרגומים נשארים; תרגום של ערך שכבר לא מופיע באף שורה — יוצא (list_tr_clean).
+ */
+function list_rows_edit(array $user, array $b): array
+{
+    $cur = list_view(list_row($user, (int)($b['id'] ?? 0)), true);
+    $n = count($cur['levels']);
+    $key = fn(array $r) => implode("\x1f", array_map(fn($i) => trim(preg_replace('/\s+/u', ' ', (string)($r[$i] ?? ''))), range(0, $n - 1)));
+    $del = [];
+    foreach ((array)($b['del'] ?? []) as $r) if (is_array($r)) $del[$key($r)] = true;
+    $rows = $cur['rows'];
+    $before = count($rows);
+    if ($del) $rows = array_values(array_filter($rows, fn($r) => !isset($del[$key($r)])));
+    $removed = $before - count($rows);
+    $add = list_rows_clean((array)($b['add'] ?? []), $n);
+    $have = array_flip(array_map($key, $rows));
+    $added = 0;
+    foreach ($add as $r) {
+        if (isset($have[$key($r)])) continue;
+        $rows[] = $r; $have[$key($r)] = true; $added++;
+    }
+    if (!$added && !$removed) throw new ApiError((array)($b['add'] ?? []) ? 'השורה כבר ברשימה' : 'לא נמצאו שורות לשינוי', 422);
+    if (count($rows) > LIST_MAX_ROWS) throw new ApiError('עד ' . LIST_MAX_ROWS . ' שורות ברשימה', 422);
+    $saved = list_save($user, ['id' => $cur['id'], 'name' => $cur['name'], 'levels' => $cur['levels'], 'rows' => $rows,
+        'translations' => json_decode(json_encode($cur['translations']), true) ?: []])['list'];
+    return ['ok' => true, 'list' => $saved, 'added' => $added, 'removed' => $removed];
+}
+
 function list_delete(array $user, array $b): array
 {
     $r = list_row($user, (int)($b['id'] ?? 0));

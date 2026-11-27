@@ -1,0 +1,85 @@
+/*
+ * ספורנו — ניתוב ב-#/… . מסך = פונקציה (main, params) שבונה את התוכן. חץ החזרה חוזר למסך הקודם
+ * באפליקציה, עד מסך הבית — ובמסך הבית אין חץ (לעולם לא יוצאים מהאפליקציה).
+ */
+'use strict';
+
+(function (SF) {
+    const routes = [];   // [{re, keys, screen, title, parent}]
+
+    /** SF.route('#/admin/staff', screen, {title, parent: '#/admin'}); ':x' — פרמטר, '*' — השאר */
+    SF.route = function route(pattern, screen, opts = {}) {
+        const keys = [];
+        const re = new RegExp('^' + pattern.replace(/[.?+]/g, '\\$&').replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }).replace(/\*$/, '(.*)') + '$');
+        if (pattern.endsWith('*')) keys.push('rest');
+        routes.push({ re, keys, screen, title: opts.title || '', parent: 'parent' in opts ? opts.parent : '#/', dev: !!opts.dev });
+    };
+
+    function match(hash) {
+        for (const r of routes) {
+            const m = hash.match(r.re);
+            if (m) return { r, params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1] || '')])) };
+        }
+        return null;
+    }
+
+    /* מסך שצריך לנקות אחריו (מאזינים, מצב רחב) — SF.onLeave(fn); רץ לפני המסך הבא. SF.leaveGuard — שאלה לפני יציאה */
+    let leave = [];
+    SF.onLeave = fn => { leave.push(fn); };
+    SF.leaveGuard = null;
+    let lastHash = location.hash;
+
+    SF.go = hash => { if (location.hash === hash) SF.render(); else location.hash = hash; };
+
+    SF.render = async function render() {
+        if (SF.leaveGuard && location.hash !== lastHash && !SF.leaveGuard()) { history.replaceState(null, '', lastHash); return; }
+        lastHash = location.hash;
+        SF.leaveGuard = null;
+        for (const fn of leave.splice(0)) { try { fn(); } catch (e) { /* ניקוי בלבד */ } }
+        const hash = location.hash && location.hash !== '#' ? location.hash.replace(/\/$/, '') || '#/' : '#/';
+        let found = match(hash === '#' ? '#/' : hash);
+        if (!found || (found.r.dev && !SF.isDev())) {
+            found = match('#/');
+            history.replaceState(null, '', '#/');
+        }
+        const main = document.getElementById('main');
+        const back = document.getElementById('back');
+        back.hidden = found.r.parent === null;
+        back.dataset.to = found.r.parent || '#/';
+        document.title = found.r.title ? found.r.title + ' · ספורנו' : 'ספורנו';
+        main.replaceChildren(SF.h('p', { class: 'loading' }, 'טוען…'));
+        try {
+            await found.r.screen(main, found.params);
+        } catch (e) {
+            SF.fail(main, e);
+        }
+        main.focus({ preventScroll: true });
+    };
+
+    /** הודעה אחידה לשגיאת רשת / 401 / 403 / 503, עם "נסו שוב". */
+    SF.fail = function fail(el, e) {
+        const icon = { network: '📡', login_required: '🔑', sso_required: '🔑', sso: '🔑', suspended: '⛔', forbidden: '⛔', no_grant: '⛔', login_unavailable: '⏳', storage: '⏳', upgrading: '⏳' }[e && e.code] || '⚠️';
+        // 11: המצב המנותק — אין שער, המנהל נכנס בכפתור (lib/sso.php)
+        const sso = e && (e.code === 'sso_required' || e.code === 'sso');
+        el.replaceChildren(SF.h('div', { class: 'fail', role: 'alert' },
+            SF.h('div', { class: 'ic', 'aria-hidden': 'true' }, icon),
+            SF.h('p', null, (e && e.message) || 'משהו השתבש'),
+            sso ? SF.h('button', { class: 'btn primary', type: 'button', onclick: SF.ssoStart }, 'כניסה עם הכלים הדיגיטליים')
+                : SF.h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, 'נסו שוב')));
+    };
+
+    /** 11: "כניסה עם הכלים הדיגיטליים" — השרת נותן את הכתובת (עם state חד-פעמי בעוגייה), והדפדפן עובר אליה. */
+    SF.ssoStart = async function ssoStart(ev) {
+        if (ev && ev.currentTarget) ev.currentTarget.disabled = true;
+        try {
+            const r = await SF.api('sso-start', { body: {} });
+            try { sessionStorage.setItem('sf_sso_hash', location.hash || '#/admin'); } catch (e2) { /* גלישה פרטית — חוזרים ל-#/admin */ }
+            location.assign(r.url);
+        } catch (e) {
+            SF.toast(e.message, true);
+            if (ev && ev.currentTarget) ev.currentTarget.disabled = false;
+        }
+    };
+
+    window.addEventListener('hashchange', () => SF.render());
+})(window.SF);

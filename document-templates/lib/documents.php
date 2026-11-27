@@ -369,7 +369,7 @@ function clean_value(array $f, $v, int $docId = 0): string
         case 'checkbox':
             return $v === '' || $v === '0' ? '' : '1';
         case 'number':
-            $v = trim($v);
+            $v = calc_num_clean(trim($v));   // "1,500 ₪" → "1500"
             if ($v !== '' && !is_numeric($v)) throw new ApiError('"' . $f['label'] . '": נדרש מספר', 422);
             return $v;
         case 'date':
@@ -412,6 +412,7 @@ function clean_value(array $f, $v, int $docId = 0): string
                     if ($c['type'] === 'select' && $cell !== '' && !in_array($cell, !empty($c['list']) ? list_level_values($c['list']) : ($c['options'] ?? []), true)) {
                         throw new ApiError('"' . $f['label'] . ' ← ' . $c['label'] . '": בחרו מהרשימה', 422);
                     }
+                    if ($c['type'] === 'number') $cell = calc_num_clean($cell);   // "1,500 ₪" → "1500"
                     if ($c['type'] === 'number' && $cell !== '' && !is_numeric($cell)) {
                         throw new ApiError('"' . $f['label'] . ' ← ' . $c['label'] . '": נדרש מספר', 422);
                     }

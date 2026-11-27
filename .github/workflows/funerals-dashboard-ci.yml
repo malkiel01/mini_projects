@@ -1,0 +1,22 @@
+name: בדיקות דשבורד לוויות
+on:
+  pull_request:
+    paths:
+      - 'funerals-dashboard/**'
+      - '.github/workflows/funerals-dashboard-ci.yml'
+  workflow_dispatch: {}
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, mbstring, sodium
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: בדיקות PHP, JavaScript, הרשאות ונתונים
+        run: bash funerals-dashboard/tests/run.sh

@@ -1,0 +1,6 @@
+# אף קובץ נתונים, סיסמה או מסד אינו זמין דרך HTTP.
+Require all denied
+<IfModule mod_access_compat.c>
+Deny from all
+</IfModule>
+Options -Indexes
