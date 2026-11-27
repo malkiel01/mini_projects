@@ -158,6 +158,17 @@ check('חיפוש ברשימה גדולה', $g['matches'] === 15000 && $g['rows'
 list_save($a, ['id' => $big['id'], 'name' => 'קברים', 'keep_rows' => true, 'translations' => ['0' => ['גבעת שאול' => ['en' => 'Givat Shaul', 'fr' => 'Guivat Shaoul']]]]);
 $g = list_get($a, ['id' => $big['id']])['list'];
 check('שמירה בלי שורות: השם והתרגומים מתעדכנים, השורות נשארות', $g['name'] === 'קברים' && $g['row_count'] === 30000 && $g['langs'] === ['en', 'fr']);
+// עריכת רשימה גדולה בלי ייבוא מחדש: הוספה, הסרה, כפילות, ותרגום שנשאר
+$e = list_rows_edit($a, ['id' => $big['id'], 'add' => [['גבעת שאול', '200', '1', '1']]]);
+$g = list_get($a, ['id' => $big['id'], 'q' => 'גבעת'])['list'];
+check('רשימה גדולה: הוספת שורה', $e['added'] === 1 && $e['list']['row_count'] === 30001 && $g['matches'] === 15001 && $g['langs'] === ['en', 'fr']);
+try { list_rows_edit($a, ['id' => $big['id'], 'add' => [['גבעת שאול', '200', '1', '1']]]); check('שורה קיימת — לא נוספת שוב', false); }
+catch (ApiError $x) { check('שורה קיימת — לא נוספת שוב', $x->status === 422); }
+$e = list_rows_edit($a, ['id' => $big['id'], 'del' => [['גבעת שאול', '200', '1', '1'], ['הר המנוחות', '100', '1', '1']]]);
+check('רשימה גדולה: הסרת שורות', $e['removed'] === 2 && $e['list']['row_count'] === 29999);
+try { list_rows_edit($b, ['id' => $big['id'], 'add' => [['x', '1', '1', '1']]]); check('רשימה של אחר — לא נערכת', false); }
+catch (ApiError $x) { check('רשימה של אחר — לא נערכת', $x->status === 404); }
+list_rows_edit($a, ['id' => $big['id'], 'add' => [['הר המנוחות', '100', '1', '1']]]);   // חזרה למצב, לבדיקות שאחרי
 $bref = fn($lv) => ['id' => $big['id'], 'level' => $lv];
 tpl_save($a, ['id' => $tid, 'schema' => ['pages' => [['w' => 595, 'h' => 842]], 'fields' => [
     ['key' => 'cem', 'type' => 'select', 'label' => 'בית העלמין', 'list' => $bref(0) + ['lang' => 'en']] + $geo,

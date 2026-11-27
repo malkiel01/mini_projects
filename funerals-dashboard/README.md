@@ -1,0 +1,255 @@
+# ניהול לוויות חברה קדישא
+
+(לשעבר "דשבורד לוויות וחוסרים". המזהה `funerals-dashboard` לא משתנה.)
+
+| מה | איפה |
+| --- | --- |
+| הדרישה במילים של הבעלים | `docs/owner-brief.md` |
+| כללי הצוות | `team/PROTOCOL.md` |
+| האפיון | `docs/spec/` |
+| Dropbox (פרוסה 03) | `dropbox/README.md` |
+
+כלי עצמאי בעברית, מבוסס PHP ו-SQLite, בתוך mini_projects. מידע אישי **לא נשמר ב-GitHub**: רק קוד האתר ציבורי.
+
+## מה כבר פותח
+
+- סינון לפי חודש, חיפוש נפטר וספירת פריטים חסרים או לא קריאים
+- פרטי לוויה, צוות, מקום יציאה, מיקום קבר והערות
+- סטטוס לכל בדיקה: רישיון קבורה, מספר רישיון, מסמך זיהוי ומקורו, בית הספדים, תשלומים, רכישת קבר נוסף, זיהוי בן/בת זוג ודיווח לביטוח לאומי
+- הוספת אסמכתאות תשלום: סכום, ייעוד, מספר אסמכתה ומקור
+- קישור מוגבל לתיקיית Dropbox ורשימת קישורי מסמכים
+- Dropbox Embedder להצגת מסמכים רק לאחר הגדרת App Key ודומיין מורשה; כפתור פתיחה ישירה תמיד זמין
+- ייבוא וייצוא JSON לפי חודש, API לקריאה ולייבוא, ובקרה על עדכונים ידניים בייבוא חוזר
+- זהות מהשער של הפלטפורמה, cookie מאובטח ל-CSRF, אסימון API שנוצר מהממשק, ו-SQLite מחוץ לאחסון הקוד
+- **פרוסה 01 (גרסה 1.0.0):** ארגונים (חברות קדישא), משתמשים משלה (לפי `sub`/מייל מהשער), תפקידים `admin` / `office` /
+  `field`, הזמנה במייל, מפתח = `platform_admin`; מסך מפתח (תקינות, יומן בקשות, יומן פעולות) ו-DevLoop (`FD-`)
+
+- **פרוסה 04 — עובד שטח בטלפון** (האפיון הישן — בהיסטוריה; החדש: `docs/spec/`): מסך "היום" (תיקי היום ומחר, מה חסר מהשטח, חיפוש בשם בכל
+  החודשים), ובתיק שלושה כפתורים — 📷 צילום קבר, 📎 שליחת קובץ עם סוג, ✏️ עדכון (בדיקות, הערה, מיקום קבר). ברירת המחדל
+  לתפקיד `field`; לכל אחד אחר — `index.html#/field` (ותיק: `#/field/<id>`).
+
+## עובד שטח (פרוסה 04)
+
+| מה | איפה |
+| --- | --- |
+| `field_today`, `field_search`, `field_case`, `field_save`, `field_upload` — החיבור ב-`api.php` הוא שתי שורות | `lib/field.php` |
+| הקטנה (2,560 בצלע הארוכה, JPEG 85%), ה-GPS מה-EXIF נשמר וכל השאר נמחק, תור ההעלאות — בלי DOM | `assets/js/field-core.js` |
+| המסך, התור ב-IndexedDB (`fd_field`), השליחה | `assets/js/field.js`, `assets/css/field.css` |
+| שליחה ברקע (Background Sync) | `sw.js` |
+| בדיקות | `tests/field.test.php` (שרת, העלאה מדומה), `tests/field-dropbox.test.php` (W2–W4, W7 מול Dropbox המדומה של 03), `tests/field.test.js` (W6, התור), ו-W1/W5/W7 ב-`run.sh` |
+
+- **עדכון מהשטח** — רק `checks`, `notes`, `grave` (שדה אחר בקלט → 403), נשמר ב-`formSaveCase(..., 'field', ...)` של 02.
+- **מזהה חד-פעמי** — הדפדפן נותן לכל קובץ `upload_id` ושולח איתו בכל ניסיון. `data/funerals.sqlite` ← `field_uploads`
+  (`org_id`, `upload_id`): אותו מזהה שהצליח מחזיר את אותו קובץ בלי לשלוח שוב ל-Dropbox.
+- **שיוך לבדיקה** — סוג קובץ ← בדיקה (`FIELD_KINDS`: רישיון קבורה ← `license_document` וכו'). הבדיקה עוברת ל"לאימות" רק אם
+  היא טרם נבדקה / חסרה / לא קריאה; בדיקה שאדם כבר סגר — לא יורדת.
+- **ההעלאה** — דרך הממשק היציב של פרוסה 03, `dropboxUploadToCase(..., 'field', $uploadId)` (אותו מזהה גם שם — ניסיון
+  חוזר אחרי בקשה שנקטעה לא מעלה שוב), ואחריו `kind` ב-`files`.
+  כל עוד 03 לא בקוד, או ש-Dropbox של הארגון מנותק: 409 "Dropbox של הארגון לא מחובר — פנה למנהל", והקובץ נשאר בתור.
+- **התור** — ממתין לשליחה ← שולח… ← נשלח ✓ (עם קישור); אין רשת / 5xx → ניסיון חוזר (5 שניות עד 5 דקות); Dropbox מנותק → כל
+  5 דקות; שגיאה אחרת → ידני. ⟳ ניסיון חוזר, ✕ ביטול. "נשלח ✓" יורד מהמכשיר אחרי יום. פריט של משתמש אחר במכשיר לא נשלח.
+
+- **שליחה כשהמסך סגור** — `sw.js` (ב-`"public"` של `app.json`): service worker שעושה **רק** Background Sync —
+  קורא מאותו `fd_field` ב-IndexedDB ושולח באותו `upload_id`, בשם המשתמש האחרון בדף (`meta`: csrf, משתמש, ארגון). בלי
+  fetch handler ובלי מטמון. CSRF שפג (403) → נשאר "ממתין" והדף שולח בפתיחה. **iOS / דפדפן בלי Background Sync** — התור
+  נשלח כשהאפליקציה פתוחה שוב (כניסה, חזרה ללשונית, חזרת רשת, כל 20 שניות). לשונית וה-service worker לא שולחים במקביל
+  (`navigator.locks`).
+- **פריט בתור** שייך למשתמש ולארגון: נשלח רק כשהם הפעילים; פריט של משתמש אחר במכשיר משותף יורד אחרי שבוע.
+- **מטא-נתונים:** JPEG תמיד מקודד מחדש (נשאר רק ה-GPS). PNG / WebP / HEIC קטנים מ-2,560 נשלחים **כמו שהם**, עם המטא-נתונים
+  שלהם (אין קידוד מחדש בלי צורך; HEIC הדפדפן לרוב לא מפענח).
+- **הסכמה:** `field_uploads` — מיגרציה v3 ב-`lib/schema.php` (גיבוי לפני הקפיצה).
+
+**לא נבנה:** `manifest.webmanifest` להתקנה (האפיון: אפשר, לא חובה). W8 (מצב טיסה בטלפון אמיתי) — ידני.
+
+## איך זה בנוי (פרוסה 01)
+
+| מה | איפה |
+| --- | --- |
+| מיגרציות (`PRAGMA user_version`, גיבוי ל-`data/backup/` לפני כל קפיצה) | `lib/schema.php` |
+| מי המשתמש, הארגון הפעיל ומה מותר — `can()`, `scope()`, `need()` | `lib/access.php` |
+| יומן פעולות (`recordEvent()`, `events`) ויומן בקשות (`req_log`, 1,000 אחרונות) | `lib/events.php` |
+| סודות מוצפנים (`secretPut()` / `secretGet()`, מפתח ב-`data/secret.key`) | `lib/secrets.php` |
+| חיבור DevLoop (מסד ב-`data/dev/`) — המודול עצמו עותק מסונכרן, לא עורכים | `lib/devtasks.php` |
+| הממשק | `index.html`, `assets/js/app.js` |
+| מפת הדרכים | `dev/open-items.json` |
+
+כל הנתונים תחת `data/` (מוחרגת מהפריסה): `funerals.sqlite`, `config.php`, `secret.key`, `backup/`, `dev/`.
+`audit` הישנה נשארת כהיסטוריה; מכאן כל שינוי נרשם ב-`events`.
+
+## התקנה ראשונה
+
+1. לפרוס (קורה לבד במיזוג ל-`main`). השרת: PHP 8.3 ומעלה, הרחבות pdo_sqlite ו-mbstring, HTTPS.
+2. **לאשר לעצמך את האפליקציה בממשק המנהל של הפלטפורמה, ולהיכנס.** האפליקציה `"restricted": true`, ולכן רק אישור ישיר לאפליקציה פותח אותה — הרשאה לקטגוריה לא מספיקה.
+3. אם מערכת חיצונית צריכה לקלוט נתונים: 👤 ← "🔑 אסימון ל-ingest.php" (מנהל ארגון 1 או מפתח). האסימון מוצג פעם אחת; לשמור אותו במקום פרטי.
+
+אין יותר Terminal ואין `setup.php`. הקובץ `data/config.php` נוצר לבד בבקשה הראשונה (הרשאות 0600), ו-`data/` חסומה ל-HTTP (`.htaccess` מצורף; בשרת שאינו Apache — להגדיר חסימה מקבילה). `data/` מוחרגת מהפריסה, כך שההגדרות והמסד בשרת לא נדרסים.
+
+## API
+
+שתי נקודות קצה, עם אותם נתונים ואותם כללי ייבוא:
+
+**`api.php` — לדפדפן בלבד.** מאחורי השער של הפלטפורמה (`"gate": true`). הזהות היחידה היא `$_SERVER['PLATFORM_USER']` שהשער כותב, ורק עם `"granted": true` — אחרת 401. אין כניסה בסיסמה. ה-session (העוגייה `fd_session`) משמש ל-CSRF בלבד וקשור ל-`sub` של המשתמש; X-CSRF-Token נדרש לכל כתיבה. Bearer **אינו** מתקבל כאן.
+
+- GET api.php?action=me — ה-CSRF, המשתמש, הארגון הפעיל והארגונים, התפקיד, ההרשאות והגרסה. בלי ארגון או מושבת — 403 עם `code: no_org`
+- POST api.php?action=logout — מוחק את ה-session המקומי (לא מנתק מהפלטפורמה)
+- POST api.php?action=api_token — (מנהל ארגון 1 / מפתח) יוצר אסימון ל-ingest.php ומחזיר אותו פעם אחת; האסימון הקודם בוטל מיד
+- members, invite, invite_cancel, member_role, member_active — (מנהל) חברים והזמנות בארגון הפעיל
+- orgs, org_create, org_rename — (מפתח) ארגונים · org_switch — מעבר לארגון שהמשתמש חבר בו
+- dev_health, dev_requests[&errors=1], dev_events — (מפתח) מסך המפתח · dev-* — DevLoop · devapi-* — DevLoop באסימון `fdd_` (ציבורי)
+- **כל פעולה על תיקים מסוננת לארגון הפעיל.** תיק של ארגון אחר → 404.
+- GET api.php?action=list&month=2026-10 — רשומות לפי חודש
+- GET api.php?action=export&month=2026-10 — יצוא JSON
+- POST api.php?action=save — שמירה ידנית דרך ממשק המנהל
+- POST api.php?action=import — ייבוא מתוך הדשבורד (📥: הדבקת JSON או קובץ). `{"records":[...], "resolve":{"<אינדקס>":"update"|"new"}}`.
+  **תיק דומה (08):** רשומה בלי `id` שדומה לתיק קיים — אותו חודש, אותו שם (בלי פיסוק, רווחים וסדר מילים) ואותו תאריך או תאריך חסר
+  באחד מהם — לא נוצרת בשקט: 409 `code: similar` עם הרשימה ושום רשומה לא נשמרת, עד שלכל אחת יש בחירה. "לעדכן" שומר את השם של התיק.
+  ב-`ingest.php` (אין מי שיבחר) — ברירת המחדל, לעדכן, והתשובה מדווחת ב-`similar`.
+
+**`ingest.php` — למערכות חיצוניות.** ב-`"public"` של `app.json` (לצד פעולות `devapi-*` של DevLoop), כי מכונה ניגשת אליה בלי כניסה לפלטפורמה. הרשאה: `Authorization: Bearer TOKEN` בלבד (האסימון מ-👤 ← "🔑 אסימון ל-ingest.php"), בלי session ובלי עוגייה. בלי אסימון תקין — 401.
+
+- GET ingest.php?action=list&month=2026-10
+- GET ingest.php?action=export&month=2026-10
+- POST ingest.php?action=import — JSON בצורה: {"records":[...]}
+
+הקוד המשותף ב-`lib.php`; גישה ישירה אליו מחזירה 404.
+
+- מזהה תיק: שדה id יציב. כשהוא חסר, המערכת גוזרת מזהה משם, חודש ותאריך. מומלץ להשתמש באותו id בכל עדכון חוזר, כדי למנוע כפילויות או שינויים בשם.
+- שדות תיק: id, month, name, date, time, origin, team, grave, notes, folder_url, checks, documents, payments.
+- כל check כולל status, value, source, note. סטטוסים: verified, document_present, unreadable, missing, unknown, reported, not_applicable.
+- עדכון ידני לא נדרס אוטומטית על ידי ייבוא חדש; כל שינוי נרשם ב-`events` עם מה שהשתנה (`diff`). ה-actor הוא המייל מהשער (או השם, אם אין מייל), `api` לקליטה דרך ingest.php — שכותבת תמיד לארגון 1.
+
+## פרויקט ChatGPT — בלי חיבור (פרוסה 08)
+
+OpenAI הפסיקה ליצור GPT מותאם בחשבונות פרטיים, ולכן המסלול הראשון במסך 🤖 (`connect.html`) הוא **פרויקט ChatGPT**:
+📋 ההנחיות (`gpt-project-prompt.md`) בהוראות הפרויקט, 📤 ייצוא החודש כקובץ בפרויקט, וה-JSON שה-GPT מחזיר — 📥 במסך התיקים
+(`index.html#import`). ההנחיות נוצרות מ-`extProjectPrompt()` ב-`ext-lib.php` (אותו `build-ext.php`), ומשקפות את כללי הייבוא: `id` מהייצוא,
+תיק חדש בלי `id`, שדה ריק לא דורס, בדיקה נשלחת שלמה, ואף פעם לא `verified`. האסימונים ו-`openapi.json` — בקפל "מתקדם".
+חיבור ישיר (Plugin / MCP) — פרוסה 09, למטה.
+
+## חיבור ישיר — שרת MCP ו-OAuth (פרוסה 09)
+
+ChatGPT בדפדפן (chatgpt.com/plugins ← Add custom MCP server) או Claude (Custom connector) מתחברים לכתובת אחת —
+`https://mbe-plus.com/mini_projects/funerals-dashboard/mcp` — עם **OAuth**, ומאז קוראים ומעדכנים תיקים בלי JSON ובלי 📥.
+
+- **`mcp.php`** — Streamable HTTP בלי SSE ובלי session: `POST` עם JSON-RPC 2.0 (גם מערך), `GET` → 405, התראות → 202. `initialize`,
+  `ping`, `tools/list` — בלי אסימון; `tools/call` — Bearer `fdo_` (OAuth) או `fdx_` (05), אחרת 401 עם `WWW-Authenticate: Bearer
+  resource_metadata=…`. `Origin` זר → 403. **הכלים = `extActions()` חוץ מ-`prompt`**, והביצוע — `extDo(..., 'api')`: אותן הרשאות, אותו
+  "לאימות", אותו יומן; שגיאת פעולה → `isError` עם ההודעה בעברית. ביומן: "<שם> (<client_name>)", למשל "בודק (ChatGPT)". 60 קריאות
+  לדקה לחיבור.
+- **OAuth 2.1** (`oauth/`, `mcp-lib.php`): מטא-נתונים (`.well-known/oauth-protected-resource`, `…/oauth-authorization-server`,
+  `…/openid-configuration` — rewrite ב-`.htaccess` אל `oauth/metadata.php`), DCR (`register.php`, לקוח ציבורי, 20 לשעה ל-IP), CIMD
+  (`client_id` שהוא כתובת https: 5 שניות, 64KB, בלי הפניות, בלי IP פרטי/מקומי, מטמון שעה), `authorize.php` **מאחורי השער** — מסך
+  הסכמה עם CSRF (עוגייה נפרדת `fd_oauth`), `token.php` (PKCE S256 חובה; קוד 60 שניות חד-פעמי; גישה שעה, רענון 30 יום שמתחלף, שימוש
+  חוזר → כל החיבור מבוטל), `revoke.php`. הכול נשמר רק כ-SHA-256 בטבלאות `oauth_*` של `data/funerals.sqlite`.
+- **כתובת חזרה** — https, וגם `http://localhost` / `127.0.0.1` (RFC 8252) — בשביל MCP Inspector.
+- **מסך 🤖** — המסלול הראשון: הכתובת עם 📋, חמשת הצעדים, ו"חיבורים פעילים" עם "ניתוק" (מנהל רואה ומנתק את כל הארגון).
+- **בדיקה ידנית אחרי פריסה:** `npx @modelcontextprotocol/inspector` ← Streamable HTTP ← הכתובת ← Open Auth Settings ← Quick OAuth Flow;
+  או `curl -sX POST <base>/mcp -H 'Authorization: Bearer fdx_…' -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{}}}'`.
+- **סיכון פתוח:** לפי RFC 8414 המטא-נתונים של issuer עם נתיב יושבים בשורש הדומיין
+  (`/.well-known/oauth-authorization-server/mini_projects/funerals-dashboard`) — מחוץ לתיקייה. לקוחות MCP מנסים גם
+  `<issuer>/.well-known/openid-configuration` (אצלנו). אם ChatGPT / Inspector לא מוצאים — בקשה לפלטפורמה, לא כאן.
+
+## API לצ'אט חיצוני — `ext.php` (פרוסה 05)
+
+לחיבור GPT מותאם (Actions) או כל צ'אט אחר. **Bearer בלבד** — אסימון אישי `fdx_…`; עוגייה או session לא מתקבלים (401).
+ציבורי ב-`app.json` (`ext.php`, `openapi.json`). אין פעולת מחיקה.
+
+- **האסימון** — אישי (משתמש + ארגון), נוצר במסך "🤖 חיבור ל-ChatGPT" (`connect.html`, דרך `tokens.php` מאחורי השער),
+  מוצג פעם אחת, נשמר רק כ-SHA-256 בטבלה `tokens`. תוקף 30 / 90 / 365 יום, ביטול (השורה נשארת), עד 10 פעילים למשתמש,
+  60 בקשות לדקה (אחר כך 429). ההרשאות — התפקיד של המשתמש בארגון **ברגע הבקשה**: הושבת או הורד בתפקיד — חל מיד.
+- **הפעולות** — `ext.php/<action>` (או `ext.php?action=`): `whoami`, `schema`, `find`, `cases`, `case`, `case_update`,
+  `case_create`, `files`, `file_text`, `prompt`. הטבלה היחידה — `extActions()` ב-`ext-lib.php`.
+- **"מאומת" דרך הצ'אט נשמר "לאימות"** (`document_present`) — רק אדם מאשר סופית (02, `finalAllowed('api')`). התשובה
+  אומרת זאת (`converted`). כל כתיבה — שורה ב-`events` עם `source: api` ו-"<שם> (צ'אט)".
+- **`openapi.json`, `gpt-prompt.md` ו-`gpt-project-prompt.md` נוצרים מהקוד:** `php funerals-dashboard/tools/build-ext.php`. הבדיקות נכשלות אם
+  הקבצים שבריפו לא תואמים לקוד.
+- `files` / `file_text` — 501 "Dropbox עוד לא חובר" עד פרוסה 03.
+
+## חיבור Dropbox
+
+המסמכים נשארים ב-Dropbox. בדשבורד נשמרים כתובות קישור בלבד.
+לשם הצגה מוטמעת נדרש ליצור Dropbox App, להוסיף את דומיין האתר ברשימת Embedder domains, ולהגדיר את ה-App Key הציבורי בשדה dropbox_app_key בתוך data/config.php בשרת. אין להכניס App Secret.
+רכיב Dropbox משתמש במפגש Dropbox של הצופה ובמדיניות של קישור השיתוף, אך יש לבדוק באופן ידני קישורים מוגבלים בחשבון מורשה ובחשבון שאינו מורשה. קישור שיתוף ציבורי אינו מוגבל רק משום שקיים חשבון מחובר.
+
+## AI מובנה (פרוסה 06)
+
+האפיון החדש: `docs/spec/04-ai.md`. 💬 במסך הראשי (הקשר: הארגון והחודש) ובתיק (הקשר: התיק). העוזר עונה, ומציע עדכונים בכרטיס
+"לפני ← אחרי" עם מקור; **שום דבר לא נכתב בלי ✓**.
+
+| קובץ | תפקיד |
+| --- | --- |
+| `ai/lib.php` | הגדרות, מונה ותקרה, הספק (Anthropic Messages API ב-HTTP — אין composer בשרת), הכלים, לולאת הצ'אט, הצעות, שיחות |
+| `ai/actions.php` | `ai_status`, `ai_settings`, `ai_settings_save`, `ai_key_test`, `ai_chat`, `ai_thread`, `ai_decide` — החיבור ב-`api.php` הוא שתי שורות |
+| `assets/js/ai.js`, `assets/css/ai.css` | 💬, חלון הצ'אט, הכרטיסים, לשונית "בינה מלאכותית" ב-⚙️ הגדרות (מנהל) |
+| `tests/ai.sh`, `tests/ai-mock.php`, `tests/ai-fixture.php`, `tests/ai-dbx-fixture.php` | F1–F7, §2.2.2, §2.3 מול ספק מדומה (`AI_API_BASE`, רק `127.0.0.1`) ו-Dropbox מדומה של 03, בלי רשת |
+
+- **הכלים = הפעולות של `ext.php` (05)**, דרך `extDo()` — אותה לוגיקה ואותן הרשאות, בהקשר של המשתמש המחובר. כלי כתיבה רץ
+  ב-`extDo(..., 'ai', dry: true)` (הכול, ואז `ROLLBACK`) ומחזיר כרטיס; ✓ מריץ אותו באמת עם `via: ai` → "מאומת" נשמר "לאימות" (02).
+- **המפתח** — ב-`secrets` (מוצפן), לארגון. מוצגים רק 4 תווים אחרונים; לא בתשובה, לא ביומן הבקשות ולא ב-`events`.
+- **מודל ברירת מחדל:** `claude-opus-5-5` (הרשימה ב-`AI_PROVIDERS`). `fallbacks: "default"` למודלים שתומכים — כשהספק דוחה
+  בקשה מסיבות בטיחות, מודל חלופי עונה.
+- **תקרה:** כל הודעה של משתמש = שיחה אחת במונה (ברירת מחדל 500 בחודש לארגון), ותקרת טוקנים חודשית (ברירת מחדל 10M —
+  קלט, פלט ומטמון, מ-`usage`). מעבר → הודעה, בלי קריאה לספק. `cache_control` אוטומטי על הבקשה.
+- **הצעה ישנה:** בזמן ההצעה נשמר hash של השדות והבדיקות שהיא נוגעת בהם; ✓ אחרי שאדם שינה אותם → 409, "התיק השתנה מאז ההצעה".
+- **קבצים בשיחה:** התוכן נשלח לספק ולא נשמר ב-`ai_threads` (במקומו סימון). זו עריכת היסטוריה, ולכן כל בקשה שולחת
+  `prefix_mismatch_behavior: drop_block` (בטא `thinking-binding-controls-2026-08-01`) — בלוקי thinking שאחריה נזרקים, בלי שגיאה.
+  הודעת המערכת נקבעת פעם אחת לשיחה (`ai_threads.system`). בסבב שבו נקרא קובץ — כתיבה תמיד ככרטיס, גם באישור אוטומטי.
+- **נתונים** (ב-`data/funerals.sqlite`, טבלאות חדשות בלבד): `ai_settings`, `ai_usage`, `ai_threads` (30 יום, ואז נמחקות — שיחות,
+  לא תיקים), `ai_proposals`, `ai_file_kinds`.
+- **קבצים (03):** הכלי `file_view` שולח לספק את הקובץ עצמו (תמונה, או PDF — גם סרוק) דרך `dropboxFileContent()`: עד 5MB לקובץ,
+  10 קבצים ו-20MB לשיחה. **הצעת סוג (§2.3):** קובץ חדש (7 ימים) בלי סוג, כשיש מפתח — הצעה על שורת הקובץ ("נראה כמו רישיון קבורה —
+  לשייך?"), עד 2 קבצים בכל פתיחת תיק, פעם אחת לקובץ (`ai_file_kinds`), מהתקרה. ✓ → `files.kind`, והבדיקה המתאימה "לאימות" (אם עוד
+  לא נבדקה), via: ai. החיבור ל-`dropbox.js`: `data-file-id` על השורה ואירוע `fd:files`.
+
+## הגדרות בדיקות ותפקידים (פרוסה 11)
+
+**הבדיקות מטבלה, לא מקוד** (`lib/checks.php`, טבלת `check_defs` — מיגרציה v5). `org_id = 0` — ההגדרה הכללית של הבעלים
+(9 ברירות המחדל, אותם מפתחות וסדר כמו בתיקים); `org_id = N` — דריסה או בדיקה של הארגון, גוברת לפי `key`. לכל בדיקה: שם, סוג
+(`document` / `value` + `value_kind` / `yesno`), סוגי מסמכים שעונים (`doc_kinds`), תפקיד אחראי (`role`), תנאי (`cond: {check}` — נדרשת
+רק כשהבדיקה שבתנאי "נמצא"/"הושלם"), `critical` (ל"דחוף"). **הסרה רכה** (`removed = 1`) — הערכים נשארים בתיק; **בדיקה חדשה** —
+אין לה ערך בתיקים הקיימים, ולכן היא "חסר". שום פעולה לא נוגעת ב-`funerals`.
+
+**קריאה צרה (לבינה — פרוסה 10, ולממשק — 12):** `checkDefs($pdo, $orgId)` — הבדיקות הפעילות בסדר שלהן;
+`checkNames($pdo, $orgId)` — מפתח → שם; `caseChecks($pdo, $orgId, $case)` — מצב כל בדיקה בתיק (`missing` · `found` · `doubt` · `done` ·
+`na`, לפי אפיון 02), `complete` (א13), ו-`extra` (ערכים של בדיקות שהוסרו); `caseUrgent(...)` — דחוף (ק3). לא לקרוא את `check_defs` ישירות.
+
+**תפקידים** (`lib/roles.php`, טבלת `roles`): שם + הרשאות מתוך `ROLE_PERMS` (רשימה סגורה) + סוגי משימות, לכל ארגון. שלושה מובנים
+(מנהל, משרד, שטח) עם ההרשאות שהיו לפני הפרוסה. `members.role_id` — התפקיד; `members.role` נשאר לתאימות ומחושב מההרשאות.
+ההרשאה — רק `can()`, שקורא את התפקיד מהטבלה בכל בקשה (`ctxPerms()`), כך ששינוי חל מיד. **"רק תיקים שהוקצו לי"**
+(`case.view_assigned`): בלי תיק מסוים — שום הרשאת תיק (רשימות, שטח, API, MCP, בינה → 403); עם תיק — רק אם יש בו משימה שלו או של
+התפקיד שלו. **משימות** (`tasks`): לאדם או לתפקיד; "המשימות שלי" = המפורשות + הבדיקות שהתפקיד אחראי עליהן ועוד לא הושלמו (מחושב).
+
+| פעולה (`api.php?action=`) | שיטה | הרשאה | מה |
+| --- | --- | --- | --- |
+| `checks` | GET | צפייה בתיקים / `settings.manage` | ההגדרות של הארגון (`scope`, `overrides`, `removed`), `global` (למפתח), סוגים, מצבים, `urgent_days` |
+| `check_save` | POST | `settings.manage`; `scope: global` — מפתח | `{key?, name, type, value_kind, doc_kinds, role, cond, critical, position}`; בלי `key` — חדשה |
+| `check_remove` · `check_reset` · `check_order` | POST | כנ"ל | `{key}` · `{key}` (חזרה לכללית) · `{keys: [...]}` |
+| `urgent_save` | POST | `settings.manage` | `{days}` |
+| `case_checks` | GET `&id=` | צפייה בתיק | מצב הבדיקות, `urgent`, `tasks` |
+| `roles` · `role_save` · `role_archive` | GET · POST · POST | `members.manage` | `{id?, name, perms[], task_types[]}` — לא משאירים ארגון בלי מנהל משתמשים |
+| `member_role` · `invite` | POST | `members.manage` | `role_id` (או `role` הישן — המובנה) |
+| `tasks` (`&case_id=`) · `task_save` · `task_status` | GET · POST · POST | צפייה בתיק · `tasks.manage` · המוקצה או `tasks.manage` | `{case_id, title, type, check_key, assignee_user_id \| assignee_role_id, due, note}` · `{id, status}` |
+| `case_restore` | POST | עדכון התיק | `{id}` — החזרה מהארכיון (א13); `list&archived=1` — התיקים שבארכיון |
+| `my_tasks` | GET | כל חבר | `items[]`: `kind: task` (משימה) או `kind: check` (בדיקה של התפקיד) |
+
+`me` מחזיר גם `checks` (הבדיקות הפעילות — `FDForm.setChecks`), `role_id`, ו-`role_label` = שם התפקיד הגמיש. ערך נבדק לפי סוג הבדיקה (מספר / תאריך / כן-לא). ארכיון (`case_archive`): הכול הושלם או לא רלוונטי → יוצא מהרשימה, נשאר בחיפוש; בדיקה חדשה לא מוציאה מהארכיון. בדיקה שהושלמה סוגרת את המשימה שלה. בדיקות: `tests/settings.sh` (S1–S15, לפי `docs/spec/10-acceptance.md`).
+
+## מה עדיין לא חובר
+
+- **F8 (06) — פתוח, ידני אחרי פריסה ומפתח אמיתי:** "מה חסר ב<שם>?" → תשובה נכונה; "תמלא מהקבצים" → הצעות עם מקור.
+- **K16–K18 (09) — ידני אחרי פריסה:** MCP Inspector, ChatGPT (Add custom MCP server) ו-Claude (custom connector).
+- מסד הנתונים בשרת יתחיל ריק. נתוני אוקטובר 2026 לא נכתבים לקוד ציבורי.
+- לא בוצעה בדיקת הרשאות אמיתית של Embedder עד שיוגדרו דומיין ואפליקציית Dropbox.
+- רישיון קבורה, אישור העברה מחו"ל ואישור שמירת חלקת קבר הם מסמכים שונים ואינם מסומנים כאותו סוג.
+
+## אבטחה
+
+- **זהות:** רק מהשער. `PLATFORM_USER` אינו `HTTP_*`, ולכן בקשה לא יכולה לזייף אותו; `granted` נבדק בכל בקשה (לא סומכים על כך שהשער כבר חסם).
+- **CSRF:** כל פעולה שאינה GET ב-api.php דורשת X-CSRF-Token שתואם ל-session. session של `sub` אחר מתחיל מחדש עם CSRF חדש.
+- **אסימון API:** נוצר בשרת (`random_bytes`, 32 בתים), מוצג פעם אחת, ונשמר רק כ-SHA-256 ב-`data/config.php` (0600, כתיבה אטומית). יצירה חוזרת מחליפה את ה-hash, כך שהאסימון הקודם מקבל 401 מיד. כל יצירה נרשמת ב-`events`. כל עוד לא נוצר אסימון — ingest.php מחזיר 401 לכל בקשה.
+- `setup.php` נמחק מהריפו. הפריסה רצה בלי `--delete`, כך שעותק ישן שלו עלול להישאר בשרת; הוא רץ רק משורת הפקודה (דרך HTTP מחזיר 404) ואינו בשימוש.
+- הדשבורד שומר מידע רגיש; Dropbox מגינה על המסמכים בלבד. לעולם לא להכניס סודות לקוד או לייצא JSON אישי לריפו ציבורי. מומלץ לגבות את המסד.
+
+## בדיקות
+
+`bash funerals-dashboard/tests/run.sh` — שרת `php -S` מקומי עם `tests/gate-prepend.php` (`auto_prepend_file`), שמדמה את השער: הזהות נקראת מקובץ שנתיבו במשתנה הסביבה של תהליך השרת, לא מכותרת או עוגייה. הקובץ רץ רק תחת `cli-server`, ו-`tests/` אינה נפרסת.

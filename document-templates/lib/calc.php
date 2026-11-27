@@ -68,8 +68,9 @@ function calc_eval(string $expr, callable $lookup)
         return $x;
     };
     $num = function ($v): float {
-        if (is_array($v)) return (float)array_sum(array_map('floatval', $v));
+        if (is_array($v)) return (float)array_sum(array_map(fn($x) => (float)(is_numeric($x = calc_num_clean((string)$x)) ? $x : 0), $v));
         if (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) return (float)(strtotime($v . ' UTC') / 86400);
+        $v = is_string($v) ? calc_num_clean($v) : $v;
         return is_numeric($v) ? (float)$v : 0.0;
     };
     $cmp = null; $add = null; $mul = null; $unary = null; $atom = null;
@@ -177,11 +178,22 @@ function calc_str($v): string
     return rtrim(rtrim($s, '0'), '.');
 }
 
+/**
+ * מספר כמו שאנשים כותבים: "1,500", "₪ 1,500", "1500 ש"ח" → "1500". מה שאינו מספר — חוזר כמו שהוא.
+ * זהה ל-cleanNum ב-assets/js/calc.js (וקטורים ב-tests/calc-vectors.json).
+ */
+function calc_num_clean(string $v): string
+{
+    $t = preg_replace('/[\s,₪$€\x{200E}\x{200F}]|ש["״]ח|NIS/u', '', $v) ?? $v;
+    return preg_match('/^-?(\d+\.?\d*|\.\d+)$/', $t) ? $t : $v;
+}
+
 /** הצגה במסמך: 1,234.5 · ‏1,234.50 ₪ · 13/10/2026. */
 function calc_display(string $v, string $format): string
 {
     if ($v === '') return '';
     if ($format === 'date') return preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) ? "$m[3]/$m[2]/$m[1]" : $v;
+    $v = calc_num_clean($v);
     if (!is_numeric($v)) return $v;
     if ($format === 'money') return number_format((float)$v, 2, '.', ',') . ' ₪';
     $dec = str_contains($v, '.') ? strlen(substr($v, strpos($v, '.') + 1)) : 0;

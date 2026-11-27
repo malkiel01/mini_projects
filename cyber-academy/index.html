@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>אקדמיית סייבר התקפי</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="banner">
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+  <a class="icon-btn" id="back" href="#/" aria-label="חזרה" hidden>›</a>
+  <span class="logo" aria-hidden="true">🛡️</span>
+  <div class="titles">
+    <h1 id="title">אקדמיית סייבר התקפי</h1>
+    <div class="sub" id="sub">דשבורד · קריאה בלבד</div>
+  </div>
+  <button class="icon-btn" id="reload" type="button" aria-label="רענון">⟳</button>
+</header>
+<div class="sample-bar" id="sample-bar" role="status">⚠️ נתוני דוגמה — לא הישגים אמיתיים</div>
+<div class="sample-bar real" id="real-bar" role="status" hidden></div>
+<nav class="tabs" id="tabs" aria-label="מסכים">
+  <a href="#/">ראשי</a>
+  <a href="#/syllabus">סילבוס</a>
+  <a href="#/progress">התקדמות</a>
+  <a href="#/tasks">משימות</a>
+  <a href="#/evidence">מבחנים וראיות</a>
+  <a href="#/gaps">פערים והמלצות</a>
+  <a href="#/timeline">ציר זמן</a>
+</nav>
+<main id="main" tabindex="-1" aria-live="polite" aria-busy="true"></main>
+<footer class="foot" id="foot"></footer>
+<script src="assets/js/api.js" defer></script>
+<script src="assets/js/render.js" defer></script>
+<script src="assets/js/states.js" defer></script>
+<script src="assets/js/screens.js" defer></script>
+<script src="assets/js/screens-v2.js" defer></script>
+<script src="assets/js/learner.js" defer></script>
+<script src="assets/js/router.js" defer></script>
+<script src="assets/js/app.js" defer></script>
+</body>
+</html>

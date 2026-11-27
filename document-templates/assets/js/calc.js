@@ -35,14 +35,16 @@
     return out;
   }
 
+  // "1,500", "₪ 1,500", "1500 ש"ח" → "1500" — זהה ל-calc_num_clean ב-lib/calc.php
+  const cleanNum = (v) => { const t = String(v).replace(/[\s,₪$€\u200E\u200F]|ש["״]ח|NIS/gu, ''); return /^-?(\d+\.?\d*|\.\d+)$/.test(t) ? t : String(v); };
   const num = (v) => {
     if (Array.isArray(v)) return v.reduce((s, x) => s + num(x), 0);
     if (typeof v === 'string' && ISO.test(v)) return Date.parse(v + 'T00:00:00Z') / 86400000;
     if (typeof v === 'number') return v;
-    const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+    const n = typeof v === 'string' && v.trim() !== '' ? Number(cleanNum(v)) : NaN;
     return Number.isFinite(n) ? n : 0;
   };
-  const isNum = (v) => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)));
+  const isNum = (v) => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(cleanNum(v))));
   // PHP round: חצי — הלאה מאפס
   const roundTo = (x, n) => { const k = Math.pow(10, n); const r = Math.round(Math.abs(x) * k + 1e-9) / k; return x < 0 ? -r : r; };
 
@@ -141,6 +143,7 @@
     v = String(v ?? '');
     if (v === '') return '';
     if (format === 'date') return ISO.test(v) ? v.split('-').reverse().join('/') : v;
+    v = cleanNum(v);
     if (!isNum(v)) return v;
     const group = (n, d) => Number(n).toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     if (format === 'money') return group(v, 2) + ' ₪';

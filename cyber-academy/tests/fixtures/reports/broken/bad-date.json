@@ -1,0 +1,13 @@
+{
+  "reportVersion": "1.0.0",
+  "taskId": "ACA-DEMO-011",
+  "teacherId": "01",
+  "date": "2026-02-30",
+  "lessonIds": ["lesson-demo-01"],
+  "skillIds": [],
+  "assistanceLevel": "none",
+  "findings": ["לומד דוגמה סיים את המשימה."],
+  "evidenceRefs": ["reports/demo/output-11.txt"],
+  "evidenceLimits": ["ראיה אחת בלבד."],
+  "recommendation": "להמשיך."
+}

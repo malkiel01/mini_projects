@@ -144,6 +144,24 @@ jobs:
       - name: grave-prices tests
         run: php grave-prices/tests/run.php
 
+      # ספורנו — הבדיקות של האפליקציה (מסד זמני, בלי רשת, לא נוגע ב-data/): מיגרציות, כניסת מנהלים, CSRF, הרשאות,
+      # יומן פעולות, שירותי רקע ועצמאות. בדיקה שנכשלת עוצרת את הפריסה.
+      - name: sforno tests
+        run: php sforno/tests/run.php
+
+      # אקדמיית סייבר — אימות החוזה v1 מול fixtures, מקור GitHub כבוי, אסימון לא דולף. נכשל → אין פריסה.
+      - name: cyber-academy tests
+        run: php cyber-academy/tests/run.php
+
+      # דשבורד לוויות — php -l, רישום ה-app.json (שער), ממשק ה-JS, והרשאות api.php (session) ו-ingest.php (Bearer בלבד)
+      # מול php -S מקומי ומסד זמני; לא נוגע ב-data/ שבשרת. בדיקה שנכשלת עוצרת את הפריסה.
+      - name: funerals-dashboard tests
+        run: |
+          set -euo pipefail
+          php -m | grep -qix pdo_sqlite || { echo "::error::חסרה הרחבת pdo_sqlite"; exit 1; }
+          command -v node >/dev/null && command -v curl >/dev/null
+          bash funerals-dashboard/tests/run.sh
+
       # קול מרוקו — הבדיקות של האפליקציה (מסד זמני, בלי Composer, לא נוגע ב-data/): הרשאות לכל פעולה, חתימת הפרסום,
       # מיגרציות, יומן המפתח והספרייה. בדיקה שנכשלת עוצרת את הפריסה. ו-dev/build.json — הקומיט והשעה, למסך המפתח
       # ("גרסה וקומיט"); הקובץ נוצר כאן בלבד, אינו בגיט, ו-dev/.htaccess חוסם אותו מהדפדפן.
@@ -334,6 +352,14 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/claude-tasks/team/' \
+            --exclude='/funerals-dashboard/team/' \
+            --exclude='/cyber-academy/team/' \
+            --include='/cyber-academy/data/.htaccess' --exclude='/cyber-academy/data/*' \
+            --exclude='/sforno/team/' \
+            --include='/sforno/data/.htaccess' --exclude='/sforno/data/*' \
+            --exclude='/funerals-dashboard/tests/' \
+            --include='/funerals-dashboard/data/.htaccess' --exclude='/funerals-dashboard/data/*' \
             --exclude='/grave-prices/team/' \
             --include='/grave-prices/data/.htaccess' --exclude='/grave-prices/data/*' \
             --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' --exclude='/org-budget-proposals/tests/' \
@@ -485,6 +511,7 @@ jobs:
           CRONS: |
             trading-strategies-alerts|*/15 * * * *|trading-strategies/bin/alerts-cron.php|trading-strategies/data/alerts-cron.log
             claude-tasks-studio|* * * * *|claude-tasks/bin/studio-cron.php|claude-tasks/data/studio-cron.log
+            funerals-dashboard-dropbox|*/5 * * * *|funerals-dashboard/bin/dropbox-sync.php|funerals-dashboard/data/dropbox-sync.log
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
           REMOTE=$(cat <<'EOS'

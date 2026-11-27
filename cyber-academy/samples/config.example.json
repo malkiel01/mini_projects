@@ -1,0 +1,24 @@
+{
+  "source": "local",
+  "github_enabled": false,
+  "privacy_confirmed": false,
+  "fallback_to_sample": true,
+  "contract": "v1",
+  "github": {
+    "owner": "malkiel01",
+    "repo": "offensive-cyber-academy",
+    "ref": "main",
+    "snapshot_path": "dashboard/data/snapshot.json",
+    "curriculum_path": "dashboard/data/curriculum-v2-approved.json",
+    "contract_v2_path": "dashboard/data/schema/v2/academy-with-lessons-proposal.schema.json",
+    "token_file": ""
+  },
+  "cache_ttl": 120,
+  "progress_dir": "",
+  "progress": {
+    "managers": []
+  },
+  "ingest": {
+    "token_file": ""
+  }
+}
