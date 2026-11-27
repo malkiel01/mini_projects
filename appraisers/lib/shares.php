@@ -455,6 +455,7 @@ function apr_case_view_shared(array $ctx, array $c): array
         'me' => ['role' => 'external', 'perms' => array_intersect_key($c['perms'], array_flip(APR_SHARE_PERMS))],
         'shared' => ['kind' => $c['share']['kind'], 'office' => apr_share_office_name((int)$c['office_id']), 'scope' => $c['share']['scope'], 'expires_at' => $c['share']['expires_at'],
             'areas' => apr_share_areas($c)],
+        'report' => apr_case_report_summary($c),
         'identifiers' => $all ? array_map('apr_ident_out', apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']])) : [],
         'parties' => $all ? array_map(fn($r) => ['pid' => $r['pid'], 'kind' => $r['kind'], 'is_orderer' => (bool)$r['is_orderer'], 'name' => $r['name'], 'org' => $r['org']],
             apr_rows('SELECT cp.pid, cp.kind, cp.is_orderer, ct.name, ct.org FROM case_parties cp JOIN contacts ct ON ct.id = cp.contact_id WHERE cp.case_id = ? AND cp.removed_at IS NULL ORDER BY cp.is_orderer DESC, cp.id', [$c['id']])) : []];

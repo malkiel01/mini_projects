@@ -1,0 +1,103 @@
+{
+  "updated": "2026-11-24T12:00:00Z",
+  "note": "מפת הדרכים של ניהול לוויות חברה קדישא — מטלה לכל פרוסה (docs/spec/00-overview.md §4). 🟡 פתוח = טרם התחיל; 🧪 ממתין לאימות = נפרס, לבדוק ולאשר.",
+  "repo": "malkiel01/mini_projects",
+  "items": [
+    {
+      "code": "FD-001",
+      "status": "in_progress",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "high",
+      "area": "תשתית",
+      "opened": "2026-11-24",
+      "title": "🧱 פרוסה 01 — תשתית: ארגונים, משתמשים והרשאות, מסך מפתח, DevLoop",
+      "detail": "האפיון: docs/spec/01-infrastructure.md. 22 התיקים בארגון הראשון, כמו שהם.",
+      "acceptance": "קריטריוני הקבלה A1–A17 בסעיף 4 של docs/spec/01-infrastructure.md.",
+      "steps": [
+        "להיכנס — התיקים של אוקטובר שם, כולם",
+        "🛠️ מפתח ← כל בדיקות התקינות ירוקות, ויש גיבוי מהיום",
+        "⚙️ ארגונים ← ליצור \"ארגון בדיקה\"; לעבור אליו — אין בו תיקים",
+        "🐞 מופיע בכותרת, ומטלה חדשה נפתחת עם קוד FD-"
+      ]
+    },
+    {
+      "code": "FD-002",
+      "status": "open",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "פרוסה 02",
+      "opened": "2026-11-24",
+      "title": "פרוסה 02 — טופס חכם: מסלול לכל תיק, מקור לכל בדיקה, יומן התיק",
+      "detail": "דרישות: D6. תלויה ב-: 01. הארכיטקטורה: docs/spec/00-overview.md §4.",
+      "acceptance": "קריטריוני הקבלה באפיון הפרוסה (docs/spec/02-*.md).",
+      "steps": []
+    },
+    {
+      "code": "FD-003",
+      "status": "open",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "פרוסה 03",
+      "opened": "2026-11-24",
+      "title": "פרוסה 03 — Dropbox דו-כיווני: חיבור, תיקיות, webhook ו-cursor, תצוגה מקדימה",
+      "detail": "דרישות: D2, D8. תלויה ב-: 01. הארכיטקטורה: docs/spec/00-overview.md §4.",
+      "acceptance": "קריטריוני הקבלה באפיון הפרוסה (docs/spec/03-*.md).",
+      "steps": []
+    },
+    {
+      "code": "FD-004",
+      "status": "open",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "פרוסה 04",
+      "opened": "2026-11-24",
+      "title": "פרוסה 04 — עובד שטח בטלפון: העלאה, צילום קבר, עדכון",
+      "detail": "דרישות: D3. תלויה ב-: 02, 03. הארכיטקטורה: docs/spec/00-overview.md §4.",
+      "acceptance": "קריטריוני הקבלה באפיון הפרוסה (docs/spec/04-*.md).",
+      "steps": []
+    },
+    {
+      "code": "FD-005",
+      "status": "open",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "פרוסה 05",
+      "opened": "2026-11-24",
+      "title": "פרוסה 05 — API חיצוני: אסימונים אישיים, OpenAPI, פרומפט ל-GPT",
+      "detail": "דרישות: D4. תלויה ב-: 02. הארכיטקטורה: docs/spec/00-overview.md §4.",
+      "acceptance": "קריטריוני הקבלה באפיון הפרוסה (docs/spec/05-*.md).",
+      "steps": []
+    },
+    {
+      "code": "FD-006",
+      "status": "open",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "פרוסה 06",
+      "opened": "2026-11-24",
+      "title": "פרוסה 06 — AI מובנה: מפתח לארגון, צ'אט, הצעות שינוי",
+      "detail": "דרישות: D5. תלויה ב-: 03, 05. הארכיטקטורה: docs/spec/00-overview.md §4.",
+      "acceptance": "קריטריוני הקבלה באפיון הפרוסה (docs/spec/06-*.md).",
+      "steps": []
+    },
+    {
+      "code": "FD-007",
+      "status": "open",
+      "status_at": "2026-11-24T12:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "פרוסה 07",
+      "opened": "2026-11-24",
+      "title": "פרוסה 07 — נקודת הרחבה לתוכנה חיצונית — חוזה בלבד",
+      "detail": "דרישות: D7. תלויה ב-: 02. הארכיטקטורה: docs/spec/00-overview.md §4.",
+      "acceptance": "קריטריוני הקבלה באפיון הפרוסה (docs/spec/07-*.md).",
+      "steps": []
+    }
+  ]
+}

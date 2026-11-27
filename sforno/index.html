@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <meta name="referrer" content="no-referrer">
+  <title>ספורנו</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <!-- PWA (06): use-credentials — בזמן הפיתוח הקובץ מאחורי השער, והדפדפן מבקש manifest בלי עוגיות כברירת מחדל -->
+  <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ספורנו">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="stylesheet" href="assets/css/devloop.css">
+  <style>
+    @font-face { font-family: 'David Libre'; src: url('assets/fonts/DavidLibre-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+    @font-face { font-family: 'David Libre'; src: url('assets/fonts/DavidLibre-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <button class="icon-btn" id="back" type="button" aria-label="חזרה" hidden>→</button>
+    <div class="titles"><h1>ספורנו</h1><div class="sub" id="who"></div></div>
+    <a class="net-chip" id="net-chip" href="#/downloads" hidden>בלי אינטרנט</a>
+    <a class="icon-btn sync-chip" id="sync-chip" href="#/account" hidden></a>
+    <div class="menu-wrap">
+      <button class="icon-btn" id="menu-btn" type="button" aria-label="תפריט" aria-haspopup="true" aria-expanded="false" aria-controls="menu">☰</button>
+      <ul class="menu" id="menu" hidden></ul>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"><p class="loading">טוען…</p></main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="assets/js/devloop.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/router.js"></script>
+  <script src="assets/js/render.js"></script>
+  <script src="assets/js/reader-core.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script src="assets/js/sync-core.js"></script>
+  <script src="assets/js/sync.js"></script>
+  <script src="assets/js/offline-core.js"></script>
+  <script src="assets/js/offline.js"></script>
+  <script src="assets/js/calendar-core.js"></script>
+  <script src="assets/js/daily-core.js"></script>
+  <script src="assets/js/daily.js"></script>
+  <script src="assets/js/reminders-core.js"></script>
+  <script src="assets/js/reminders.js"></script>
+  <script src="assets/js/screens/home.js"></script>
+  <script src="assets/js/screens/reader.js"></script>
+  <script src="assets/js/screens/siddur.js"></script>
+  <script src="assets/js/screens/downloads.js"></script>
+  <script src="assets/js/screens/zmanim.js"></script>
+  <script src="assets/js/screens/halacha.js"></script>
+  <script src="assets/js/screens/reminders.js"></script>
+  <script src="assets/js/screens/store.js"></script>
+  <script src="assets/js/screens/admin.js"></script>
+  <script src="assets/js/screens/content.js"></script>
+  <script src="assets/js/screens/import.js"></script>
+  <script src="assets/js/screens/reader-admin.js"></script>
+  <script src="assets/js/screens/daily-admin.js"></script>
+  <script src="assets/js/screens/store-admin.js"></script>
+  <script src="assets/js/screens/ops.js"></script>
+  <script src="assets/js/screens/dev.js"></script>
+  <script src="assets/js/screens/account.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

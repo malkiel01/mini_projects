@@ -62,6 +62,26 @@
       "log_url": "https://mbe-plus.com/mini_projects/grave-prices/#/dev/log",
       "items_file": "grave-prices/dev/open-items.json",
       "token_env": "GP_DEVLOOP_TOKEN"
+    },
+    {
+      "name": "ספורנו",
+      "prefix": "SF-",
+      "dir": "sforno",
+      "api": "https://mbe-plus.com/mini_projects/sforno/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/sforno/#/dev/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/sforno/#/dev/log",
+      "items_file": "sforno/dev/open-items.json",
+      "token_env": "SF_DEVLOOP_TOKEN"
+    },
+    {
+      "name": "ניהול לוויות חברה קדישא",
+      "prefix": "FD-",
+      "dir": "funerals-dashboard",
+      "api": "https://mbe-plus.com/mini_projects/funerals-dashboard/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/funerals-dashboard/#/dev/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/funerals-dashboard/#/dev/tasks",
+      "items_file": "funerals-dashboard/dev/open-items.json",
+      "token_env": "FD_DEVLOOP_TOKEN"
     }
   ],
   "module": {

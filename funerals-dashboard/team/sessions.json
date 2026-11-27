@@ -1,0 +1,117 @@
+{
+  "note": "מתעדכן בידי צ'אט הבקרה",
+  "spec": {
+    "session": "session_018g4NYGZwaqPT5QwjkAVwnQ",
+    "branch": "claude/funerals-dashboard-spec"
+  },
+  "code": [
+    {
+      "session": "session_018g4NYCseqBY5SAVzwudRdg",
+      "slice": "10b",
+      "branch": "claude/funerals-dashboard-10b",
+      "state": "פעיל"
+    },
+    {
+      "session": "session_018g4NYDtetivJinR3qZhG7D",
+      "slice": "12",
+      "branch": "claude/funerals-dashboard-12-ui",
+      "state": "פעיל"
+    }
+  ],
+  "control": {
+    "session": "session_018g4NYCQafBpv5yqhSx9VM7",
+    "branch": "claude/funerals-dashboard-control-8",
+    "role": "בקרה 8",
+    "clock": "trig_01F4yuGBaDrZa6DpRmJhubc1"
+  },
+  "tasks": {
+    "session": "session_018g4NYFi7CQiJ79smzSeDjd",
+    "branch": "claude/funerals-dashboard-tasks"
+  },
+  "code_done": [
+    {
+      "session": "session_018g4NYFGKA7qcwhkzsMNRXu",
+      "slice": "00",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYGdJzhAAfEVxcVrjGM",
+      "slice": "01",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYE4eQofqbBdfWGEthU",
+      "slice": "02",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYD6tKx36K2GtksWvXW",
+      "slice": "03",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEkZkJeu8Y7WL7JS7a",
+      "slice": "05",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYFpGmzP8ZDdxNpWJVb",
+      "slice": "04",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYDuym4xhnQbP7pp88K",
+      "slice": "06",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYFCroPuhEYVJhHMcqh",
+      "branch": "claude/funerals-dashboard-08-fixes",
+      "slice": "08",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYF5aVunXTh4CjYUphS",
+      "branch": "claude/funerals-dashboard-09-mcp",
+      "slice": "09",
+      "state": "רדום"
+    }
+  ],
+  "control_done": [
+    {
+      "session": "session_018g4NYFvCTWcu2sJBJangFR",
+      "role": "בקרה 1",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYES4G3kVk57413GPnM",
+      "role": "בקרה 2",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYDegWrLYkRkfQRRfVQ",
+      "role": "בקרה 3",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEtyGfJPB3ADzV5Upg",
+      "role": "בקרה 4",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEmc1swmXwJd11ZcQW",
+      "role": "בקרה 5",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYEMXfmbD3B4CjhKViH",
+      "role": "בקרה 6",
+      "state": "רדום"
+    },
+    {
+      "session": "session_018g4NYFDHbeZpw9fbz68i9m",
+      "role": "בקרה 7",
+      "state": "רדום"
+    }
+  ]
+}

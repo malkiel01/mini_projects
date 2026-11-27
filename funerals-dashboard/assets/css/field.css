@@ -1,0 +1,45 @@
+/* פרוסה 04 — מסך עובד השטח. רק המשתנים של app.css; בלי צבעים חדשים. */
+
+/* במצב שטח: הכותרת מינימלית (שם, ארגון, 👤), ובמקום רשימת החודש — מסך "היום" */
+body.field-mode #main, body.field-mode #importBtn, body.field-mode #exportBtn, body.field-mode #settingsBtn { display: none !important; }
+.field { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom)); display: grid; gap: var(--s2); }
+.field .sec-title { margin: var(--s2) 0 0; }
+.field .search input { width: 100%; min-height: var(--tap); font-size: 16px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.fw-sum .line { display: flex; align-items: baseline; gap: var(--s1); }
+.fw-all { text-align: center; margin-top: var(--s2); }
+.field .card .chip { margin-inline-start: 0; }
+.field .card .chips, #fwCase .chips { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: 2px; }
+.fw-time { flex: none; min-width: 44px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* שלושת הכפתורים הגדולים — בשורה אחת, אגודל אחד */
+.fw-acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
+.fw-big { display: grid; justify-items: center; align-content: center; gap: var(--s1); min-height: 88px; padding: var(--s2);
+    border: 1px solid var(--line); border-radius: var(--r); background: var(--brand-soft); color: var(--ink); font-weight: 600; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fw-big span { font-size: 1.8rem; line-height: 1; }
+.fw-big:first-child { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.fw-big:disabled { opacity: .45; cursor: not-allowed; }
+.fw-big[aria-expanded="true"] { outline: 2px solid var(--brand); }
+.fw-kind { display: grid; gap: var(--s2); cursor: default; border: 1px solid var(--line); border-radius: var(--r); }
+.fw-kind select, #fwEditBox select, #fwEditBox input, #fwEditBox textarea { font-size: 16px; }
+#fwEditBox { display: grid; gap: var(--s2); }
+#fwEditBox[hidden] { display: none; }
+.fw-ck { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s2); padding: var(--s1) var(--s3); }
+.fw-ck + .fw-ck { border-top: 1px solid var(--line); }
+.fw-ck select { min-height: var(--tap); max-width: 46vw; }
+.fw-q { align-items: center; }
+.fw-q .body { min-width: 0; }
+.fw-q .acts { display: flex; gap: var(--s1); }
+.fw-q[data-state="done"] .muted { color: var(--ok); }
+.fw-err { color: var(--danger); font-size: .85rem; }
+.fw-file { grid-template-columns: minmax(0, 1fr) auto; }
+.fw-file > .muted { grid-column: 1; font-size: .8rem; }
+.fw-file > .btn { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.fw-view { padding: 0; place-items: center; }
+.fw-view img { max-width: 100%; max-height: calc(var(--vvh, 100dvh) - var(--head) - 16px); object-fit: contain; }
+.fw-view iframe { width: 100%; height: calc(var(--vvh, 100dvh) - var(--head) - 16px); border: 0; }
+#fwSave { position: sticky; bottom: calc(var(--s2) + env(safe-area-inset-bottom)); box-shadow: 0 0 0 var(--s2) var(--surface); }
+body.field-mode #topSub { display: none; }
+/* U6: צילום בלי תיק — בראש המסך */
+.fw-loose { inline-size: 100%; min-height: 64px; grid-auto-flow: column; gap: var(--s2); margin-bottom: var(--s3);
+    background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
