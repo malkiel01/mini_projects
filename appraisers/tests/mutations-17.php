@@ -335,9 +335,9 @@ A, <<<'B'
 'ai_stale' => ['warn', false]
 B],
     ['B3 סקירה מחדש קובעת את הבסיס', 'report.php', <<<'A'
-['ai_input_hash' => apr_report_ai_input($ctx, $c, $s, apr_report_tpl($v))['hash'], 'ai_reviewed' => 1,
+        apr_report_update('report_sections', $s, $rev, ['ai_input_hash' => $now, 'ai_reviewed' => 1,
 A, <<<'B'
-['ai_reviewed' => 1,
+        apr_report_update('report_sections', $s, $rev, ['ai_reviewed' => 1,
 B],
     ['B3 / 17-C6 נתוני הקלט של פרק בינה ב-data_hash', 'report.php', <<<'A'
         if ($s['origin'] === 'ai') $all[$s['key'] . '#ai'] =
