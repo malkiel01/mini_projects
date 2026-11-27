@@ -894,7 +894,7 @@ eq([$nvU[0], in_array('floors_total', array_column(array_filter($adU['proposal']
 // ═══ סבב 3 — B1: טקסט חופשי שאדם הקליד אינו מגיע לספק הבינה. הבדיקה נגזרת מהסכימה, לא מרשימה של שדות ═══
 // סמן ייחודי (אותיות בלבד, 10 תווים — שורד גם substr של תאריך) לכל מאפיין ולכל עמודה. סמן ב-payload = דליפה.
 $mk = fn(string $name) => 'ZQ' . strtr(substr(md5($name), 0, 6), '0123456789', 'ghijklmnop') . 'QZ';
-$anyMark = fn(mixed $x) => preg_match('/ZQ[a-p]{6}QZ/', (string)json_encode($x, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === 1;
+$anyMark = fn(mixed $x) => preg_match('/ZQ[a-p]{6}QZ/i', (string)json_encode($x, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === 1;
 $nobody = ['user' => null, 'office' => null];
 $CT = make_case($avi, $PM);
 $ctId = $caseId($CT);
@@ -979,6 +979,7 @@ eq([$factFail, $setupT, count($attrMarks) >= 5, [count($pA['all']), count($pA['s
 
 // שלב ב — סריקת הסכימה: לכל עמודה שאינה מספרית, בכל טבלה שבמסד, שותלים סמן (בטרנזקציה שמתבטלת, בלי הטריגרים של הטבלה) ובודקים אם הוא
 // **מוצג** בארבעת הפרקים ואם הוא **נשלח**. עמודה שתתווסף למסד נבדקת בלי לגעת בבדיקה; ומה שנשלח חייב להיות ברשימת העמודות המובנות שלמטה.
+// גבול הבדיקה: טבלה שאין בה שורות אינה נסרקת — מי שמוסיף לאחד מארבעת הפרקים טבלה חדשה ממלא אותה בתיק $CT שלמעלה.
 $noTriggers = function (string $t, callable $fn) {
     $trg = apr_rows("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?", [$t]);
     foreach ($trg as $g) apr_db()->exec('DROP TRIGGER "' . $g['name'] . '"');
@@ -990,6 +991,40 @@ $plant = function (string $t, string $col, string $where = null) use ($mk): int 
     }
     return 0;
 };
+// עמודה שמחזיקה JSON: סמן גולמי רק שובר את המבנה (והקוד נופל לברירת מחדל) — לכן שותלים **בתוך** המבנה, בכל נתיב של מחרוזת בנפרד
+// (אינדקס של רשימה = *). כך נבדקות גם תוויות האפשרויות של מאפיין "בחירה", התבנית של הגרסה, והתוכן השמור של פרק
+$jsonPaths = function (string $t, string $col): array {
+    $paths = [];
+    foreach (apr_rows("SELECT \"$col\" AS v FROM \"$t\" WHERE \"$col\" LIKE '{%' OR \"$col\" LIKE '[%'") as $r) {
+        $walk = function (array $node, array $at) use (&$walk, &$paths) {
+            foreach ($node as $k => $v) {
+                $p = [...$at, is_int($k) ? '*' : (string)$k];
+                if (is_array($v)) $walk($v, $p); elseif (is_string($v)) $paths[implode('.', $p)] = $p;
+            }
+        };
+        if (is_array($j = json_decode((string)$r['v'], true))) $walk($j, []);
+    }
+    return $paths;
+};
+$plantJson = function (string $t, string $col, array $path) use ($mk): int {
+    $n = 0;
+    $m = $mk("$t.$col:" . implode('.', $path));
+    foreach (apr_rows("SELECT rowid AS r, \"$col\" AS v FROM \"$t\" WHERE \"$col\" LIKE '{%' OR \"$col\" LIKE '[%'") as $row) {
+        if (!is_array($j = json_decode((string)$row['v'], true))) continue;
+        $hit = false;
+        $set = function (array &$node, array $segs) use (&$set, &$hit, $m, $row) {
+            $seg = array_shift($segs);
+            foreach ($node as $k => &$v) {
+                if ((is_int($k) ? '*' : (string)$k) !== $seg) continue;
+                if ($segs) { if (is_array($v)) $set($v, $segs); } elseif (is_string($v)) { $v = $m . $row['r']; $hit = true; }
+            }
+        };
+        $set($j, $path);
+        if (!$hit) continue;
+        try { $n += apr_exec("UPDATE \"$t\" SET \"$col\" = ? WHERE rowid = ?", [json_encode($j, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $row['r']]); } catch (PDOException) {}
+    }
+    return $n;
+};
 $triggersBefore = (int)apr_val("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger'");
 $base = $stateT();
 $sweep = ['tables' => 0, 'relevant' => 0, 'planted' => 0, 'shown' => [], 'sent' => [], 'errors' => []];
@@ -998,8 +1033,8 @@ foreach (array_column(apr_rows("SELECT name FROM sqlite_master WHERE type = 'tab
     if (!$cols || !apr_val("SELECT 1 FROM \"$t\" LIMIT 1")) continue;
     $sweep['tables']++;
     try {
-        apr_tx(function () use ($t, $cols, $mk, $plant, $stateT, $noTriggers, $base, &$sweep) {
-            $noTriggers($t, function () use ($t, $cols, $mk, $plant, $stateT, $base, &$sweep) {
+        apr_tx(function () use ($t, $cols, $mk, $plant, $plantJson, $jsonPaths, $stateT, $noTriggers, $base, &$sweep) {
+            $noTriggers($t, function () use ($t, $cols, $mk, $plant, $plantJson, $jsonPaths, $stateT, $base, &$sweep) {
                 $try = function (callable $do) use ($stateT) {
                     apr_db()->exec('SAVEPOINT sweep');
                     try { return $do() > 0 ? $stateT() : null; } catch (Throwable $e) { return $e; } finally { apr_db()->exec('ROLLBACK TO sweep'); apr_db()->exec('RELEASE sweep'); }
@@ -1008,13 +1043,16 @@ foreach (array_column(apr_rows("SELECT name FROM sqlite_master WHERE type = 'tab
                 $allAtOnce = $try(function () use ($t, $cols, $plant) { $n = 0; foreach ($cols as $col) $n += $plant($t, $col); return $n; });
                 if ($allAtOnce === null || $allAtOnce === $base) return;
                 $sweep['relevant']++;
-                foreach ($cols as $col) {
-                    $s = $try(fn() => $plant($t, $col));
-                    if ($s === null) continue;
+                $classify = function (string $name, mixed $s) use ($mk, &$sweep) {
+                    if ($s === null) return;
                     $sweep['planted']++;
-                    if ($s instanceof Throwable) { $sweep['errors'][] = "$t.$col: " . get_class($s) . ' ' . mb_substr($s->getMessage(), 0, 80); continue; }
-                    if (str_contains($s[0], $mk("$t.$col"))) $sweep['shown'][] = "$t.$col";
-                    if (str_contains(implode("\n", $s[1]), $mk("$t.$col"))) $sweep['sent'][] = "$t.$col";
+                    if ($s instanceof Throwable) { $sweep['errors'][] = "$name: " . get_class($s) . ' ' . mb_substr($s->getMessage(), 0, 80); return; }
+                    if (stripos($s[0], $mk($name)) !== false) $sweep['shown'][] = $name;
+                    if (stripos(implode("\n", $s[1]), $mk($name)) !== false) $sweep['sent'][] = $name;
+                };
+                foreach ($cols as $col) {
+                    $classify("$t.$col", $try(fn() => $plant($t, $col)));
+                    foreach ($jsonPaths($t, $col) as $name => $path) $classify("$t.$col:$name", $try(fn() => $plantJson($t, $col, $path)));
                 }
             });
             throw new SweepRollback();
@@ -1022,7 +1060,7 @@ foreach (array_column(apr_rows("SELECT name FROM sqlite_master WHERE type = 'tab
     } catch (SweepRollback) {}
 }
 // העמודות ש**מותר** להן להגיע לספק — מובנות בלבד (הכרעת הבקרה, סבב 3). עמודה אחרת שתגיע ל-payload מכשילה את הבדיקה, עד שתיבדק ותתווסף לכאן במודע
-$STRUCTURED = ['attributes.label',                                                                                              // שם המאפיין — מהקטלוג של המשרד
+$STRUCTURED = ['attributes.label', 'attributes.choices:*.label',                                                               // שם המאפיין ותוויות האפשרויות של "בחירה" — מהקטלוג של המשרד
     'case_identifiers.apartment_no', 'case_identifiers.gush', 'case_identifiers.helka', 'case_identifiers.house_no', 'case_identifiers.locality', 'case_identifiers.street', 'case_identifiers.tat_helka',     // כתובת מובנית, גוש-חלקה
     'source_checks.performed_at', 'sources.name', 'visits.completed_at'];                                                       // מועד בדיקה, שם המקור מהקטלוג, מועד הביקור
 $sortedOf = function (array $a) { sort($a); return $a; };
@@ -1032,14 +1070,17 @@ $mustFree = ['case_identifiers.value_text', 'facts.value_text', 'facts.value_dat
 eq([$sweep['errors'], $sortedOf($sweep['sent']), array_values(array_diff($mustFree, $freeCols)), $sweep['tables'] >= 40, $sweep['relevant'] >= 8, $sweep['planted'] >= 60, $stateT() === $base,
     (int)apr_val("SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger'") === $triggersBefore, !empty($GLOBALS['apr_in_tx'])],
     [[], $sortedOf($STRUCTURED), [], true, true, true, true, true, false],
-    'B1 (סבב 3), סריקת הסכימה: סמן בכל עמודה לא-מספרית של כל טבלה במסד — לספק מגיעות **רק** העמודות המובנות שברשימה (שם מאפיין ושם מקור מהקטלוג, כתובת מובנית וגוש-חלקה, מועד ביקור ומועד בדיקה); ערך טקסט / תאריך / יחידה של נתון שאינם מובנים, ממצא של בדיקת מקור, טקסט של מזהה, כותרת שנשמרה בפרק, שם המבקר וכיתוב תמונה — מוצגים בדוח ואינם נשלחים; הסריקה אינה משאירה דבר במסד');
+    'B1 (סבב 3), סריקת הסכימה: סמן בכל עמודה לא-מספרית של כל טבלה במסד, ובכל נתיב של מחרוזת בעמודת JSON — לספק מגיעות **רק** העמודות המובנות שברשימה (שם מאפיין, תוויות האפשרויות של "בחירה" ושם מקור — מהקטלוג; כתובת מובנית וגוש-חלקה; מועד ביקור ומועד בדיקה); ערך טקסט / תאריך / יחידה של נתון שאינם מובנים, ממצא של בדיקת מקור, טקסט של מזהה, כותרת שנשמרה בפרק, שם המבקר וכיתוב תמונה — מוצגים בדוח ואינם נשלחים; הסריקה אינה משאירה דבר במסד');
 
 // שלב ג — כל העמודות החופשיות שהסריקה מצאה, שתולות **יחד**, ושלושת המסלולים עד המתאם (בטרנזקציה שמתבטלת)
 $pB = null;
 $stateB = null;
 try {
-    apr_tx(function () use ($freeCols, $noTriggers, $plant, $stateT, $pathsT, $post, $ctRow, &$VT, &$pB, &$stateB) {
-        foreach ($freeCols as $tc) { [$t, $col] = explode('.', $tc, 2); $noTriggers($t, fn() => $plant($t, $col, " WHERE \"$col\" IS NOT NULL")); }
+    apr_tx(function () use ($freeCols, $noTriggers, $plant, $plantJson, $stateT, $pathsT, $post, $ctRow, &$VT, &$pB, &$stateB) {
+        foreach ($freeCols as $tc) {
+            [$t, $col] = explode('.', explode(':', $tc, 2)[0], 2);
+            $noTriggers($t, fn() => str_contains($tc, ':') ? $plantJson($t, $col, explode('.', explode(':', $tc, 2)[1])) : $plant($t, $col, " WHERE \"$col\" IS NOT NULL"));
+        }
         $stateB = $stateT();
         $pB = $pathsT(function () use ($post, $ctRow, &$VT) {
             $post('report-rebuild', ['version' => $VT, 'include_edited' => true]);
