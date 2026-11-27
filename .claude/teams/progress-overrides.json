@@ -3,22 +3,15 @@
   "general_waiting": [],
   "apps": {
     "funerals-dashboard": {
-      "status": "active",
-      "status_note": "טורבו · שעון בכל שעה",
+      "status": "paused",
+      "status_note": "מוזגו 10–12b ונפרסו; בקרה 8 ממתינה להחלטה על הסף",
       "progress_url": "https://claude.ai/artifact/H5rVZgqYnea8rybPsfzd53"
     },
     "appraisers": {
-      "status": "paused",
-      "status_note": "נעצר — מכסת Fable עד 27.11",
-      "waiting": [
-        {
-          "kind": "החלטה",
-          "id": "",
-          "text": "להמשיך על Opus, או לחכות עד שמכסת Fable תתאפס ב-27.11",
-          "status": "פרוסה 17 נעצרה באמצע"
-        }
-      ],
-      "now": "17 דוח — נעצר באמצע תיקון שלושה חוסמים"
+      "status": "active",
+      "status_note": "בקרה (4) על Fable 5.2 · max · שעון כל שעה",
+      "waiting": [],
+      "now": "17 דוח — סבב 2 של תיקונים (קוד 17)"
     },
     "sforno": {
       "status": "paused",
@@ -114,13 +107,13 @@
     },
     "kol-maroko": {
       "status": "paused",
-      "status_note": "עד הודעה שלך",
+      "status_note": "הפיתוח הסתיים; PR #1569 (R6) עדיין פתוח",
       "questions": "off",
       "questions_note": "השאלות של קול מרוקו מסומנות כנענו ב-team/decisions.md ולא בקובץ השאלות, ולכן לא נספרות כאן."
     },
     "trading-strategies": {
-      "status": "paused",
-      "status_note": "עד הודעה שלך"
+      "status": "active",
+      "status_note": "חודש 27.11 — בקרה (12), שעון כל שעה"
     },
     "org-budget-proposals": {
       "status": "paused",
