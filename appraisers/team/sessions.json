@@ -3,8 +3,8 @@
   "updated": "2026-11-27",
   "spec": "session_018g4NYChyg3pn6J7Mpn8BdW",
   "code": "session_018g4NYGFaHCygg1SSWzZn5D",
-  "control": "session_018g4NYCg179r7WMdpTrAmgH",
-  "tasks": "session_018g4NYGYQpEYJDdYkxFAL6d",
+  "control": "session_018g4NYDsFoWVo3wiTMASykw",
+  "tasks": "session_018g4NYEM2Q1NvTgG6QqqhPq",
   "retired": {
     "code-1": "session_018g4NYFYs5G6v9s2CqJNEPh",
     "control-1": "session_018g4NYDAvuqfD5J5wQYMo2Q",
@@ -25,7 +25,9 @@
     "code-15": "session_018g4NYF8sSL45jZAAxy2DSV",
     "code-16": "session_018g4NYFPfBFT9BSKi3kQq2J",
     "control-3": "session_018g4NYDF3ThMFSJdPNYMBHe",
-    "code-17": "session_018g4NYDSYztW5J1TR6AYaVL"
+    "code-17": "session_018g4NYDSYztW5J1TR6AYaVL",
+    "control-4": "session_018g4NYCg179r7WMdpTrAmgH",
+    "tasks-1": "session_018g4NYGYQpEYJDdYkxFAL6d"
   },
-  "control_clock": "trig_01Nav88E7dFWT6cnG6RhhtgA"
+  "control_clock": "trig_01WCbchKCrk4DGFeyjEeitn7"
 }
