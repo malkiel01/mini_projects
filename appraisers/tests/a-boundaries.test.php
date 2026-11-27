@@ -10,7 +10,10 @@ foreach ($it as $f) {
     if (preg_match('#^(docs|team|data)/#', $rel)) continue;
     $files[$rel] = $f->getPathname();
 }
-$php = array_filter(array_keys($files), fn($r) => str_ends_with($r, '.php'));
+// vendor/ — ספריות צד שלישי (mPDF, פרוסה 18): קוד שאיננו כותבים ואיננו עורכים. הוא אינו נבדק מול הכללים של הקוד שלנו (strict_types, צורת
+// ה-require), אבל כן: חסום לדפדפן, עובר php -l (שער הפריסה מריץ אותו על כל קובץ בריפו), ונטען ממקום אחד בלבד — ר' סוף הקובץ.
+$vendorPhp = array_values(array_filter(array_keys($files), fn($r) => str_starts_with($r, 'vendor/') && str_ends_with($r, '.php')));
+$php = array_filter(array_keys($files), fn($r) => str_ends_with($r, '.php') && !str_starts_with($r, 'vendor/'));
 check('יש קובצי PHP לבדוק', count($php) >= 15);
 
 // ── 01-A3: אין require / include לנתיב שיוצא מ-appraisers/ ──
@@ -32,7 +35,7 @@ foreach ($php as $rel) {
 }
 
 // ── 01-A4: אין ב-HTML וב-JS קישור שמתחיל ב-../, ואין קישור "חזרה לכלים" ──
-$front = array_filter(array_keys($files), fn($r) => preg_match('/\.(html|js|css|webmanifest)$/', $r) && !preg_match('#devloop\.(js|css)$#', $r));
+$front = array_filter(array_keys($files), fn($r) => preg_match('/\.(html|js|css|webmanifest)$/', $r) && !preg_match('#devloop\.(js|css)$#', $r) && !str_starts_with($r, 'vendor/'));
 check('יש קובצי ממשק לבדוק', count($front) >= 3);
 foreach ($front as $rel) {
     $src = file_get_contents($files[$rel]);
@@ -51,6 +54,26 @@ foreach ($php as $rel) {
     exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($files[$rel]) . ' 2>&1', $out, $rc);
     check("01-A5 php -l $rel", $rc === 0);
 }
+// vendor/: אותה בדיקה שהפריסה מריצה (php -l על כל קובץ) — בקבוצות, כדי לא להפעיל מאות תהליכים
+check('vendor/: יש קובצי PHP של mPDF', count($vendorPhp) > 300);
+foreach (array_chunk($vendorPhp, 150) as $i => $chunk) {
+    $vout = [];
+    exec(escapeshellarg(PHP_BINARY) . ' -l ' . implode(' ', array_map(fn($r) => escapeshellarg($files[$r]), $chunk)) . ' 2>&1', $vout, $vrc);
+    $bad = array_values(array_filter($vout, fn($l) => $l !== '' && !str_starts_with($l, 'No syntax errors')));
+    check('01-A5 php -l vendor/ (קבוצה ' . ($i + 1) . ')', $vrc === 0 && !$bad && count($vout) >= count($chunk), array_slice($bad, 0, 3));
+}
+// vendor/ נטען ממקום אחד: lib/export_pdf.php, דרך vendor/autoload.php. שום קובץ אחר שלנו אינו מזכיר את התיקייה או את mPDF
+$users = [];
+foreach ($php as $rel) {
+    if (str_starts_with($rel, 'tests/')) continue;
+    $code = implode('', array_map(fn($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $t[1]) : $t, token_get_all(file_get_contents($files[$rel]))));
+    if (preg_match('#/vendor/|Mpdf\\\\#', $code)) $users[] = $rel;
+}
+eq($users, ['lib/export_pdf.php'], 'vendor/ ו-mPDF נטענים רק מ-lib/export_pdf.php');
+check('vendor/: בלי תיקיות בדיקה, כלים ומטמון של הספרייה', !array_filter(array_keys($files), fn($r) => preg_match('#^vendor/.*/(tests?|utils|tmp|docs?)/#i', $r)));
+$vsize = array_sum(array_map(fn($r) => filesize($files[$r]), array_filter(array_keys($files), fn($r) => str_starts_with($r, 'vendor/'))));
+check('vendor/: קטן מ-10MB', $vsize < 10 * 1024 * 1024, [$vsize]);
+
 // שער הרישום של הפלטפורמה — כשהאפליקציה יושבת בריפו (באפליקציה עצמאית הוא לא קיים)
 $gate = dirname($root) . '/platform/check-apps.php';
 if (is_file($gate)) {
@@ -82,7 +105,7 @@ eq(array_values(array_diff($arms, array_keys(APR_ACCESS))), [], 'ואין בנת
 eq(array_values(array_diff(APR_READS, array_keys(APR_ACCESS))), [], 'כל פעולת קריאה רשומה בטבלה');
 
 // ── הנתונים והקוד חסומים מהדפדפן ──
-foreach (['data', 'lib', 'tests', 'dev'] as $d) {
+foreach (['data', 'lib', 'tests', 'dev', 'vendor'] as $d) {
     check("$d/.htaccess חוסם", is_file("$root/$d/.htaccess") && str_contains(file_get_contents("$root/$d/.htaccess"), 'Require all denied'));
 }
 exec('git -C ' . escapeshellarg($root) . ' ls-files data 2>/dev/null', $tracked);

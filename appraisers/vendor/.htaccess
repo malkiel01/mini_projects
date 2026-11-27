@@ -1,0 +1,8 @@
+# ספריות צד שלישי (mPDF) — קוד שרת, לא מוגש לדפדפן. נטען רק מ-lib/export_pdf.php.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
